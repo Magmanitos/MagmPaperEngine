@@ -48,7 +48,7 @@ app.whenReady().then(async () => {
     assert.ok(Number(getStyle(hwnd, -20)) & 0x20, 'wallpaper remains click-through');
     const oldCursor = [0, 0]; assert.ok(getCursor(oldCursor));
     restoreCursor = () => setCursor(...oldCursor);
-    await child.webContents.executeJavaScript('window.wallpaper.onMouse(value => { window.cursorReceived = value; })');
+    await child.webContents.executeJavaScript('window.wallpaper.onMouse(value => { window.cursorReceived = value; }); true');
     const bounds = screen.getPrimaryDisplay().bounds;
     stopCursor = startCursorTracking(child, screen, bounds);
     const positions = [];
@@ -70,6 +70,10 @@ app.whenReady().then(async () => {
     console.log('PASS: Electron viewport, Windows startup, actual OS cursor through IPC while click-through is enabled.');
   } catch (error) {
     console.error(error); process.exitCode = 1;
+    if (process.env.GITHUB_ACTIONS) {
+      const message = String(error.stack || error).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
+      console.log(`::error::${message}`);
+    }
   } finally {
     stopCursor?.();
     restoreCursor?.();
