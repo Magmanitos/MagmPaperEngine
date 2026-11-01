@@ -1,0 +1,38 @@
+name: Windows release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Test library
+        run: npm test
+      - name: Build Windows ZIP
+        run: npm run dist:zip -- --publish never
+      - name: Publish release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          $archive = Get-ChildItem dist/*-win.zip
+          if ($archive.Count -ne 1) { throw 'Expected exactly one Windows ZIP' }
+          gh release create $env:GITHUB_REF_NAME $archive.FullName --verify-tag --title "MagmPaper $env:GITHUB_REF_NAME" --notes-file RELEASE_NOTES.md
+          if ($LASTEXITCODE -ne 0) { throw 'Release publication failed' }
