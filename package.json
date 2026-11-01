@@ -1,6 +1,6 @@
 {
   "name": "magmpaper-engine",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Minimal GLSL live wallpapers for Windows 11",
   "author": "MagmPaperEngine",
   "license": "MIT",
@@ -12,7 +12,8 @@
     "test:windows": "electron test/electron-windows.cjs",
     "dist:zip": "electron-builder --win zip --x64",
     "dist": "electron-builder --win nsis --x64",
-    "pack": "electron-builder --dir"
+    "pack": "electron-builder --dir",
+    "dist:release": "electron-builder --win nsis zip --x64"
   },
   "dependencies": {
     "koffi": "3.3.6"
@@ -33,13 +34,30 @@
       "node_modules/koffi/**/*"
     ],
     "win": {
-      "target": "nsis",
-      "signAndEditExecutable": false
+      "target": [
+        "nsis",
+        "zip"
+      ],
+      "signAndEditExecutable": true,
+      "icon": "build/icon.ico"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true
+      "createDesktopShortcut": true,
+      "perMachine": false,
+      "allowElevation": false,
+      "createStartMenuShortcut": true,
+      "shortcutName": "MagmPaper",
+      "uninstallDisplayName": "MagmPaper",
+      "deleteAppDataOnUninstall": false,
+      "runAfterFinish": true,
+      "installerLanguages": [
+        "ru_RU",
+        "en_US"
+      ],
+      "include": "build/installer.nsh",
+      "artifactName": "MagmPaper-Setup-${version}.${ext}"
     }
   }
 }

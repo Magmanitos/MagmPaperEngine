@@ -7,6 +7,9 @@ const { createCursorController } = require('./cursor');
 const { createPlaybackController } = require('./playback');
 const { isDesktopCovered } = require('./coverage');
 const { createStartup, restoreWithRetry, STARTUP_ID } = require('./startup');
+const { userDataDirectory, migrateLegacyLibrary } = require('./user-data');
+app.setPath('userData', userDataDirectory(app.getPath('appData')));
+const iconPath = path.join(__dirname, 'assets/icon.png');
 const autoStarted = process.argv.includes('--autostart');
 const startup = createStartup(app);
 let library, manager, wallpaper, tray, health, quitting = false;
@@ -31,7 +34,7 @@ function secure(window) {
 function openManager() {
   if (manager && !manager.isDestroyed()) { manager.show(); manager.focus(); return; }
   manager = new BrowserWindow({ width: 1160, height: 780, minWidth: 880, minHeight: 620,
-    title: 'MagmPaper', backgroundColor: '#101115', autoHideMenuBar: true,
+    title: 'MagmPaper', icon: iconPath, backgroundColor: '#101115', autoHideMenuBar: true,
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
   secure(manager);
   manager.webContents.on('did-finish-load', () => { if (lastStatus) notify(lastStatus); });
@@ -129,7 +132,7 @@ else {
   app.whenReady().then(async () => {
     if (process.platform === 'win32') app.setAppUserModelId(STARTUP_ID);
     try {
-      const directory = app.getPath('userData');
+      const directory = migrateLegacyLibrary(app.getPath('appData'));
       const firstRun = !fs.existsSync(path.join(directory, 'wallpapers.json'));
       library = new Store(directory);
       if (firstRun) library.save({ name: 'Северное сияние', code: require('./example') });
@@ -170,13 +173,7 @@ else {
         destroyWallpaper(); notify(String(error));
       }
     });
-    const pixels = Buffer.alloc(32 * 32 * 4);
-    for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
-      const i = (y * 32 + x) * 4;
-      pixels[i] = 225; pixels[i + 1] = 130; pixels[i + 2] = 125;
-      pixels[i + 3] = x > 3 && x < 28 && y > 3 && y < 28 ? 255 : 0;
-    }
-    tray = new Tray(nativeImage.createFromBitmap(pixels, { width: 32, height: 32 }));
+    tray = new Tray(nativeImage.createFromPath(iconPath).resize({ width: 32, height: 32 }));
     tray.setToolTip('MagmPaper — живые обои');
     tray.setContextMenu(Menu.buildFromTemplate([
       { label: 'Открыть MagmPaper', click: openManager },

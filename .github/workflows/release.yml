@@ -26,8 +26,11 @@ jobs:
         run: npm test
       - name: Test Electron window and Windows autostart
         run: npm run test:windows
-      - name: Build Windows ZIP
-        run: npm run dist:zip -- --publish never
+      - name: Build Windows installer and ZIP
+        run: npm run dist:release -- --publish never
+      - name: Test installation, upgrade and uninstall
+        shell: pwsh
+        run: ./test/installer.ps1
       - name: Publish release
         shell: pwsh
         env:
@@ -35,6 +38,8 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           $archive = Get-ChildItem dist/*-win.zip
+          $installer = Get-ChildItem dist/MagmPaper-Setup-*.exe
           if ($archive.Count -ne 1) { throw 'Expected exactly one Windows ZIP' }
-          gh release create $env:GITHUB_REF_NAME $archive.FullName --verify-tag --title "MagmPaper $env:GITHUB_REF_NAME" --notes-file RELEASE_NOTES.md
+          if ($installer.Count -ne 1) { throw 'Expected exactly one Windows installer' }
+          gh release create $env:GITHUB_REF_NAME $installer.FullName $archive.FullName --verify-tag --title "MagmPaper $env:GITHUB_REF_NAME" --notes-file RELEASE_NOTES.md
           if ($LASTEXITCODE -ne 0) { throw 'Release publication failed' }

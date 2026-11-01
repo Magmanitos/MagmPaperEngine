@@ -8,7 +8,7 @@ permissions:
 jobs:
   test:
     runs-on: windows-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -20,3 +20,8 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run test:windows
+      - name: Build Windows installer
+        run: npm run dist -- --publish never
+      - name: Test installation, upgrade and uninstall
+        shell: pwsh
+        run: ./test/installer.ps1
