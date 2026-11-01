@@ -19,7 +19,23 @@ test('save, edit, activate, reload, delete active wallpaper', t => {
   assert.equal(reloaded.list().activeId, first.id);
   assert.match(reloaded.get(first.id).code, /gl_FragColor/);
   reloaded.remove(first.id);
-  assert.deepEqual(new Store(dir).list(), { version: 1, items: [], activeId: null });
+  assert.deepEqual(new Store(dir).list(), { version: 1, items: [], activeId: null, settings: { mouseEnabled: true } });
+});
+test('old libraries gain a default setting; disabling persists across edits and restart', t => {
+  const { dir, store } = setup(t);
+  const item = store.save({ name: 'x', code: 'x' });
+  const old = store.list(); delete old.settings;
+  fs.writeFileSync(store.file, JSON.stringify(old));
+  const migrated = new Store(dir);
+  assert.equal(migrated.list().settings.mouseEnabled, true);
+  migrated.setMouseEnabled(false);
+  migrated.activate(item.id);
+  migrated.save({ ...item, name: 'updated' });
+  const restored = new Store(dir);
+  assert.equal(restored.list().settings.mouseEnabled, false);
+  assert.equal(restored.list().activeId, item.id);
+  assert.throws(() => restored.setMouseEnabled('false'));
+  assert.equal(restored.list().settings.mouseEnabled, false);
 });
 test('validation and unknown ids cannot alter saved library', t => {
   const { store } = setup(t);

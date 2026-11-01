@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { normalizeCursor, startCursorTracking } = require('../src/cursor');
+const { normalizeCursor, startCursorTracking, createCursorController } = require('../src/cursor');
 
 test('cursor coordinates match GLSL origin, monitor offset and DPI scaling', () => {
   const bounds = { x: -1280, y: -100, width: 1280, height: 720 }; // 1920x1080 at 150%, left monitor
@@ -9,6 +9,21 @@ test('cursor coordinates match GLSL origin, monitor offset and DPI scaling', () 
   assert.deepEqual(normalizeCursor({ x: -640, y: 260 }, bounds), [0.5, 0.5]);
   assert.deepEqual(normalizeCursor({ x: -960, y: 440 }, bounds), [0.25, 0.25]);
   assert.deepEqual(normalizeCursor({ x: 1000, y: -300 }, bounds), [1, 1]);
+});
+test('live checkbox stops sampling immediately and resumes without duplicate timers', t => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  let reads = 0;
+  const messages = [];
+  const window = { isDestroyed: () => false, webContents: { isDestroyed: () => false, send: (...args) => messages.push(args) } };
+  const controller = createCursorController(window, { getCursorScreenPoint: () => { reads++; return { x: 25, y: 75 }; } }, { x: 0, y: 0, width: 100, height: 100 });
+  controller.setEnabled(false); t.mock.timers.tick(100); assert.equal(reads, 0);
+  controller.setEnabled(true); controller.setEnabled(true);
+  assert.equal(reads, 1);
+  t.mock.timers.tick(16); assert.equal(reads, 3, '125 Hz polling with one active timer');
+  controller.setEnabled(false); t.mock.timers.tick(100); assert.equal(reads, 3);
+  assert.deepEqual(messages.filter(m => m[0] === 'wallpaper:mouse-enabled').map(m => m[1]), [false, true, false]);
+  controller.setEnabled(true); assert.equal(reads, 4);
+  controller.stop(); t.mock.timers.tick(100); assert.equal(reads, 4);
 });
 test('cursor tracking sends initial and changed positions, stops when wallpaper closes', t => {
   t.mock.timers.enable({ apis: ['setInterval'] });

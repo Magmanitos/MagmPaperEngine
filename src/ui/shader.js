@@ -1,13 +1,15 @@
 // GLSL Sandbox fragment shader contract: time, resolution, mouse, backbuffer.
 // Shared by preview and desktop so both compile and render the same program.
+import { FrameClock, MouseMotion } from './motion.mjs';
 export class ShaderPlayer {
-  constructor(canvas, onError = () => {}) {
+  constructor(canvas, onError = () => {}, { smoothMouse = false } = {}) {
     this.canvas = canvas;
     this.onError = onError;
     this.gl = canvas.getContext('webgl', { alpha: false, antialias: false, preserveDrawingBuffer: false });
     if (!this.gl) throw new Error('WebGL недоступен. Обновите драйвер видеокарты.');
     this.gl.getExtension('OES_standard_derivatives');
-    this.mouse = [0.5, 0.5];
+    this.maxTextureSize = Math.min(3840, this.gl.getParameter(this.gl.MAX_TEXTURE_SIZE));
+    this.motion = new MouseMotion(smoothMouse ? 20 : 0);
     this.frame = 0;
     this.paused = false;
     this.textures = []; this.buffers = [];
@@ -21,9 +23,9 @@ export class ShaderPlayer {
     });
   }
   setMouse(x, y) {
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-    this.mouse = [Math.max(0, Math.min(1, x)), Math.max(0, Math.min(1, y))];
+    this.motion.setTarget(x, y);
   }
+  setMouseEnabled(enabled) { this.motion.setEnabled(enabled); }
   compile(type, source) {
     const gl = this.gl, shader = gl.createShader(type);
     gl.shaderSource(shader, source); gl.compileShader(shader);
@@ -50,13 +52,14 @@ export class ShaderPlayer {
     const program = this.program(source); // Keep the previous program if compilation fails.
     this.dispose();
     this.shader = program;
-    this.copy = this.program('precision mediump float; uniform sampler2D image; uniform vec2 resolution; void main(){gl_FragColor=texture2D(image,gl_FragCoord.xy/resolution);}');
+    this.usesBackbuffer = gl.getUniformLocation(program, 'backbuffer') !== null;
+    this.copy = this.usesBackbuffer ? this.program('precision mediump float; uniform sampler2D image; uniform vec2 resolution; void main(){gl_FragColor=texture2D(image,gl_FragCoord.xy/resolution);}') : null;
     this.quad = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, this.quad);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]), gl.STATIC_DRAW);
     this.uniforms = Object.fromEntries(['time', 'resolution', 'mouse', 'backbuffer'].map(name => [name, gl.getUniformLocation(program, name)]));
-    this.copyResolution = gl.getUniformLocation(this.copy, 'resolution');
-    this.copyImage = gl.getUniformLocation(this.copy, 'image');
-    this.started = performance.now(); this.elapsed = 0; this.last = 0; this.read = 0;
+    this.copyResolution = this.copy ? gl.getUniformLocation(this.copy, 'resolution') : null;
+    this.copyImage = this.copy ? gl.getUniformLocation(this.copy, 'image') : null;
+    this.started = performance.now(); this.clock = new FrameClock(); this.read = 0;
     this.width = 0; this.height = 0;
     this.tick = this.tick.bind(this);
     this.frame = requestAnimationFrame(this.tick);
@@ -64,7 +67,7 @@ export class ShaderPlayer {
   resize() {
     const gl = this.gl;
     const ratio = Math.min(window.devicePixelRatio || 1, 2);
-    const max = Math.min(3840, gl.getParameter(gl.MAX_TEXTURE_SIZE));
+    const max = this.maxTextureSize;
     const w = Math.max(1, Math.min(max, Math.round(this.canvas.clientWidth * ratio)));
     const h = Math.max(1, Math.min(max, Math.round(this.canvas.clientHeight * ratio)));
     if (w === this.width && h === this.height) return;
@@ -72,6 +75,7 @@ export class ShaderPlayer {
     for (const texture of this.textures) gl.deleteTexture(texture);
     for (const buffer of this.buffers) gl.deleteFramebuffer(buffer);
     this.textures = []; this.buffers = [];
+    if (!this.usesBackbuffer) return;
     for (let i = 0; i < 2; i++) {
       const texture = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, texture);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
@@ -95,20 +99,24 @@ export class ShaderPlayer {
   }
   tick(now) {
     this.frame = requestAnimationFrame(this.tick);
-    if (this.paused || now - this.last < 1000 / 30) return;
-    this.last = now;
+    if (this.paused) return;
+    const elapsed = this.clock.advance(now);
+    if (elapsed === null) return;
     try {
       this.resize();
       const gl = this.gl, write = 1 - this.read;
       gl.viewport(0, 0, this.width, this.height);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, this.buffers[write]);
-      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.textures[this.read]);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.usesBackbuffer ? this.buffers[write] : null);
+      if (this.usesBackbuffer) {
+        gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.textures[this.read]);
+      }
       gl.useProgram(this.shader);
       gl.uniform1f(this.uniforms.time, (now - this.started) / 1000);
       gl.uniform2f(this.uniforms.resolution, this.width, this.height);
-      gl.uniform2f(this.uniforms.mouse, ...this.mouse);
+      gl.uniform2f(this.uniforms.mouse, ...this.motion.advance(elapsed));
       gl.uniform1i(this.uniforms.backbuffer, 0);
       this.draw(this.shader);
+      if (!this.usesBackbuffer) return; // Avoid a full-screen copy pass for ordinary shaders.
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       gl.bindTexture(gl.TEXTURE_2D, this.textures[write]);
       gl.useProgram(this.copy); gl.uniform2f(this.copyResolution, this.width, this.height); gl.uniform1i(this.copyImage, 0);

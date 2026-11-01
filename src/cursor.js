@@ -18,7 +18,21 @@ function startCursorTracking(window, screen, bounds) {
   };
   // The wallpaper stays click-through: no mouse hooks or input interception.
   update();
-  timer = setInterval(update, 1000 / 30);
+  timer = setInterval(update, 8); // 125 Hz samples, only changed positions cross IPC.
   return stop;
 }
-module.exports = { normalizeCursor, startCursorTracking };
+function createCursorController(window, screen, bounds) {
+  let stopPolling, current;
+  return {
+    setEnabled(enabled) {
+      if (enabled === current) return;
+      stopPolling?.(); stopPolling = null;
+      current = enabled;
+      if (window.isDestroyed() || window.webContents.isDestroyed()) return;
+      window.webContents.send('wallpaper:mouse-enabled', enabled);
+      if (enabled) stopPolling = startCursorTracking(window, screen, bounds);
+    },
+    stop() { stopPolling?.(); stopPolling = null; current = undefined; }
+  };
+}
+module.exports = { normalizeCursor, startCursorTracking, createCursorController };

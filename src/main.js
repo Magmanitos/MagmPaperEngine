@@ -3,13 +3,13 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { Store } = require('./store');
 const { attach } = require('./desktop');
-const { startCursorTracking } = require('./cursor');
+const { createCursorController } = require('./cursor');
 const { createStartup, restoreWithRetry, STARTUP_ID } = require('./startup');
 const autoStarted = process.argv.includes('--autostart');
 const startup = createStartup(app);
 let library, manager, wallpaper, tray, health, quitting = false;
 let restoreGeneration = 0, lastStatus = '';
-let stopCursorTracking;
+let cursorController;
 const pending = new Map();
 let queue = Promise.resolve();
 const serial = task => { const next = queue.then(task); queue = next.catch(() => {}); return next; };
@@ -32,8 +32,8 @@ function openManager() {
   manager.on('close', event => { if (!quitting && tray) { event.preventDefault(); manager.hide(); } });
 }
 function destroyWallpaper() {
-  stopCursorTracking?.();
-  stopCursorTracking = null;
+  cursorController?.stop();
+  cursorController = null;
   clearInterval(health);
   health = null;
   if (wallpaper && !wallpaper.isDestroyed()) wallpaper.destroy();
@@ -78,7 +78,8 @@ async function apply(id) {
     destroyWallpaper();
     wallpaper = next;
     next.showInactive();
-    stopCursorTracking = startCursorTracking(next, screen, display.bounds);
+    cursorController = createCursorController(next, screen, display.bounds);
+    cursorController.setEnabled(library.data.settings.mouseEnabled);
     health = setInterval(() => {
       if (!wallpaper || wallpaper.isDestroyed()) return;
       try {
@@ -120,6 +121,11 @@ else {
     handle('library:save', item => library.save(item));
     handle('startup:get', () => startup.get());
     handle('startup:set', enabled => startup.set(enabled));
+    handle('mouse:set', enabled => {
+      library.setMouseEnabled(enabled);
+      cursorController?.setEnabled(enabled);
+      return enabled;
+    });
     handle('library:remove', id => {
       const active = library.data.activeId === id;
       library.remove(id);

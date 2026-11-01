@@ -13,6 +13,8 @@
     <div class="section-label">МОЯ КОЛЛЕКЦИЯ <span id="count">0</span></div>
     <nav id="list" aria-label="Сохранённые обои"></nav>
     <div class="sidebar-bottom">
+      <label class="startup-toggle"><input type="checkbox" id="mouse-enabled" disabled><span>Реакция на мышь</span></label>
+      <p class="setting-hint">На рабочем столе. Настройка сохраняется.</p>
       <label class="startup-toggle"><input type="checkbox" id="startup" disabled><span>Запускать с Windows</span></label>
       <p id="startup-hint">В трее, с последними установленными обоями.</p>
       <span class="dot"></span> Локальная библиотека<p>Закрытие окна сворачивает приложение в трей.</p>
@@ -20,7 +22,7 @@
   </aside>
   <main>
     <header><div><div class="eyebrow">ВАШ РАБОЧИЙ СТОЛ, В ДВИЖЕНИИ</div><h1 id="title">Выберите обои</h1></div><button id="stop" class="quiet">Остановить обои</button></header>
-    <div class="preview"><canvas id="canvas" aria-label="Предпросмотр шейдера"></canvas><div class="preview-label">ПРЕДПРОСМОТР <span>WebGL · 30 FPS</span></div><div id="empty">Добавьте свой первый шейдер</div></div>
+    <div class="preview"><canvas id="canvas" aria-label="Предпросмотр шейдера"></canvas><div class="preview-label">ПРЕДПРОСМОТР <span>WebGL · до 60 FPS</span></div><div id="empty">Добавьте свой первый шейдер</div></div>
     <div class="toolbar"><span id="selection-info">GLSL Sandbox</span><div><button id="edit" class="quiet">Редактировать</button><button id="delete" class="danger">Удалить</button><button id="apply" class="primary">На рабочий стол ↗</button></div></div>
     <section id="editor" hidden>
       <div class="editor-heading"><h2 id="editor-title">Новые обои</h2><button id="cancel" class="quiet">Отмена</button></div>

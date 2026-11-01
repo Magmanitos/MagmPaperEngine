@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const { fitToHost } = require('../src/desktop');
 const { createStartup } = require('../src/startup');
-const { startCursorTracking, normalizeCursor } = require('../src/cursor');
+const { createCursorController, normalizeCursor } = require('../src/cursor');
 app.whenReady().then(async () => {
   let child, parent, destroy, startup, stopCursor, restoreCursor;
   try {
@@ -48,9 +48,11 @@ app.whenReady().then(async () => {
     assert.ok(Number(getStyle(hwnd, -20)) & 0x20, 'wallpaper remains click-through');
     const oldCursor = [0, 0]; assert.ok(getCursor(oldCursor));
     restoreCursor = () => setCursor(...oldCursor);
-    await child.webContents.executeJavaScript('window.wallpaper.onMouse(value => { window.cursorReceived = value; }); true');
+    await child.webContents.executeJavaScript('window.mouseMessages = 0; window.wallpaper.onMouse(value => { window.cursorReceived = value; window.mouseMessages++; }); window.wallpaper.onMouseEnabled(value => { window.mouseEnabled = value; }); true');
     const bounds = screen.getPrimaryDisplay().bounds;
-    stopCursor = startCursorTracking(child, screen, bounds);
+    const controller = createCursorController(child, screen, bounds);
+    stopCursor = () => controller.stop();
+    controller.setEnabled(true);
     const positions = [];
     for (const fraction of [0.25, 0.75]) {
       const dip = { x: Math.round(bounds.x + bounds.width * fraction), y: Math.round(bounds.y + bounds.height * fraction) };
@@ -67,6 +69,18 @@ app.whenReady().then(async () => {
       positions.push(received);
     }
     assert.ok(positions[1][0] - positions[0][0] > 0.4 && positions[0][1] - positions[1][1] > 0.4);
+    controller.setEnabled(false);
+    await new Promise(resolve => setTimeout(resolve, 100));
+    const beforeDisable = await child.webContents.executeJavaScript('({enabled:window.mouseEnabled,count:window.mouseMessages})');
+    assert.equal(beforeDisable.enabled, false);
+    const target = screen.dipToScreenPoint({ x: Math.round(bounds.x + bounds.width * 0.5), y: Math.round(bounds.y + bounds.height * 0.5) });
+    assert.ok(setCursor(target.x,target.y));
+    await new Promise(resolve => setTimeout(resolve, 100));
+    assert.equal(await child.webContents.executeJavaScript('window.mouseMessages'), beforeDisable.count);
+    controller.setEnabled(true);
+    await new Promise(resolve => setTimeout(resolve, 100));
+    assert.equal(await child.webContents.executeJavaScript('window.mouseEnabled'), true);
+    assert.ok(await child.webContents.executeJavaScript('window.mouseMessages') > beforeDisable.count);
     console.log('PASS: Electron viewport, Windows startup, actual OS cursor through IPC while click-through is enabled.');
   } catch (error) {
     console.error(error); process.exitCode = 1;

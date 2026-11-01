@@ -10,6 +10,7 @@ function buttons() {
   $('apply').disabled ||= data.platform !== 'win32';
   $('list').inert = busy;
   $('startup').disabled = busy || !startupState.supported;
+  $('mouse-enabled').disabled = busy || data.platform !== 'win32';
 }
 async function action(task) {
   if (busy) return;
@@ -46,6 +47,7 @@ function select(item) {
 }
 async function refresh(id = selected?.id) {
   data = await window.magm.list();
+  $('mouse-enabled').checked = data.settings.mouseEnabled;
   select(data.items.find(i => i.id === id) || data.items[0] || null);
 }
 function leaveEditor() {
@@ -66,6 +68,12 @@ function preview() {
   player.load($('code').value); $('empty').hidden = true;
 }
 $('name').oninput = $('code').oninput = () => { dirty = true; };
+$('mouse-enabled').onchange = () => action(async () => {
+  try {
+    data.settings.mouseEnabled = await window.magm.setMouseEnabled($('mouse-enabled').checked);
+    status(data.settings.mouseEnabled ? 'Реакция обоев на мышь включена.' : 'Реакция обоев на мышь выключена.');
+  } finally { $('mouse-enabled').checked = data.settings.mouseEnabled; }
+});
 $('startup').onchange = () => action(async () => {
   try {
     startupState = await window.magm.setStartup($('startup').checked);

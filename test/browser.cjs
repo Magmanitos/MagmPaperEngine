@@ -10,12 +10,13 @@ const os = require('node:os');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'magmpaper-ui-'));
   const store = new Store(dir);
   let startupEnabled = false, startupWriteFails = false;
+  let mouseWriteFails = false;
   store.save({ name: 'Северное сияние', code: require('../src/example') });
   const root = path.resolve(__dirname, '../src/ui');
   const server = http.createServer((req, res) => {
     const file = path.resolve(root, '.' + (req.url === '/' ? '/index.html' : req.url));
     if (!file.startsWith(root + path.sep) || !fs.existsSync(file)) { res.writeHead(404); res.end(); return; }
-    res.setHeader('Content-Type', file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : 'text/html');
+    res.setHeader('Content-Type', /\.m?js$/.test(file) ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : 'text/html');
     res.end(fs.readFileSync(file));
   });
   let browser;
@@ -27,6 +28,10 @@ const os = require('node:os');
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.exposeFunction('testBridge', (method, arg) => {
+      if (method === 'setMouseEnabled') {
+        if (mouseWriteFails) throw new Error('Mouse setting write failed');
+        return store.setMouseEnabled(arg);
+      }
       if (method === 'startup') return { supported: true, enabled: startupEnabled };
       if (method === 'setStartup') {
         if (startupWriteFails) throw new Error('Startup write failed');
@@ -38,9 +43,21 @@ const os = require('node:os');
       if (method === 'apply') return store.activate(arg);
       if (method === 'stop') return store.activate(null);
     });
-    await page.addInitScript(() => { window.magm = Object.fromEntries(['list','save','remove','apply','stop','startup','setStartup'].map(method => [method, arg => window.testBridge(method, arg)])); window.magm.onStatus = () => {}; });
+    await page.addInitScript(() => { window.magm = Object.fromEntries(['list','save','remove','apply','stop','startup','setStartup','setMouseEnabled'].map(method => [method, arg => window.testBridge(method, arg)])); window.magm.onStatus = () => {}; });
     await page.goto(`http://127.0.0.1:${server.address().port}`);
     await page.waitForFunction(() => document.getElementById('status').textContent.includes('Предпросмотр готов'));
+    await page.uncheck('#mouse-enabled');
+    await page.waitForFunction(() => document.getElementById('status').textContent.includes('Реакция обоев на мышь выключена'));
+    assert.equal(new Store(dir).list().settings.mouseEnabled, false);
+    await page.reload();
+    await page.waitForFunction(() => !document.getElementById('mouse-enabled').disabled);
+    assert.equal(await page.isChecked('#mouse-enabled'), false);
+    await page.check('#mouse-enabled');
+    await page.waitForFunction(() => document.getElementById('status').textContent.includes('Реакция обоев на мышь включена'));
+    mouseWriteFails = true; await page.click('#mouse-enabled');
+    await page.waitForSelector('#status.error');
+    assert.equal(await page.isChecked('#mouse-enabled'), true);
+    mouseWriteFails = false;
     await page.check('#startup');
     await page.waitForFunction(() => document.getElementById('status').textContent.includes('Автозапуск включён'));
     assert.equal(startupEnabled, true);
@@ -78,10 +95,29 @@ const os = require('node:os');
         const pixels = new Uint8Array(4); player.gl.readPixels(32,32,1,1,player.gl.RGBA,player.gl.UNSIGNED_BYTE,pixels);
         colors.push(Array.from(pixels));
       }
-      player.dispose(); canvas.remove(); return { red, rejected, colors };
+      const directBuffers = player.buffers.length;
+      player.dispose();
+      const smooth = new ShaderPlayer(canvas, () => {}, { smoothMouse: true });
+      smooth.load('precision mediump float; uniform vec2 mouse; void main(){gl_FragColor=vec4(mouse,0.0,1.0);}');
+      cancelAnimationFrame(smooth.frame);
+      smooth.setMouse(1, 0);
+      const now = performance.now(), transition = [];
+      for (let i = 0; i < 5; i++) {
+        smooth.tick(now + i * 17); cancelAnimationFrame(smooth.frame);
+        const pixels = new Uint8Array(4); smooth.gl.readPixels(32,32,1,1,smooth.gl.RGBA,smooth.gl.UNSIGNED_BYTE,pixels);
+        transition.push(pixels[0]);
+      }
+      smooth.setMouseEnabled(false); smooth.setMouse(0,1);
+      smooth.tick(now + 100); cancelAnimationFrame(smooth.frame);
+      const disabled = new Uint8Array(4); smooth.gl.readPixels(32,32,1,1,smooth.gl.RGBA,smooth.gl.UNSIGNED_BYTE,disabled);
+      smooth.dispose(); canvas.remove(); return { red, rejected, colors, transition, disabled: Array.from(disabled), directBuffers };
     });
     assert.ok(rendered.red[0] > 20 && rendered.red[1] > rendered.red[0] && rendered.red[2] > rendered.red[1], JSON.stringify(rendered));
     assert.equal(rendered.rejected, true);
+    assert.equal(rendered.directBuffers, 0, 'ordinary shaders avoid backbuffer allocations and copying');
+    assert.ok(rendered.transition[0] > 128 && rendered.transition[0] < 250);
+    assert.ok(rendered.transition[4] > rendered.transition[0] && rendered.transition[4] >= 250);
+    assert.ok(Math.abs(rendered.disabled[0] - 128) <= 1 && Math.abs(rendered.disabled[1] - 128) <= 1);
     for (const [index, expected] of [[0,[64,191]], [1,[204,51]]]) {
       assert.ok(Math.abs(rendered.colors[index][0] - expected[0]) <= 1);
       assert.ok(Math.abs(rendered.colors[index][1] - expected[1]) <= 1);
