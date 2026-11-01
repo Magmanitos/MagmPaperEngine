@@ -27,7 +27,7 @@ jobs:
       - name: Test Electron window and Windows autostart
         run: npm run test:windows
       - name: Build Windows installer and ZIP
-        run: npm run dist:release -- --publish never
+        run: node scripts/build-windows.cjs nsis zip
       - name: Test installation, upgrade and uninstall
         shell: pwsh
         run: ./test/installer.ps1

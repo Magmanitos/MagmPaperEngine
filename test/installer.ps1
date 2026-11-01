@@ -73,6 +73,10 @@ try {
   Assert (-not (Get-ItemProperty -Path $runKey -Name $startupName -ErrorAction SilentlyContinue)) 'Uninstall left a stale autostart entry'
   Assert (@(Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' | Where-Object { $_.DisplayName -eq 'MagmPaper' }).Count -eq 0) 'Uninstall left an installed-apps entry'
   Write-Output 'PASS: install, native dependencies, metadata, both shortcuts, packaged launch, library migration, reinstall, autostart relocation and uninstall with data preserved.'
+} catch {
+  $message = ($_ | Out-String).Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+  Write-Output "::error::$message"
+  throw
 } finally {
   Stop-App
   Remove-ItemProperty -Path $runKey -Name $startupName -ErrorAction SilentlyContinue
