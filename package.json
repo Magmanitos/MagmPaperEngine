@@ -1,6 +1,6 @@
 {
   "name": "magmpaper-engine",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Minimal GLSL live wallpapers for Windows 11",
   "author": "MagmPaperEngine",
   "license": "MIT",
@@ -9,6 +9,7 @@
     "start": "electron .",
     "test": "node --test --test-isolation=none test/*.test.js",
     "test:ui": "node test/browser.cjs",
+    "test:windows": "electron test/electron-windows.cjs",
     "dist:zip": "electron-builder --win zip --x64",
     "dist": "electron-builder --win nsis --x64",
     "pack": "electron-builder --dir"

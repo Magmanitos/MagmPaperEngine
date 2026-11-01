@@ -9,6 +9,7 @@ const os = require('node:os');
 (async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'magmpaper-ui-'));
   const store = new Store(dir);
+  let startupEnabled = false, startupWriteFails = false;
   store.save({ name: 'Северное сияние', code: require('../src/example') });
   const root = path.resolve(__dirname, '../src/ui');
   const server = http.createServer((req, res) => {
@@ -26,15 +27,33 @@ const os = require('node:os');
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.exposeFunction('testBridge', (method, arg) => {
+      if (method === 'startup') return { supported: true, enabled: startupEnabled };
+      if (method === 'setStartup') {
+        if (startupWriteFails) throw new Error('Startup write failed');
+        startupEnabled = arg; return { supported: true, enabled: startupEnabled };
+      }
       if (method === 'list') return { ...store.list(), runningId: store.data.activeId, platform: 'win32' };
       if (method === 'save') return store.save(arg);
       if (method === 'remove') return store.remove(arg);
       if (method === 'apply') return store.activate(arg);
       if (method === 'stop') return store.activate(null);
     });
-    await page.addInitScript(() => { window.magm = Object.fromEntries(['list','save','remove','apply','stop'].map(method => [method, arg => window.testBridge(method, arg)])); window.magm.onStatus = () => {}; });
+    await page.addInitScript(() => { window.magm = Object.fromEntries(['list','save','remove','apply','stop','startup','setStartup'].map(method => [method, arg => window.testBridge(method, arg)])); window.magm.onStatus = () => {}; });
     await page.goto(`http://127.0.0.1:${server.address().port}`);
     await page.waitForFunction(() => document.getElementById('status').textContent.includes('Предпросмотр готов'));
+    await page.check('#startup');
+    await page.waitForFunction(() => document.getElementById('status').textContent.includes('Автозапуск включён'));
+    assert.equal(startupEnabled, true);
+    await page.reload();
+    await page.waitForFunction(() => document.getElementById('startup').checked && !document.getElementById('startup').disabled);
+    startupWriteFails = true;
+    await page.click('#startup');
+    await page.waitForSelector('#status.error');
+    assert.equal(await page.isChecked('#startup'), true, 'failed writes restore the checkbox');
+    startupWriteFails = false;
+    await page.uncheck('#startup');
+    await page.waitForFunction(() => document.getElementById('status').textContent.includes('Автозапуск выключен'));
+    assert.equal(startupEnabled, false);
     // Check actual color output and previous-frame feedback, not merely successful compilation.
     const rendered = await page.evaluate(async () => {
       const { ShaderPlayer } = await import('./shader.js');

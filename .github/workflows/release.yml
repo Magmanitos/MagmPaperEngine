@@ -24,6 +24,8 @@ jobs:
         run: npm ci
       - name: Test library
         run: npm test
+      - name: Test Electron window and Windows autostart
+        run: npm run test:windows
       - name: Build Windows ZIP
         run: npm run dist:zip -- --publish never
       - name: Publish release

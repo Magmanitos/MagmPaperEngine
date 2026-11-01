@@ -12,7 +12,11 @@
     <button id="add" class="primary">＋ Добавить обои</button>
     <div class="section-label">МОЯ КОЛЛЕКЦИЯ <span id="count">0</span></div>
     <nav id="list" aria-label="Сохранённые обои"></nav>
-    <div class="sidebar-bottom"><span class="dot"></span> Локальная библиотека<p>Закрытие окна сворачивает приложение в трей.</p></div>
+    <div class="sidebar-bottom">
+      <label class="startup-toggle"><input type="checkbox" id="startup" disabled><span>Запускать с Windows</span></label>
+      <p id="startup-hint">В трее, с последними установленными обоями.</p>
+      <span class="dot"></span> Локальная библиотека<p>Закрытие окна сворачивает приложение в трей.</p>
+    </div>
   </aside>
   <main>
     <header><div><div class="eyebrow">ВАШ РАБОЧИЙ СТОЛ, В ДВИЖЕНИИ</div><h1 id="title">Выберите обои</h1></div><button id="stop" class="quiet">Остановить обои</button></header>

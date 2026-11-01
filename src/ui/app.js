@@ -1,6 +1,7 @@
 import { ShaderPlayer } from './shader.js';
 const $ = id => document.getElementById(id);
 let data = { items: [] }, selected = null, editing = undefined, player, busy = false, dirty = false;
+let startupState = { supported: false, enabled: false };
 function status(text, error = false) { $('status').textContent = text; $('status').classList.toggle('error', error); }
 try { player = new ShaderPlayer($('canvas'), error => status(error, true)); } catch (error) { status(error.message, true); }
 function buttons() {
@@ -8,6 +9,7 @@ function buttons() {
   for (const id of ['add', 'save', 'preview', 'cancel', 'stop']) $(id).disabled = busy;
   $('apply').disabled ||= data.platform !== 'win32';
   $('list').inert = busy;
+  $('startup').disabled = busy || !startupState.supported;
 }
 async function action(task) {
   if (busy) return;
@@ -64,6 +66,12 @@ function preview() {
   player.load($('code').value); $('empty').hidden = true;
 }
 $('name').oninput = $('code').oninput = () => { dirty = true; };
+$('startup').onchange = () => action(async () => {
+  try {
+    startupState = await window.magm.setStartup($('startup').checked);
+    status(startupState.enabled ? 'Автозапуск включён. При входе в Windows восстановятся последние установленные обои.' : 'Автозапуск выключен.');
+  } finally { $('startup').checked = startupState.enabled; }
+});
 $('add').onclick = () => openEditor(null);
 $('edit').onclick = () => openEditor(selected);
 $('cancel').onclick = () => { if (leaveEditor()) select(selected); };
@@ -91,4 +99,9 @@ window.magm.onStatus(message => {
 });
 document.addEventListener('visibilitychange', () => { if (player) player.paused = document.hidden; });
 window.addEventListener('beforeunload', () => player?.dispose());
-await action(() => refresh());
+await action(async () => {
+  await refresh();
+  startupState = await window.magm.startup();
+  $('startup').checked = startupState.enabled;
+  if (!startupState.supported) $('startup-hint').textContent = 'Автозапуск доступен только в Windows.';
+});

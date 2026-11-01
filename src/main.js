@@ -3,11 +3,18 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { Store } = require('./store');
 const { attach } = require('./desktop');
+const { createStartup, restoreWithRetry, STARTUP_ID } = require('./startup');
+const autoStarted = process.argv.includes('--autostart');
+const startup = createStartup(app);
 let library, manager, wallpaper, tray, health, quitting = false;
+let restoreGeneration = 0, lastStatus = '';
 const pending = new Map();
 let queue = Promise.resolve();
 const serial = task => { const next = queue.then(task); queue = next.catch(() => {}); return next; };
-function notify(message) { if (manager && !manager.isDestroyed()) manager.webContents.send('status', message); }
+function notify(message) {
+  lastStatus = message;
+  if (manager && !manager.isDestroyed()) manager.webContents.send('status', message);
+}
 function secure(window) {
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-navigate', event => event.preventDefault());
@@ -18,6 +25,7 @@ function openManager() {
     title: 'MagmPaper', backgroundColor: '#101115', autoHideMenuBar: true,
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
   secure(manager);
+  manager.webContents.on('did-finish-load', () => { if (lastStatus) notify(lastStatus); });
   manager.loadFile(path.join(__dirname, 'ui/index.html'));
   manager.on('close', event => { if (!quitting && tray) { event.preventDefault(); manager.hide(); } });
 }
@@ -27,13 +35,25 @@ function destroyWallpaper() {
   if (wallpaper && !wallpaper.isDestroyed()) wallpaper.destroy();
   wallpaper = null;
 }
-async function stop() { library.activate(null); destroyWallpaper(); notify('Обои остановлены.'); }
+async function stop() { restoreGeneration++; library.activate(null); destroyWallpaper(); notify('Обои остановлены.'); }
+async function restoreLastWallpaper() {
+  const id = library.data.activeId, generation = ++restoreGeneration;
+  if (!id || process.platform !== 'win32') return;
+  const shouldContinue = () => !quitting && generation === restoreGeneration && library.data.activeId === id && !wallpaper;
+  try {
+    await restoreWithRetry({ shouldContinue, attempt: () => serial(async () => { if (shouldContinue()) await apply(id); }) });
+  } catch (error) {
+    if (generation !== restoreGeneration || quitting) return;
+    notify(error.message);
+    openManager();
+  }
+}
 async function apply(id) {
   if (process.platform !== 'win32') throw new Error('Установка обоев доступна в Windows 11. Предпросмотр работает и здесь.');
   const item = library.get(id);
   const display = screen.getPrimaryDisplay();
   const next = new BrowserWindow({ ...display.bounds, show: false, frame: false, skipTaskbar: true, focusable: false,
-    backgroundColor: '#000000', resizable: false,
+    backgroundColor: '#000000', resizable: false, thickFrame: false, hasShadow: false,
     webPreferences: { preload: path.join(__dirname, 'wallpaper-preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false } });
   secure(next);
   next.setIgnoreMouseEvents(true);
@@ -79,8 +99,9 @@ function handle(channel, callback) {
 }
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
-  app.on('second-instance', openManager);
+  app.on('second-instance', (_event, argv) => { if (!argv.includes('--autostart')) openManager(); });
   app.whenReady().then(async () => {
+    if (process.platform === 'win32') app.setAppUserModelId(STARTUP_ID);
     try {
       const directory = app.getPath('userData');
       const firstRun = !fs.existsSync(path.join(directory, 'wallpapers.json'));
@@ -92,12 +113,14 @@ else {
     }
     handle('library:list', () => ({ ...library.list(), runningId: wallpaper && !wallpaper.isDestroyed() ? library.data.activeId : null, platform: process.platform }));
     handle('library:save', item => library.save(item));
+    handle('startup:get', () => startup.get());
+    handle('startup:set', enabled => startup.set(enabled));
     handle('library:remove', id => {
       const active = library.data.activeId === id;
       library.remove(id);
       if (active) destroyWallpaper();
     });
-    handle('library:apply', apply);
+    handle('library:apply', id => { restoreGeneration++; return apply(id); });
     handle('library:stop', stop);
     ipcMain.handle('wallpaper:source', event => {
       const entry = pending.get(event.sender.id);
@@ -125,17 +148,15 @@ else {
       { type: 'separator' }, { label: 'Выход', click: () => app.quit() }
     ]));
     tray.on('double-click', openManager);
-    openManager();
+    if (!autoStarted) openManager();
     screen.on('display-metrics-changed', () => {
       if (wallpaper) serial(() => apply(library.data.activeId)).catch(e => notify(e.message));
     });
-    powerMonitor.on('suspend', destroyWallpaper);
+    powerMonitor.on('suspend', () => { restoreGeneration++; destroyWallpaper(); });
     powerMonitor.on('resume', () => {
-      if (library.data.activeId) serial(() => apply(library.data.activeId)).catch(e => notify(e.message));
+      void restoreLastWallpaper();
     });
-    if (library.data.activeId && process.platform === 'win32') {
-      try { await serial(() => apply(library.data.activeId)); } catch (error) { notify(error.message); }
-    }
+    void restoreLastWallpaper();
   }).catch(error => { dialog.showErrorBox('MagmPaper', error.message); app.quit(); });
   app.on('before-quit', () => { quitting = true; destroyWallpaper(); });
   app.on('window-all-closed', () => {});
