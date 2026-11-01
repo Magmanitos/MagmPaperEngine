@@ -69,10 +69,23 @@ const os = require('node:os');
       let rejected = false;
       try { player.load('not valid GLSL'); } catch { rejected = true; }
       player.load('#extension GL_OES_standard_derivatives : enable\nprecision mediump float; void main(){gl_FragColor=vec4(dFdx(gl_FragCoord.x),0.0,0.0,1.0);}');
-      player.dispose(); canvas.remove(); return { red, rejected };
+      player.load('precision mediump float; uniform vec2 mouse; void main(){gl_FragColor=vec4(mouse,0.0,1.0);}');
+      cancelAnimationFrame(player.frame);
+      const colors = [];
+      for (const position of [[0.25,0.75], [0.8,0.2]]) {
+        player.setMouse(...position);
+        player.tick(performance.now() + colors.length * 100 + 100); cancelAnimationFrame(player.frame);
+        const pixels = new Uint8Array(4); player.gl.readPixels(32,32,1,1,player.gl.RGBA,player.gl.UNSIGNED_BYTE,pixels);
+        colors.push(Array.from(pixels));
+      }
+      player.dispose(); canvas.remove(); return { red, rejected, colors };
     });
     assert.ok(rendered.red[0] > 20 && rendered.red[1] > rendered.red[0] && rendered.red[2] > rendered.red[1], JSON.stringify(rendered));
     assert.equal(rendered.rejected, true);
+    for (const [index, expected] of [[0,[64,191]], [1,[204,51]]]) {
+      assert.ok(Math.abs(rendered.colors[index][0] - expected[0]) <= 1);
+      assert.ok(Math.abs(rendered.colors[index][1] - expected[1]) <= 1);
+    }
     await page.click('#add'); await page.fill('#name', 'Мой шейдер');
     await page.fill('#code', 'broken shader'); await page.click('#save');
     await page.waitForSelector('#status.error'); assert.equal(store.list().items.length, 1);

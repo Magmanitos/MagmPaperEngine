@@ -4,8 +4,9 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const { fitToHost } = require('../src/desktop');
 const { createStartup } = require('../src/startup');
+const { startCursorTracking, normalizeCursor } = require('../src/cursor');
 app.whenReady().then(async () => {
-  let child, parent, destroy, startup;
+  let child, parent, destroy, startup, stopCursor, restoreCursor;
   try {
     assert.equal(process.platform, 'win32');
     const id = `com.magmanitos.magmpaper.test.${process.pid}`;
@@ -23,11 +24,15 @@ app.whenReady().then(async () => {
     destroy = user.func('int32_t __stdcall DestroyWindow(void *hwnd)');
     const client = user.func('int32_t __stdcall GetClientRect(void *hwnd, _Out_ int32_t *rect)');
     const origin = user.func('int32_t __stdcall ClientToScreen(void *hwnd, _Inout_ int32_t *point)');
+    const setCursor = user.func('int32_t __stdcall SetCursorPos(int x, int y)');
+    const getCursor = user.func('int32_t __stdcall GetCursorPos(_Out_ int32_t *point)');
+    const getStyle = user.func('intptr_t __stdcall GetWindowLongPtrW(void *hwnd, int index)');
     parent = create(0, 'STATIC', 'MagmPaper isolated host', 0x80000000, 37, 53, 800, 600, null, null, null, null);
     assert.ok(parent);
     child = new BrowserWindow({ ...screen.getPrimaryDisplay().bounds, show: false, frame: false,
       thickFrame: false, hasShadow: false, resizable: false, focusable: false, skipTaskbar: true,
-      webPreferences: { sandbox: true, nodeIntegration: false, contextIsolation: true } });
+      webPreferences: { preload: path.join(__dirname, '../src/wallpaper-preload.js'), sandbox: true, nodeIntegration: false, contextIsolation: true } });
+    child.setIgnoreMouseEvents(true);
     await child.loadURL('data:text/html,<html><body style="margin:0">Window geometry test</body></html>');
     const hwnd = child.getNativeWindowHandle().readBigUInt64LE();
     const monitor = fitToHost(hwnd, parent);
@@ -40,10 +45,34 @@ app.whenReady().then(async () => {
     const viewport = await child.webContents.executeJavaScript('({width:innerWidth,height:innerHeight,scale:devicePixelRatio})');
     assert.equal(Math.round(viewport.width * viewport.scale), rect[2]);
     assert.equal(Math.round(viewport.height * viewport.scale), rect[3]);
-    console.log('PASS: actual Electron viewport covers monitor; Windows login settings enable/disable with spaces.');
+    assert.ok(Number(getStyle(hwnd, -20)) & 0x20, 'wallpaper remains click-through');
+    const oldCursor = [0, 0]; assert.ok(getCursor(oldCursor));
+    restoreCursor = () => setCursor(...oldCursor);
+    await child.webContents.executeJavaScript('window.wallpaper.onMouse(value => { window.cursorReceived = value; })');
+    const bounds = screen.getPrimaryDisplay().bounds;
+    stopCursor = startCursorTracking(child, screen, bounds);
+    const positions = [];
+    for (const fraction of [0.25, 0.75]) {
+      const dip = { x: Math.round(bounds.x + bounds.width * fraction), y: Math.round(bounds.y + bounds.height * fraction) };
+      const pixel = screen.dipToScreenPoint(dip);
+      assert.ok(setCursor(pixel.x, pixel.y));
+      const expected = normalizeCursor(screen.getCursorScreenPoint(), bounds);
+      let received;
+      for (let tries = 0; tries < 50; tries++) {
+        received = await child.webContents.executeJavaScript('window.cursorReceived');
+        if (received && Math.abs(received[0] - expected[0]) < 0.005 && Math.abs(received[1] - expected[1]) < 0.005) break;
+        await new Promise(resolve => setTimeout(resolve, 40));
+      }
+      assert.ok(received && Math.abs(received[0] - expected[0]) < 0.005 && Math.abs(received[1] - expected[1]) < 0.005, 'OS cursor reaches sandboxed renderer through preload');
+      positions.push(received);
+    }
+    assert.ok(positions[1][0] - positions[0][0] > 0.4 && positions[0][1] - positions[1][1] > 0.4);
+    console.log('PASS: Electron viewport, Windows startup, actual OS cursor through IPC while click-through is enabled.');
   } catch (error) {
     console.error(error); process.exitCode = 1;
   } finally {
+    stopCursor?.();
+    restoreCursor?.();
     if (startup) startup.set(false);
     if (child) child.destroy();
     if (parent) destroy(parent);

@@ -1,6 +1,6 @@
 {
   "name": "magmpaper-engine",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Minimal GLSL live wallpapers for Windows 11",
   "author": "MagmPaperEngine",
   "license": "MIT",

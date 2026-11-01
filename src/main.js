@@ -3,11 +3,13 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { Store } = require('./store');
 const { attach } = require('./desktop');
+const { startCursorTracking } = require('./cursor');
 const { createStartup, restoreWithRetry, STARTUP_ID } = require('./startup');
 const autoStarted = process.argv.includes('--autostart');
 const startup = createStartup(app);
 let library, manager, wallpaper, tray, health, quitting = false;
 let restoreGeneration = 0, lastStatus = '';
+let stopCursorTracking;
 const pending = new Map();
 let queue = Promise.resolve();
 const serial = task => { const next = queue.then(task); queue = next.catch(() => {}); return next; };
@@ -30,6 +32,8 @@ function openManager() {
   manager.on('close', event => { if (!quitting && tray) { event.preventDefault(); manager.hide(); } });
 }
 function destroyWallpaper() {
+  stopCursorTracking?.();
+  stopCursorTracking = null;
   clearInterval(health);
   health = null;
   if (wallpaper && !wallpaper.isDestroyed()) wallpaper.destroy();
@@ -74,6 +78,7 @@ async function apply(id) {
     destroyWallpaper();
     wallpaper = next;
     next.showInactive();
+    stopCursorTracking = startCursorTracking(next, screen, display.bounds);
     health = setInterval(() => {
       if (!wallpaper || wallpaper.isDestroyed()) return;
       try {

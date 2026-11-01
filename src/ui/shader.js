@@ -17,8 +17,12 @@ export class ShaderPlayer {
     });
     canvas.addEventListener('pointermove', event => {
       const rect = canvas.getBoundingClientRect();
-      this.mouse = [(event.clientX - rect.left) / rect.width, 1 - (event.clientY - rect.top) / rect.height];
+      this.setMouse((event.clientX - rect.left) / rect.width, 1 - (event.clientY - rect.top) / rect.height);
     });
+  }
+  setMouse(x, y) {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    this.mouse = [Math.max(0, Math.min(1, x)), Math.max(0, Math.min(1, y))];
   }
   compile(type, source) {
     const gl = this.gl, shader = gl.createShader(type);
