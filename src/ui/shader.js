@@ -11,7 +11,9 @@ export class ShaderPlayer {
     this.maxTextureSize = Math.min(3840, this.gl.getParameter(this.gl.MAX_TEXTURE_SIZE));
     this.motion = new MouseMotion(smoothMouse ? 20 : 0);
     this.frame = 0;
-    this.paused = false;
+    this._paused = false;
+    this.fps = 60; this.renderScale = 1;
+    this.tick = this.tick.bind(this);
     this.textures = []; this.buffers = [];
     canvas.addEventListener('webglcontextlost', event => {
       event.preventDefault(); cancelAnimationFrame(this.frame);
@@ -26,6 +28,25 @@ export class ShaderPlayer {
     this.motion.setTarget(x, y);
   }
   setMouseEnabled(enabled) { this.motion.setEnabled(enabled); }
+  get paused() { return this._paused; }
+  set paused(value) {
+    value = !!value;
+    if (value === this._paused) return;
+    this._paused = value;
+    if (value) {
+      this.pauseStarted = performance.now();
+      cancelAnimationFrame(this.frame); this.frame = 0;
+    } else if (this.shader) {
+      this.started += performance.now() - this.pauseStarted;
+      this.clock = new FrameClock(this.fps);
+      this.frame = requestAnimationFrame(this.tick);
+    }
+  }
+  configure({ fps = this.fps, renderScale = this.renderScale }) {
+    if (![15, 30, 60].includes(fps) || ![0.5, 0.75, 1].includes(renderScale)) throw new Error('Некорректные параметры рендера.');
+    if (fps !== this.fps) { this.fps = fps; this.clock = new FrameClock(fps); }
+    this.renderScale = renderScale;
+  }
   compile(type, source) {
     const gl = this.gl, shader = gl.createShader(type);
     gl.shaderSource(shader, source); gl.compileShader(shader);
@@ -59,17 +80,18 @@ export class ShaderPlayer {
     this.uniforms = Object.fromEntries(['time', 'resolution', 'mouse', 'backbuffer'].map(name => [name, gl.getUniformLocation(program, name)]));
     this.copyResolution = this.copy ? gl.getUniformLocation(this.copy, 'resolution') : null;
     this.copyImage = this.copy ? gl.getUniformLocation(this.copy, 'image') : null;
-    this.started = performance.now(); this.clock = new FrameClock(); this.read = 0;
+    this.started = performance.now(); this.clock = new FrameClock(this.fps); this.read = 0;
+    if (this.paused) this.pauseStarted = this.started;
     this.width = 0; this.height = 0;
-    this.tick = this.tick.bind(this);
-    this.frame = requestAnimationFrame(this.tick);
+    if (!this.paused) this.frame = requestAnimationFrame(this.tick);
   }
   resize() {
     const gl = this.gl;
-    const ratio = Math.min(window.devicePixelRatio || 1, 2);
+    const ratio = Math.min(window.devicePixelRatio || 1, 2) * this.renderScale;
     const max = this.maxTextureSize;
-    const w = Math.max(1, Math.min(max, Math.round(this.canvas.clientWidth * ratio)));
-    const h = Math.max(1, Math.min(max, Math.round(this.canvas.clientHeight * ratio)));
+    const scale = Math.min(ratio, max / Math.max(1, this.canvas.clientWidth), max / Math.max(1, this.canvas.clientHeight));
+    const w = Math.max(1, Math.round(this.canvas.clientWidth * scale));
+    const h = Math.max(1, Math.round(this.canvas.clientHeight * scale));
     if (w === this.width && h === this.height) return;
     this.width = this.canvas.width = w; this.height = this.canvas.height = h;
     for (const texture of this.textures) gl.deleteTexture(texture);
@@ -98,8 +120,8 @@ export class ShaderPlayer {
     gl.drawArrays(gl.TRIANGLES, 0, 6);
   }
   tick(now) {
+    if (this.paused || !this.shader) { this.frame = 0; return; }
     this.frame = requestAnimationFrame(this.tick);
-    if (this.paused) return;
     const elapsed = this.clock.advance(now);
     if (elapsed === null) return;
     try {
@@ -125,6 +147,7 @@ export class ShaderPlayer {
   }
   dispose() {
     cancelAnimationFrame(this.frame);
+    this.frame = 0;
     const gl = this.gl;
     if (this.shader) gl.deleteProgram(this.shader);
     if (this.copy) gl.deleteProgram(this.copy);

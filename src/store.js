@@ -1,6 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
+const { DEFAULT_SETTINGS, validateSettings } = require('./settings');
 
 function validate(input) {
   if (!input || typeof input.name !== 'string' || !input.name.trim() || input.name.trim().length > 80)
@@ -14,7 +15,7 @@ class Store {
   constructor(directory) {
     fs.mkdirSync(directory, { recursive: true });
     this.file = path.join(directory, 'wallpapers.json');
-    this.data = { version: 1, items: [], activeId: null, settings: { mouseEnabled: true } };
+    this.data = { version: 1, items: [], activeId: null, settings: { ...DEFAULT_SETTINGS } };
     if (fs.existsSync(this.file)) {
       const data = JSON.parse(fs.readFileSync(this.file, 'utf8'));
       if (data.version !== 1 || !Array.isArray(data.items)) throw new Error('Неизвестный формат библиотеки.');
@@ -25,9 +26,7 @@ class Store {
         ids.add(item.id);
       }
       if (data.activeId !== null && !ids.has(data.activeId)) throw new Error('Повреждён выбор активных обоев.');
-      if (data.settings !== undefined && (!data.settings || typeof data.settings !== 'object' || Array.isArray(data.settings))) throw new Error('Повреждены настройки.');
-      if (data.settings?.mouseEnabled !== undefined && typeof data.settings.mouseEnabled !== 'boolean') throw new Error('Повреждена настройка мыши.');
-      data.settings = { ...data.settings, mouseEnabled: data.settings?.mouseEnabled ?? true };
+      data.settings = { ...DEFAULT_SETTINGS, ...validateSettings(data.settings === undefined ? {} : data.settings) };
       this.data = data;
     }
   }
@@ -66,9 +65,13 @@ class Store {
     this.commit({ ...this.list(), activeId: id });
   }
   setMouseEnabled(enabled) {
-    if (typeof enabled !== 'boolean') throw new Error('Некорректная настройка мыши.');
-    this.commit({ ...this.list(), settings: { ...this.data.settings, mouseEnabled: enabled } });
+    this.setSettings({ mouseEnabled: enabled });
     return enabled;
+  }
+  setSettings(patch) {
+    const settings = { ...this.data.settings, ...validateSettings(patch) };
+    this.commit({ ...this.list(), settings });
+    return { ...settings };
   }
 }
 module.exports = { Store, validate };

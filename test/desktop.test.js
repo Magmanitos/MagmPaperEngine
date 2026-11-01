@@ -28,3 +28,18 @@ test('Win32: reparented wallpaper client fills the monitor with no border insets
     if (previousDpi) dpi(previousDpi);
   }
 });
+test('Win32 coverage detector recognizes a visible full-monitor window and ignores minimization', { skip: process.platform !== 'win32' }, () => {
+  const koffi = require('koffi'), user = koffi.load('user32.dll');
+  const { primaryMonitor, isWindowCovering } = require('../src/coverage');
+  const create = user.func('void * __stdcall CreateWindowExW(uint32_t exStyle, str16 className, str16 title, uint32_t style, int x, int y, int width, int height, void *parent, void *menu, void *instance, void *param)');
+  const destroy = user.func('int32_t __stdcall DestroyWindow(void *hwnd)');
+  const show = user.func('int32_t __stdcall ShowWindow(void *hwnd, int command)');
+  const area = primaryMonitor().work;
+  const hwnd = create(0, 'STATIC', 'MagmPaper coverage fixture', 0x90000000, area.left, area.top, area.right-area.left, area.bottom-area.top, null,null,null,null);
+  assert.ok(hwnd);
+  try {
+    assert.equal(isWindowCovering(hwnd, area), true);
+    show(hwnd, 6); assert.equal(isWindowCovering(hwnd, area), false);
+    show(hwnd, 0); assert.equal(isWindowCovering(hwnd, area), false);
+  } finally { destroy(hwnd); }
+});

@@ -1,6 +1,11 @@
 const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('wallpaper', {
   source: () => ipcRenderer.invoke('wallpaper:source'),
+  onRuntime: callback => {
+    const listener = (_event, state) => callback(state);
+    ipcRenderer.on('wallpaper:runtime', listener);
+    return () => ipcRenderer.removeListener('wallpaper:runtime', listener);
+  },
   onMouseEnabled: callback => {
     const listener = (_event, enabled) => callback(enabled);
     ipcRenderer.on('wallpaper:mouse-enabled', listener);

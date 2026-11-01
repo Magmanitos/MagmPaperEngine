@@ -4,12 +4,19 @@ const fs = require('node:fs');
 const { Store } = require('./store');
 const { attach } = require('./desktop');
 const { createCursorController } = require('./cursor');
+const { createPlaybackController } = require('./playback');
+const { isDesktopCovered } = require('./coverage');
 const { createStartup, restoreWithRetry, STARTUP_ID } = require('./startup');
 const autoStarted = process.argv.includes('--autostart');
 const startup = createStartup(app);
 let library, manager, wallpaper, tray, health, quitting = false;
 let restoreGeneration = 0, lastStatus = '';
 let cursorController;
+let playbackController, playbackState = null, screenLocked = false;
+function publishPlayback(state) {
+  playbackState = state;
+  if (manager && !manager.isDestroyed()) manager.webContents.send('playback:state', state);
+}
 const pending = new Map();
 let queue = Promise.resolve();
 const serial = task => { const next = queue.then(task); queue = next.catch(() => {}); return next; };
@@ -31,7 +38,16 @@ function openManager() {
   manager.loadFile(path.join(__dirname, 'ui/index.html'));
   manager.on('close', event => { if (!quitting && tray) { event.preventDefault(); manager.hide(); } });
 }
+function openSettings() {
+  openManager();
+  const send = () => manager.webContents.send('open-settings');
+  if (manager.webContents.isLoadingMainFrame()) manager.webContents.once('did-finish-load', send);
+  else send();
+}
 function destroyWallpaper() {
+  playbackController?.stop();
+  playbackController = null;
+  publishPlayback(null);
   cursorController?.stop();
   cursorController = null;
   clearInterval(health);
@@ -79,7 +95,10 @@ async function apply(id) {
     wallpaper = next;
     next.showInactive();
     cursorController = createCursorController(next, screen, display.bounds);
-    cursorController.setEnabled(library.data.settings.mouseEnabled);
+    playbackController = createPlaybackController({ window: next, cursor: cursorController,
+      getSettings: () => library.data.settings, isCovered: isDesktopCovered,
+      isOnBattery: () => powerMonitor.isOnBatteryPower(), isLocked: () => screenLocked, onChange: publishPlayback,
+      onError: error => notify(`Автопауза временно недоступна: ${error.message}`) });
     health = setInterval(() => {
       if (!wallpaper || wallpaper.isDestroyed()) return;
       try {
@@ -117,14 +136,19 @@ else {
       dialog.showErrorBox('Не удалось открыть библиотеку', `${error.message}\nФайл не перезаписан. Проверьте wallpapers.json в ${app.getPath('userData')}.`);
       app.quit(); return;
     }
-    handle('library:list', () => ({ ...library.list(), runningId: wallpaper && !wallpaper.isDestroyed() ? library.data.activeId : null, platform: process.platform }));
+    handle('library:list', () => ({ ...library.list(), runningId: wallpaper && !wallpaper.isDestroyed() ? library.data.activeId : null, platform: process.platform, playback: playbackState }));
     handle('library:save', item => library.save(item));
     handle('startup:get', () => startup.get());
     handle('startup:set', enabled => startup.set(enabled));
     handle('mouse:set', enabled => {
       library.setMouseEnabled(enabled);
-      cursorController?.setEnabled(enabled);
+      playbackController?.refresh();
       return enabled;
+    });
+    handle('settings:set', patch => {
+      const settings = library.setSettings(patch);
+      playbackController?.refresh();
+      return settings;
     });
     handle('library:remove', id => {
       const active = library.data.activeId === id;
@@ -155,6 +179,7 @@ else {
     tray.setToolTip('MagmPaper — живые обои');
     tray.setContextMenu(Menu.buildFromTemplate([
       { label: 'Открыть MagmPaper', click: openManager },
+      { label: 'Параметры', click: openSettings },
       { label: 'Остановить обои', click: () => serial(stop).catch(e => notify(e.message)) },
       { type: 'separator' }, { label: 'Выход', click: () => app.quit() }
     ]));
@@ -167,6 +192,10 @@ else {
     powerMonitor.on('resume', () => {
       void restoreLastWallpaper();
     });
+    powerMonitor.on('lock-screen', () => { screenLocked = true; playbackController?.refresh(); });
+    powerMonitor.on('unlock-screen', () => { screenLocked = false; playbackController?.refresh(); });
+    powerMonitor.on('on-battery', () => playbackController?.refresh());
+    powerMonitor.on('on-ac', () => playbackController?.refresh());
     void restoreLastWallpaper();
   }).catch(error => { dialog.showErrorBox('MagmPaper', error.message); app.quit(); });
   app.on('before-quit', () => { quitting = true; destroyWallpaper(); });

@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { Store } = require('../src/store');
+const { DEFAULT_SETTINGS } = require('../src/settings');
 function setup(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'magmpaper-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
@@ -19,7 +20,19 @@ test('save, edit, activate, reload, delete active wallpaper', t => {
   assert.equal(reloaded.list().activeId, first.id);
   assert.match(reloaded.get(first.id).code, /gl_FragColor/);
   reloaded.remove(first.id);
-  assert.deepEqual(new Store(dir).list(), { version: 1, items: [], activeId: null, settings: { mouseEnabled: true } });
+  assert.deepEqual(new Store(dir).list(), { version: 1, items: [], activeId: null, settings: { ...DEFAULT_SETTINGS } });
+});
+test('performance settings validate, persist and migrate without resetting mouse preference', t => {
+  const { dir, store } = setup(t);
+  const old = store.list(); old.settings = { mouseEnabled: false };
+  fs.writeFileSync(store.file, JSON.stringify(old));
+  const migrated = new Store(dir);
+  assert.deepEqual(migrated.list().settings, { ...DEFAULT_SETTINGS, mouseEnabled: false });
+  migrated.setSettings({ fps: 15, renderScale: 0.5, pauseOnBattery: true, pauseWhenCovered: false });
+  assert.deepEqual(new Store(dir).list().settings, { mouseEnabled: false, fps: 15, renderScale: 0.5, pauseOnBattery: true, pauseWhenCovered: false });
+  const before = migrated.list();
+  for (const patch of [null, [], { fps: 0 }, { fps: 144 }, { renderScale: 3 }, { pauseOnBattery: 'yes' }, { unexpected: true }]) assert.throws(() => migrated.setSettings(patch));
+  assert.deepEqual(migrated.list(), before);
 });
 test('old libraries gain a default setting; disabling persists across edits and restart', t => {
   const { dir, store } = setup(t);

@@ -5,8 +5,11 @@ const path = require('node:path');
 const { fitToHost } = require('../src/desktop');
 const { createStartup } = require('../src/startup');
 const { createCursorController, normalizeCursor } = require('../src/cursor');
+const { createPlaybackController } = require('../src/playback');
+const { isWindowCovering, primaryMonitor } = require('../src/coverage');
+const { DEFAULT_SETTINGS } = require('../src/settings');
 app.whenReady().then(async () => {
-  let child, parent, destroy, startup, stopCursor, restoreCursor;
+  let child, parent, destroy, startup, stopCursor, restoreCursor, cover, playback;
   try {
     assert.equal(process.platform, 'win32');
     const id = `com.magmanitos.magmpaper.test.${process.pid}`;
@@ -81,6 +84,24 @@ app.whenReady().then(async () => {
     await new Promise(resolve => setTimeout(resolve, 100));
     assert.equal(await child.webContents.executeJavaScript('window.mouseEnabled'), true);
     assert.ok(await child.webContents.executeJavaScript('window.mouseMessages') > beforeDisable.count);
+    const show = user.func('int32_t __stdcall ShowWindow(void *hwnd, int command)');
+    const area = primaryMonitor().work;
+    cover = create(0, 'STATIC', 'MagmPaper cover test', 0x90000000, area.left, area.top, area.right-area.left, area.bottom-area.top, null,null,null,null);
+    assert.ok(cover);
+    await child.webContents.executeJavaScript('window.wallpaper.onRuntime(value => { window.runtimeReceived = value; }); true');
+    const settings = { ...DEFAULT_SETTINGS };
+    playback = createPlaybackController({ window: child, cursor: controller, getSettings: () => settings,
+      isCovered: () => isWindowCovering(cover, area), isOnBattery: () => false, isLocked: () => false });
+    await new Promise(resolve => setTimeout(resolve, 100));
+    assert.equal((await child.webContents.executeJavaScript('window.runtimeReceived')).reason, 'covered');
+    assert.equal(await child.webContents.executeJavaScript('window.mouseEnabled'), false);
+    show(cover, 0); playback.refresh();
+    await new Promise(resolve => setTimeout(resolve, 100));
+    assert.equal((await child.webContents.executeJavaScript('window.runtimeReceived')).paused, false);
+    settings.fps = 15; settings.renderScale = 0.5; playback.refresh();
+    await new Promise(resolve => setTimeout(resolve, 100));
+    const runtime = await child.webContents.executeJavaScript('window.runtimeReceived');
+    assert.equal(runtime.fps, 15); assert.equal(runtime.renderScale, 0.5);
     console.log('PASS: Electron viewport, Windows startup, actual OS cursor through IPC while click-through is enabled.');
   } catch (error) {
     console.error(error); process.exitCode = 1;
@@ -89,11 +110,13 @@ app.whenReady().then(async () => {
       console.log(`::error::${message}`);
     }
   } finally {
+    playback?.stop();
     stopCursor?.();
     restoreCursor?.();
     if (startup) startup.set(false);
     if (child) child.destroy();
     if (parent) destroy(parent);
+    if (cover) destroy(cover);
     app.exit(process.exitCode || 0);
   }
 });

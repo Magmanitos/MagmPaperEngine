@@ -2,7 +2,22 @@ import { ShaderPlayer } from './shader.js';
 const $ = id => document.getElementById(id);
 let data = { items: [] }, selected = null, editing = undefined, player, busy = false, dirty = false;
 let startupState = { supported: false, enabled: false };
-function status(text, error = false) { $('status').textContent = text; $('status').classList.toggle('error', error); }
+function status(text, error = false) {
+  for (const id of ['status', 'settings-status']) { $(id).textContent = text; $(id).classList.toggle('error', error); }
+  if (error && $('settings-dialog').open) $('settings-status').scrollIntoView({ block: 'nearest' });
+}
+function showPlayback(state) {
+  $('playback-state').hidden = !state?.paused;
+  $('playback-state').textContent = state?.paused ? `Обои на паузе: ${{ covered: 'рабочий стол закрыт окном', battery: 'работа от батареи', locked: 'Windows заблокирована' }[state.reason]}.` : '';
+}
+function showSettings() {
+  if (!data.settings) return;
+  $('mouse-enabled').checked = data.settings.mouseEnabled;
+  $('pause-covered').checked = data.settings.pauseWhenCovered;
+  $('pause-battery').checked = data.settings.pauseOnBattery;
+  $('fps').value = String(data.settings.fps);
+  $('render-scale').value = String(data.settings.renderScale);
+}
 try { player = new ShaderPlayer($('canvas'), error => status(error, true)); } catch (error) { status(error.message, true); }
 function buttons() {
   for (const id of ['apply', 'delete', 'edit']) $(id).disabled = busy || !selected || editing !== undefined;
@@ -11,6 +26,8 @@ function buttons() {
   $('list').inert = busy;
   $('startup').disabled = busy || !startupState.supported;
   $('mouse-enabled').disabled = busy || data.platform !== 'win32';
+  for (const id of ['pause-covered','pause-battery','fps','render-scale']) $(id).disabled = busy;
+  $('open-settings').disabled = busy;
 }
 async function action(task) {
   if (busy) return;
@@ -48,6 +65,7 @@ function select(item) {
 async function refresh(id = selected?.id) {
   data = await window.magm.list();
   $('mouse-enabled').checked = data.settings.mouseEnabled;
+  showSettings(); showPlayback(data.playback);
   select(data.items.find(i => i.id === id) || data.items[0] || null);
 }
 function leaveEditor() {
@@ -68,6 +86,22 @@ function preview() {
   player.load($('code').value); $('empty').hidden = true;
 }
 $('name').oninput = $('code').oninput = () => { dirty = true; };
+function updatePreviewPause() { if (player) player.paused = document.hidden || $('settings-dialog').open; }
+function openSettings() {
+  showSettings(); $('settings-status').textContent = '';
+  if (!$('settings-dialog').open) $('settings-dialog').showModal();
+  updatePreviewPause();
+}
+$('open-settings').onclick = openSettings;
+$('close-settings').onclick = () => $('settings-dialog').close();
+$('settings-dialog').addEventListener('close', updatePreviewPause);
+for (const [id, key] of [['pause-covered','pauseWhenCovered'], ['pause-battery','pauseOnBattery'], ['fps','fps'], ['render-scale','renderScale']]) {
+  $(id).onchange = () => action(async () => {
+    const value = $(id).type === 'checkbox' ? $(id).checked : Number($(id).value);
+    try { data.settings = await window.magm.setSettings({ [key]: value }); status('Параметры сохранены.'); }
+    finally { showSettings(); }
+  });
+}
 $('mouse-enabled').onchange = () => action(async () => {
   try {
     data.settings.mouseEnabled = await window.magm.setMouseEnabled($('mouse-enabled').checked);
@@ -105,7 +139,9 @@ window.magm.onStatus(message => {
   status(message);
   window.magm.list().then(value => { data = value; renderList(); }).catch(error => status(error.message, true));
 });
-document.addEventListener('visibilitychange', () => { if (player) player.paused = document.hidden; });
+window.magm.onPlayback(showPlayback);
+window.magm.onOpenSettings(openSettings);
+document.addEventListener('visibilitychange', updatePreviewPause);
 window.addEventListener('beforeunload', () => player?.dispose());
 await action(async () => {
   await refresh();

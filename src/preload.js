@@ -8,5 +8,8 @@ contextBridge.exposeInMainWorld('magm', {
   startup: () => ipcRenderer.invoke('startup:get'),
   setStartup: enabled => ipcRenderer.invoke('startup:set', enabled),
   setMouseEnabled: enabled => ipcRenderer.invoke('mouse:set', enabled),
+  setSettings: patch => ipcRenderer.invoke('settings:set', patch),
+  onPlayback: callback => ipcRenderer.on('playback:state', (_event, state) => callback(state)),
+  onOpenSettings: callback => ipcRenderer.on('open-settings', () => callback()),
   onStatus: callback => ipcRenderer.on('status', (_, value) => callback(value))
 });

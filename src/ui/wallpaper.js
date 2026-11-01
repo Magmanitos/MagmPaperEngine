@@ -3,7 +3,11 @@ try {
   const player = new ShaderPlayer(document.getElementById('canvas'), error => window.wallpaper.result(error), { smoothMouse: true });
   const unsubscribe = window.wallpaper.onMouse(position => player.setMouse(...position));
   const unsubscribeEnabled = window.wallpaper.onMouseEnabled(enabled => player.setMouseEnabled(enabled));
-  window.addEventListener('beforeunload', () => { unsubscribe(); unsubscribeEnabled(); player.dispose(); });
+  const unsubscribeRuntime = window.wallpaper.onRuntime(state => {
+    player.configure(state);
+    player.paused = state.paused;
+  });
+  window.addEventListener('beforeunload', () => { unsubscribe(); unsubscribeEnabled(); unsubscribeRuntime(); player.dispose(); });
   player.load(await window.wallpaper.source());
   // Render one frame before reporting readiness; allocation failures must reach main.
   cancelAnimationFrame(player.frame);

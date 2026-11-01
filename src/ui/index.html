@@ -13,10 +13,7 @@
     <div class="section-label">МОЯ КОЛЛЕКЦИЯ <span id="count">0</span></div>
     <nav id="list" aria-label="Сохранённые обои"></nav>
     <div class="sidebar-bottom">
-      <label class="startup-toggle"><input type="checkbox" id="mouse-enabled" disabled><span>Реакция на мышь</span></label>
-      <p class="setting-hint">На рабочем столе. Настройка сохраняется.</p>
-      <label class="startup-toggle"><input type="checkbox" id="startup" disabled><span>Запускать с Windows</span></label>
-      <p id="startup-hint">В трее, с последними установленными обоями.</p>
+      <button id="open-settings" class="quiet settings-button">⚙ Параметры</button>
       <span class="dot"></span> Локальная библиотека<p>Закрытие окна сворачивает приложение в трей.</p>
     </div>
   </aside>
@@ -24,6 +21,7 @@
     <header><div><div class="eyebrow">ВАШ РАБОЧИЙ СТОЛ, В ДВИЖЕНИИ</div><h1 id="title">Выберите обои</h1></div><button id="stop" class="quiet">Остановить обои</button></header>
     <div class="preview"><canvas id="canvas" aria-label="Предпросмотр шейдера"></canvas><div class="preview-label">ПРЕДПРОСМОТР <span>WebGL · до 60 FPS</span></div><div id="empty">Добавьте свой первый шейдер</div></div>
     <div class="toolbar"><span id="selection-info">GLSL Sandbox</span><div><button id="edit" class="quiet">Редактировать</button><button id="delete" class="danger">Удалить</button><button id="apply" class="primary">На рабочий стол ↗</button></div></div>
+    <p id="playback-state" role="status" hidden></p>
     <section id="editor" hidden>
       <div class="editor-heading"><h2 id="editor-title">Новые обои</h2><button id="cancel" class="quiet">Отмена</button></div>
       <label for="name">Название</label><input id="name" maxlength="80" placeholder="Например, Тихий океан" autocomplete="off">
@@ -34,5 +32,22 @@
     <footer>MAGMPAPER / 0.1 <span>Один экран. Бесконечно много настроений.</span></footer>
   </main>
   <dialog id="confirm-delete"><h2>Удалить обои?</h2><p id="delete-name"></p><p>Это действие нельзя отменить.</p><div><button id="keep" class="quiet">Отмена</button><button id="confirm" class="danger">Удалить</button></div></dialog>
+  <dialog id="settings-dialog" aria-labelledby="settings-title">
+    <div class="settings-heading"><div><div class="eyebrow">MAGMPAPER</div><h2 id="settings-title">Параметры</h2></div><button id="close-settings" class="quiet" aria-label="Закрыть параметры">✕</button></div>
+    <h3>Общие</h3>
+    <label class="startup-toggle"><input type="checkbox" id="startup" disabled><span>Запускать с Windows</span></label>
+    <p id="startup-hint">В трее, с последними установленными обоями.</p>
+    <label class="startup-toggle"><input type="checkbox" id="mouse-enabled" disabled><span>Реакция на мышь</span></label>
+    <p class="setting-hint">Для обоев рабочего стола. Предпросмотр всегда интерактивен.</p>
+    <h3>Экономия ресурсов</h3>
+    <label class="startup-toggle"><input type="checkbox" id="pause-covered"><span>Пауза, когда рабочий стол закрыт окном</span></label>
+    <p class="setting-hint">Полноэкранное или развёрнутое окно на основном мониторе останавливает рендер и опрос мыши. После сворачивания обои продолжат работу.</p>
+    <label class="startup-toggle"><input type="checkbox" id="pause-battery"><span>Пауза при работе от батареи</span></label>
+    <p class="setting-hint">Обои возобновятся после подключения питания. При блокировке Windows пауза включается автоматически.</p>
+    <div class="settings-grid"><div><label for="fps">Частота кадров</label><select id="fps"><option value="15">15 FPS — экономия</option><option value="30">30 FPS — баланс</option><option value="60">60 FPS — плавность</option></select></div><div><label for="render-scale">Качество рендера</label><select id="render-scale"><option value="0.5">50% — экономия</option><option value="0.75">75% — баланс</option><option value="1">100% — чёткость</option></select></div></div>
+    <p class="setting-hint">Ниже частота — меньше нагрузка. Качество 50% уменьшает число пикселей в четыре раза, но делает изображение мягче. Размер обоев на экране не меняется.</p>
+    <p class="settings-note">Изменения сохраняются сразу и применяются к рабочему столу. На паузе кадры не рисуются; память сохраняется для быстрого продолжения.</p>
+    <p id="settings-status" role="status" aria-live="polite"></p>
+  </dialog>
   <script type="module" src="app.js"></script>
 </body></html>
