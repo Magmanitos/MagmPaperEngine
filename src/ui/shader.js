@@ -87,9 +87,9 @@ export class ShaderPlayer {
   }
   resize() {
     const gl = this.gl;
-    const ratio = Math.min(window.devicePixelRatio || 1, 2) * this.renderScale;
+    const ratio = Math.min(window.devicePixelRatio || 1, 2);
     const max = this.maxTextureSize;
-    const scale = Math.min(ratio, max / Math.max(1, this.canvas.clientWidth), max / Math.max(1, this.canvas.clientHeight));
+    const scale = Math.min(ratio, max / Math.max(1, this.canvas.clientWidth), max / Math.max(1, this.canvas.clientHeight)) * this.renderScale;
     const w = Math.max(1, Math.round(this.canvas.clientWidth * scale));
     const h = Math.max(1, Math.round(this.canvas.clientHeight * scale));
     if (w === this.width && h === this.height) return;
