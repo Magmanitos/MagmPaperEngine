@@ -94,9 +94,10 @@ async function apply(id) {
     destroyWallpaper();
     wallpaper = next;
     next.showInactive();
+    const wallpaperHandle = next.getNativeWindowHandle().readBigUInt64LE();
     cursorController = createCursorController(next, screen, display.bounds);
     playbackController = createPlaybackController({ window: next, cursor: cursorController,
-      getSettings: () => library.data.settings, isCovered: isDesktopCovered,
+      getSettings: () => library.data.settings, isCovered: () => isDesktopCovered(wallpaperHandle),
       isOnBattery: () => powerMonitor.isOnBatteryPower(), isLocked: () => screenLocked, onChange: publishPlayback,
       onError: error => notify(`Автопауза временно недоступна: ${error.message}`) });
     health = setInterval(() => {
