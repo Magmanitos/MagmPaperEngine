@@ -20,7 +20,9 @@ test('save, edit, activate, reload, delete active wallpaper', t => {
   assert.equal(reloaded.list().activeId, first.id);
   assert.match(reloaded.get(first.id).code, /gl_FragColor/);
   reloaded.remove(first.id);
-  assert.deepEqual(new Store(dir).list(), { version: 1, items: [], activeId: null, settings: { ...DEFAULT_SETTINGS } });
+  const { revision, ...empty } = new Store(dir).list();
+  assert.ok(revision);
+  assert.deepEqual(empty, { version: 2, items: [], activeId: null, settings: { ...DEFAULT_SETTINGS } });
 });
 test('performance settings validate, persist and migrate without resetting mouse preference', t => {
   const { dir, store } = setup(t);
@@ -84,5 +86,6 @@ test('failed atomic replacement retains previous data', t => {
   fs.mkdirSync(store.file + '.tmp');
   assert.throws(() => store.save({ name: 'new', code: 'x' }));
   assert.deepEqual(store.list(), before);
-  assert.deepEqual(JSON.parse(fs.readFileSync(store.file, 'utf8')), before);
+  assert.deepEqual(JSON.parse(fs.readFileSync(store.file, 'utf8')), { ...before, items: before.items.map(({ code, ...item }) => item) });
+  assert.equal(fs.readFileSync(path.join(store.directory, before.items[0].file), 'utf8'), 'x');
 });

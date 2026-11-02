@@ -6,6 +6,8 @@ function nativeApi() {
   koffi.struct('CoverageMonitor', { size: 'uint32_t', monitor: rect, work: rect, flags: 'uint32_t' });
   koffi.proto('int32_t __stdcall CoverageEnum(void *hwnd, intptr_t param)');
   api = {
+    foreground: user.func('void * __stdcall GetForegroundWindow()'),
+    root: user.func('void * __stdcall GetAncestor(void *hwnd, uint32_t flags)'),
     address: hwnd => hwnd == null ? 0n : typeof hwnd === 'bigint' ? hwnd : koffi.address(hwnd),
     visible: user.func('int32_t __stdcall IsWindowVisible(void *hwnd)'),
     minimized: user.func('int32_t __stdcall IsIconic(void *hwnd)'),
@@ -62,6 +64,14 @@ function createCoverageDetector(a) {
   return {
     isWindowCovering: (hwnd, area, wallpaperHandle) => inspect(hwnd, area, wallpaperHandle) === 'cover',
     isDesktopCovered(area, wallpaperHandle) {
+      // Exclusive-fullscreen games may keep WS_VISIBLE/old bounds after Win+D.
+      // The focused desktop is direct evidence that it is visible again.
+      const foreground = a.foreground?.();
+      if (foreground) {
+        const root = a.root(foreground, 2), name = Buffer.alloc(512);
+        a.name(root || foreground, name, 256);
+        if (['Progman', 'WorkerW', 'SHELLDLL_DefView'].includes(name.toString('utf16le').split('\0')[0])) return false;
+      }
       let covered = false;
       a.enumerate(hwnd => {
         const kind = inspect(hwnd, area, wallpaperHandle);

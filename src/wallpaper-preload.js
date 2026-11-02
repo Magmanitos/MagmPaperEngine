@@ -1,5 +1,6 @@
 const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('wallpaper', {
+  context: lost => ipcRenderer.send('wallpaper:context', !!lost),
   source: () => ipcRenderer.invoke('wallpaper:source'),
   onRuntime: callback => {
     const listener = (_event, state) => callback(state);
@@ -16,5 +17,5 @@ contextBridge.exposeInMainWorld('wallpaper', {
     ipcRenderer.on('wallpaper:mouse', listener);
     return () => ipcRenderer.removeListener('wallpaper:mouse', listener);
   },
-  result: error => ipcRenderer.send('wallpaper:result', error)
+  result: (error, recoverable = false) => ipcRenderer.send('wallpaper:result', error, !!recoverable)
 });

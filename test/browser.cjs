@@ -11,7 +11,7 @@ const os = require('node:os');
   const store = new Store(dir);
   let startupEnabled = false, startupWriteFails = false;
   let mouseWriteFails = false;
-  let settingsWriteFails = false;
+  let settingsWriteFails = false, folderOpened = 0;
   store.save({ name: 'Северное сияние', code: require('../src/example') });
   const root = path.resolve(__dirname, '../src/ui');
   const server = http.createServer((req, res) => {
@@ -29,6 +29,7 @@ const os = require('node:os');
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.exposeFunction('testBridge', (method, arg) => {
+      if (method === 'openFolder') { folderOpened++; return; }
       if (method === 'setSettings') {
         if (settingsWriteFails) throw new Error('Settings write failed');
         return store.setSettings(arg);
@@ -49,13 +50,16 @@ const os = require('node:os');
       if (method === 'stop') return store.activate(null);
     });
     await page.addInitScript(() => {
-      window.magm = Object.fromEntries(['list','save','remove','apply','stop','startup','setStartup','setMouseEnabled','setSettings'].map(method => [method, arg => window.testBridge(method, arg)]));
+      window.magm = Object.fromEntries(['openFolder','list','save','remove','apply','stop','startup','setStartup','setMouseEnabled','setSettings'].map(method => [method, arg => window.testBridge(method, arg)]));
       window.magm.onStatus = () => {};
       window.magm.onPlayback = callback => { window.testPlayback = callback; };
       window.magm.onOpenSettings = callback => { window.testOpenSettings = callback; };
     });
     await page.goto(`http://127.0.0.1:${server.address().port}`);
     await page.waitForFunction(() => document.getElementById('status').textContent.includes('Предпросмотр готов'));
+    await page.click('#open-folder');
+    await page.waitForFunction(() => document.getElementById('status').textContent.includes('Открыта папка'));
+    assert.equal(folderOpened, 1);
     assert.equal(await page.isVisible('#mouse-enabled'), false);
     await page.click('#open-settings');
     await page.uncheck('#mouse-enabled');
@@ -195,6 +199,36 @@ const os = require('node:os');
       assert.ok(Math.abs(rendered.colors[index][0] - expected[0]) <= 1);
       assert.ok(Math.abs(rendered.colors[index][1] - expected[1]) <= 1);
     }
+    const restored = await page.evaluate(async () => {
+      const { ShaderPlayer } = await import('./shader.js');
+      const canvas = document.createElement('canvas'); canvas.style.width = '64px'; canvas.style.height = '64px'; document.body.append(canvas);
+      const errors = [], states = [];
+      const player = new ShaderPlayer(canvas, error => errors.push(error), { onContextState: lost => states.push(lost) });
+      player.configure({ fps: 30, renderScale: 0.75 });
+      player.load('precision mediump float; void main(){gl_FragColor=vec4(0.25,0.5,0.75,1.0);}');
+      const extension = player.gl.getExtension('WEBGL_lose_context');
+      if (!extension) throw new Error('WEBGL_lose_context unavailable');
+      const event = name => new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(name + ' timed out')), 5000);
+        canvas.addEventListener(name, () => { clearTimeout(timer); resolve(); }, { once: true });
+      });
+      for (const paused of [false, true]) {
+        player.paused = paused;
+        const lost = event('webglcontextlost'); extension.loseContext(); await lost;
+        if (player.frame !== 0) throw new Error('Lost context kept RAF running');
+        await new Promise(resolve => setTimeout(resolve, 100));
+        const ready = event('webglcontextrestored'); extension.restoreContext(); await ready;
+        if (paused && player.frame !== 0) throw new Error('Context restoration ignored pause');
+      }
+      player.paused = false; cancelAnimationFrame(player.frame);
+      player.tick(performance.now()+100); cancelAnimationFrame(player.frame);
+      const pixels = new Uint8Array(4); player.gl.readPixels(10,10,1,1,player.gl.RGBA,player.gl.UNSIGNED_BYTE,pixels);
+      const result = { pixels: Array.from(pixels), states, errors, fps: player.fps, scale: player.renderScale };
+      player.dispose(); canvas.remove(); return result;
+    });
+    assert.deepEqual(restored.states, [true, false, true, false]);
+    assert.deepEqual(restored.errors, []); assert.equal(restored.fps, 30); assert.equal(restored.scale, 0.75);
+    for (const [i, expected] of [64,128,191].entries()) assert.ok(Math.abs(restored.pixels[i]-expected) <= 1, JSON.stringify(restored));
     await page.click('#add'); await page.fill('#name', 'Мой шейдер');
     await page.fill('#code', 'broken shader'); await page.click('#save');
     await page.waitForSelector('#status.error'); assert.equal(store.list().items.length, 1);
@@ -212,6 +246,14 @@ const os = require('node:os');
     await page.getByRole('button', { name: 'Новое имя', exact: true }).click();
     await page.click('#delete'); await page.click('#confirm');
     await page.waitForFunction(() => document.getElementById('count').textContent === '1');
+    fs.writeFileSync(path.join(store.directory, 'Из проводника.glsl'), require('../src/example'));
+    await page.click('#refresh-library');
+    await page.waitForFunction(() => document.getElementById('count').textContent === '2');
+    assert.ok((await page.locator('#list').textContent()).includes('Из проводника'));
+    await page.click('#edit'); await page.fill('#code', 'unsaved draft');
+    assert.equal(await page.isDisabled('#refresh-library'), true);
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    assert.equal(await page.inputValue('#code'), 'unsaved draft');
     await page.screenshot({ path: path.join(dir, 'preview.png') });
     assert.deepEqual(errors, []);
     console.log('PASS: real WebGL pixels, backbuffer feedback, invalid GLSL, UI create/edit/reload/delete, activation state.');

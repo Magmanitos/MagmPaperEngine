@@ -1,5 +1,6 @@
 const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('magm', {
+  openFolder: () => ipcRenderer.invoke('library:open-folder'),
   list: () => ipcRenderer.invoke('library:list'),
   save: item => ipcRenderer.invoke('library:save', item),
   remove: id => ipcRenderer.invoke('library:remove', id),

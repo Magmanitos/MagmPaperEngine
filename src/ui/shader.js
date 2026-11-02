@@ -2,9 +2,11 @@
 // Shared by preview and desktop so both compile and render the same program.
 import { FrameClock, MouseMotion } from './motion.mjs';
 export class ShaderPlayer {
-  constructor(canvas, onError = () => {}, { smoothMouse = false } = {}) {
+  constructor(canvas, onError = () => {}, { smoothMouse = false, onContextState = () => {} } = {}) {
     this.canvas = canvas;
     this.onError = onError;
+    this.onContextState = onContextState;
+    this.contextLost = false;
     this.gl = canvas.getContext('webgl', { alpha: false, antialias: false, preserveDrawingBuffer: false });
     if (!this.gl) throw new Error('WebGL недоступен. Обновите драйвер видеокарты.');
     this.gl.getExtension('OES_standard_derivatives');
@@ -16,8 +18,17 @@ export class ShaderPlayer {
     this.tick = this.tick.bind(this);
     this.textures = []; this.buffers = [];
     canvas.addEventListener('webglcontextlost', event => {
-      event.preventDefault(); cancelAnimationFrame(this.frame);
-      this.onError('Видеодрайвер сбросил WebGL. Откройте шейдер заново или выберите более простой.');
+      event.preventDefault(); cancelAnimationFrame(this.frame); this.frame = 0;
+      this.contextLost = true;
+      this.onContextState(true);
+    });
+    canvas.addEventListener('webglcontextrestored', () => {
+      this.contextLost = false;
+      this.gl.getExtension('OES_standard_derivatives');
+      this.maxTextureSize = Math.min(3840, this.gl.getParameter(this.gl.MAX_TEXTURE_SIZE));
+      const source = this.source;
+      try { if (source) this.load(source); this.onContextState(false); }
+      catch (error) { this.onError(error.message, true); }
     });
     canvas.addEventListener('pointermove', event => {
       const rect = canvas.getBoundingClientRect();
@@ -36,7 +47,7 @@ export class ShaderPlayer {
     if (value) {
       this.pauseStarted = performance.now();
       cancelAnimationFrame(this.frame); this.frame = 0;
-    } else if (this.shader) {
+    } else if (this.shader && !this.contextLost) {
       this.started += performance.now() - this.pauseStarted;
       this.clock = new FrameClock(this.fps);
       this.frame = requestAnimationFrame(this.tick);
@@ -70,8 +81,10 @@ export class ShaderPlayer {
   }
   load(source) {
     const gl = this.gl;
+    if (gl.isContextLost()) throw new Error('Видеодрайвер восстанавливает WebGL. Повторите через несколько секунд.');
     const program = this.program(source); // Keep the previous program if compilation fails.
     this.dispose();
+    this.source = source;
     this.shader = program;
     this.usesBackbuffer = gl.getUniformLocation(program, 'backbuffer') !== null;
     this.copy = this.usesBackbuffer ? this.program('precision mediump float; uniform sampler2D image; uniform vec2 resolution; void main(){gl_FragColor=texture2D(image,gl_FragCoord.xy/resolution);}') : null;
@@ -120,7 +133,7 @@ export class ShaderPlayer {
     gl.drawArrays(gl.TRIANGLES, 0, 6);
   }
   tick(now) {
-    if (this.paused || !this.shader) { this.frame = 0; return; }
+    if (this.contextLost || this.gl.isContextLost() || this.paused || !this.shader) { this.frame = 0; return; }
     this.frame = requestAnimationFrame(this.tick);
     const elapsed = this.clock.advance(now);
     if (elapsed === null) return;
@@ -143,11 +156,11 @@ export class ShaderPlayer {
       gl.bindTexture(gl.TEXTURE_2D, this.textures[write]);
       gl.useProgram(this.copy); gl.uniform2f(this.copyResolution, this.width, this.height); gl.uniform1i(this.copyImage, 0);
       this.draw(this.copy); this.read = write;
-    } catch (error) { cancelAnimationFrame(this.frame); this.onError(error.message); }
+    } catch (error) { cancelAnimationFrame(this.frame); this.frame = 0; if (!this.gl.isContextLost()) this.onError(error.message); }
   }
   dispose() {
     cancelAnimationFrame(this.frame);
-    this.frame = 0;
+    this.frame = 0; this.source = null;
     const gl = this.gl;
     if (this.shader) gl.deleteProgram(this.shader);
     if (this.copy) gl.deleteProgram(this.copy);

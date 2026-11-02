@@ -13,6 +13,7 @@ function fixture() {
     windows.push(window); return window;
   };
   const detector = createCoverageDetector({
+    foreground: () => windows.find(w => w.foreground), root: w => w,
     address: w => w.id, visible: w => w.visible, minimized: w => w.minimized,
     style: (w, index) => index === -16 ? w.style : w.extended,
     name: (w, buffer) => buffer.write(w.name + '\0', 'utf16le'),
@@ -90,4 +91,15 @@ test('autopause resumes after minimize, resize and Show Desktop while full-scree
   application.bounds = [100, 100, 1400, 900]; check(false);
   application.bounds = [0, 0, 1920, 1080]; check(true);
   windows.splice(windows.indexOf(desktop), 1); windows.unshift(desktop); check(false);
+});
+
+test('Win+D desktop focus overrides an exclusive game retaining stale visible/fullscreen bounds', () => {
+  const { add, covered } = fixture();
+  const game = add({ foreground: true });
+  const desktop = add({ name: 'Progman', desktop: true });
+  assert.equal(covered(), true);
+  game.foreground = false; desktop.foreground = true;
+  assert.equal(covered(), false);
+  desktop.foreground = false; game.foreground = true;
+  assert.equal(covered(), true);
 });

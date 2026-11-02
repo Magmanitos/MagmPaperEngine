@@ -1,7 +1,8 @@
-const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, dialog, powerMonitor } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, dialog, powerMonitor, shell } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { Store } = require('./store');
+const { createRecoveryController } = require('./recovery');
 const { attach } = require('./desktop');
 const { createCursorController } = require('./cursor');
 const { createPlaybackController } = require('./playback');
@@ -15,6 +16,7 @@ const iconPath = path.join(__dirname, 'assets/icon.png');
 const autoStarted = process.argv.includes('--autostart');
 const startup = createStartup(app);
 let library, manager, wallpaper, tray, health, quitting = false;
+let suspended = false, contextRecoveryTimer;
 let restoreGeneration = 0, lastStatus = '';
 let cursorController;
 let playbackController, playbackState = null, screenLocked = false;
@@ -25,6 +27,15 @@ function publishPlayback(state) {
 const pending = new Map();
 let queue = Promise.resolve();
 const serial = task => { const next = queue.then(task); queue = next.catch(() => {}); return next; };
+const recovery = createRecoveryController({
+  enabled: () => !quitting && !suspended && !!library?.data.activeId,
+  rebuild: current => serial(async () => { if (current()) await apply(library.data.activeId, current); }),
+  onError: error => notify(`Не удалось автоматически восстановить обои: ${error.message}. Нажмите «На рабочий стол», чтобы повторить.`)
+});
+async function openWallpaperFolder() {
+  const error = await shell.openPath(library.directory);
+  if (error) throw new Error(`Не удалось открыть папку обоев: ${error}`);
+}
 function notify(message) {
   lastStatus = message;
   if (manager && !manager.isDestroyed()) manager.webContents.send('status', message);
@@ -50,6 +61,7 @@ function openSettings() {
   else send();
 }
 function destroyWallpaper() {
+  clearTimeout(contextRecoveryTimer); contextRecoveryTimer = null;
   playbackController?.stop();
   playbackController = null;
   publishPlayback(null);
@@ -60,20 +72,20 @@ function destroyWallpaper() {
   if (wallpaper && !wallpaper.isDestroyed()) wallpaper.destroy();
   wallpaper = null;
 }
-async function stop() { restoreGeneration++; library.activate(null); destroyWallpaper(); notify('Обои остановлены.'); }
+async function stop() { recovery.cancel(); restoreGeneration++; library.activate(null); destroyWallpaper(); notify('Обои остановлены.'); }
 async function restoreLastWallpaper() {
   const id = library.data.activeId, generation = ++restoreGeneration;
   if (!id || process.platform !== 'win32') return;
-  const shouldContinue = () => !quitting && generation === restoreGeneration && library.data.activeId === id && !wallpaper;
+  const shouldContinue = () => !quitting && !suspended && generation === restoreGeneration && library.data.activeId === id && !wallpaper;
   try {
-    await restoreWithRetry({ shouldContinue, attempt: () => serial(async () => { if (shouldContinue()) await apply(id); }) });
+    await restoreWithRetry({ shouldContinue, attempt: () => serial(async () => { if (shouldContinue()) await apply(id, shouldContinue); }) });
   } catch (error) {
     if (generation !== restoreGeneration || quitting) return;
     notify(error.message);
     openManager();
   }
 }
-async function apply(id) {
+async function apply(id, current = () => !quitting && !suspended) {
   if (process.platform !== 'win32') throw new Error('Установка обоев доступна в Windows 11. Предпросмотр работает и здесь.');
   const item = library.get(id);
   const display = screen.getPrimaryDisplay();
@@ -94,6 +106,7 @@ async function apply(id) {
         clearTimeout(timer); reject(error);
       });
     });
+    if (!current()) { next.destroy(); return; }
     const healthy = attach(next);
     library.activate(id);
     destroyWallpaper();
@@ -106,16 +119,14 @@ async function apply(id) {
       isOnBattery: () => powerMonitor.isOnBatteryPower(), isLocked: () => screenLocked, onChange: publishPlayback,
       onError: error => notify(`Автопауза временно недоступна: ${error.message}`) });
     health = setInterval(() => {
-      if (!wallpaper || wallpaper.isDestroyed()) return;
+      if (wallpaper !== next || next.isDestroyed()) return;
       try {
-        if (!healthy()) {
-          destroyWallpaper();
-          notify('Проводник был перезапущен. Нажмите «На рабочий стол», чтобы восстановить обои.');
-        }
-      } catch (error) { destroyWallpaper(); notify(error.message); }
-    }, 3000);
+        if (!healthy()) recovery.ensure();
+        else if (next.isMinimized() || !next.isVisible()) next.showInactive();
+      } catch { recovery.ensure(); }
+    }, 1500);
     next.webContents.on('render-process-gone', () => {
-      if (wallpaper === next) { destroyWallpaper(); notify('Рендерер обоев остановился. Попробуйте другой шейдер.'); }
+      if (wallpaper === next) { destroyWallpaper(); recovery.ensure(); }
     });
     notify(`На рабочем столе: ${item.name}`);
   } catch (error) { next.destroy(); throw error; }
@@ -142,7 +153,12 @@ else {
       dialog.showErrorBox('Не удалось открыть библиотеку', `${error.message}\nФайл не перезаписан. Проверьте wallpapers.json в ${app.getPath('userData')}.`);
       app.quit(); return;
     }
-    handle('library:list', () => ({ ...library.list(), runningId: wallpaper && !wallpaper.isDestroyed() ? library.data.activeId : null, platform: process.platform, playback: playbackState }));
+    handle('library:list', () => {
+      const previous = library.data.activeId, data = library.list();
+      if (previous && !data.activeId) { recovery.cancel(); restoreGeneration++; destroyWallpaper(); }
+      return { ...data, runningId: wallpaper && !wallpaper.isDestroyed() ? data.activeId : null, platform: process.platform, playback: playbackState };
+    });
+    handle('library:open-folder', openWallpaperFolder);
     handle('library:save', item => library.save(item));
     handle('startup:get', () => startup.get());
     handle('startup:set', enabled => startup.set(enabled));
@@ -159,45 +175,53 @@ else {
     handle('library:remove', id => {
       const active = library.data.activeId === id;
       library.remove(id);
-      if (active) destroyWallpaper();
+      if (active) { recovery.cancel(); restoreGeneration++; destroyWallpaper(); }
     });
-    handle('library:apply', id => { restoreGeneration++; return apply(id); });
+    handle('library:apply', id => { recovery.cancel(); restoreGeneration++; return apply(id); });
     handle('library:stop', stop);
     ipcMain.handle('wallpaper:source', event => {
       const entry = pending.get(event.sender.id);
       if (!entry) throw new Error('Источник недоступен.');
       return entry.code;
     });
-    ipcMain.on('wallpaper:result', (event, error) => {
+    ipcMain.on('wallpaper:result', (event, error, recoverable) => {
       const entry = pending.get(event.sender.id);
       if (entry) entry.finish(error);
       else if (wallpaper && event.sender === wallpaper.webContents && error) {
-        destroyWallpaper(); notify(String(error));
+        if (recoverable) recovery.ensure();
+        else { destroyWallpaper(); notify(String(error)); }
       }
+    });
+    ipcMain.on('wallpaper:context', (event, lost) => {
+      if (!wallpaper || event.sender !== wallpaper.webContents) return;
+      clearTimeout(contextRecoveryTimer);
+      if (lost) contextRecoveryTimer = setTimeout(() => recovery.ensure(), 4000);
+      else { wallpaper.showInactive(); playbackController?.refresh(); }
     });
     tray = new Tray(nativeImage.createFromPath(iconPath).resize({ width: 32, height: 32 }));
     tray.setToolTip('MagmPaper — живые обои');
     tray.setContextMenu(Menu.buildFromTemplate([
       { label: 'Открыть MagmPaper', click: openManager },
+      { label: 'Папка обоев', click: () => openWallpaperFolder().catch(e => notify(e.message)) },
       { label: 'Параметры', click: openSettings },
       { label: 'Остановить обои', click: () => serial(stop).catch(e => notify(e.message)) },
       { type: 'separator' }, { label: 'Выход', click: () => app.quit() }
     ]));
     tray.on('double-click', openManager);
     if (!autoStarted) openManager();
-    screen.on('display-metrics-changed', () => {
-      if (wallpaper) serial(() => apply(library.data.activeId)).catch(e => notify(e.message));
-    });
-    powerMonitor.on('suspend', () => { restoreGeneration++; destroyWallpaper(); });
-    powerMonitor.on('resume', () => {
-      void restoreLastWallpaper();
-    });
+    const displayChanged = () => { restoreGeneration++; recovery.request(); };
+    screen.on('display-metrics-changed', displayChanged);
+    screen.on('display-added', displayChanged);
+    screen.on('display-removed', displayChanged);
+    powerMonitor.on('suspend', () => { suspended = true; recovery.cancel(); restoreGeneration++; destroyWallpaper(); });
+    powerMonitor.on('resume', () => { suspended = false; recovery.request(); });
     powerMonitor.on('lock-screen', () => { screenLocked = true; playbackController?.refresh(); });
     powerMonitor.on('unlock-screen', () => { screenLocked = false; playbackController?.refresh(); });
     powerMonitor.on('on-battery', () => playbackController?.refresh());
     powerMonitor.on('on-ac', () => playbackController?.refresh());
     void restoreLastWallpaper();
   }).catch(error => { dialog.showErrorBox('MagmPaper', error.message); app.quit(); });
-  app.on('before-quit', () => { quitting = true; destroyWallpaper(); });
+  app.on('before-quit', () => { quitting = true; recovery.cancel(); destroyWallpaper(); });
+  app.on('child-process-gone', (_event, details) => { if (details.type === 'GPU') recovery.ensure(); });
   app.on('window-all-closed', () => {});
 }

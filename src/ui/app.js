@@ -28,6 +28,8 @@ function buttons() {
   $('mouse-enabled').disabled = busy || data.platform !== 'win32';
   for (const id of ['pause-covered','pause-battery','fps','render-scale']) $(id).disabled = busy;
   $('open-settings').disabled = busy;
+  $('open-folder').disabled = busy;
+  $('refresh-library').disabled = busy || editing !== undefined;
 }
 async function action(task) {
   if (busy) return;
@@ -114,6 +116,9 @@ $('startup').onchange = () => action(async () => {
     status(startupState.enabled ? 'Автозапуск включён. При входе в Windows восстановятся последние установленные обои.' : 'Автозапуск выключен.');
   } finally { $('startup').checked = startupState.enabled; }
 });
+$('open-folder').onclick = () => action(async () => { await window.magm.openFolder(); status('Открыта папка обоев. Изменения файлов появятся после обновления коллекции.'); });
+$('refresh-library').onclick = () => action(async () => { await refresh(); status('Коллекция обновлена из GLSL-файлов.'); });
+window.addEventListener('focus', () => { if (!busy && editing === undefined) void action(() => refresh()); });
 $('add').onclick = () => openEditor(null);
 $('edit').onclick = () => openEditor(selected);
 $('cancel').onclick = () => { if (leaveEditor()) select(selected); };

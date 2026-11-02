@@ -37,6 +37,7 @@ test('Win32 coverage excludes desktop overlays, wallpaper, small and minimized w
   const setStyle = user.func('intptr_t __stdcall SetWindowLongPtrW(void *hwnd, int index, intptr_t value)');
   const layer = user.func('int32_t __stdcall SetLayeredWindowAttributes(void *hwnd, uint32_t key, uint8_t alpha, uint32_t flags)');
   const position = user.func('int32_t __stdcall SetWindowPos(void *hwnd, void *after, int x, int y, int width, int height, uint32_t flags)');
+  const foreground = user.func('int32_t __stdcall SetForegroundWindow(void *hwnd)');
   const area = primaryMonitor().work;
   const hwnd = create(0, 'STATIC', 'MagmPaper coverage fixture', 0x90000000, area.left, area.top, area.right-area.left, area.bottom-area.top, null,null,null,null);
   assert.ok(hwnd);
@@ -58,6 +59,7 @@ test('Win32 coverage excludes desktop overlays, wallpaper, small and minimized w
     assert.ok(position(hwnd, null, area.left+20, area.top+20, 300, 200, 0x0014));
     assert.equal(isWindowCovering(hwnd, area), false, 'ordinary small window');
     assert.ok(position(hwnd, BigInt.asUintN(64, -1n), area.left, area.top, area.right-area.left, area.bottom-area.top, 0x0010));
+    foreground(hwnd);
     assert.equal(isDesktopCovered(), true, 'real EnumWindows sees a topmost full-screen application');
     show(hwnd, 6); assert.equal(isWindowCovering(hwnd, area), false);
     show(hwnd, 0); assert.equal(isWindowCovering(hwnd, area), false);

@@ -1,6 +1,6 @@
 import { ShaderPlayer } from './shader.js';
 try {
-  const player = new ShaderPlayer(document.getElementById('canvas'), error => window.wallpaper.result(error), { smoothMouse: true });
+  const player = new ShaderPlayer(document.getElementById('canvas'), (error, recoverable) => window.wallpaper.result(error, recoverable), { smoothMouse: true, onContextState: lost => window.wallpaper.context(lost) });
   const unsubscribe = window.wallpaper.onMouse(position => player.setMouse(...position));
   const unsubscribeEnabled = window.wallpaper.onMouseEnabled(enabled => player.setMouseEnabled(enabled));
   const unsubscribeRuntime = window.wallpaper.onRuntime(state => {

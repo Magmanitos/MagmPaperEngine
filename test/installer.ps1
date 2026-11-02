@@ -24,8 +24,8 @@ function Stop-App {
   Get-Process MagmPaper -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe } | Stop-Process -Force
   Wait-Until { @(Get-Process MagmPaper -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe }).Count -eq 0 } 'Application did not stop'
 }
-function Install-App {
-  $process = Start-Process -FilePath $installer[0].FullName -ArgumentList '/S', '/currentuser' -Wait -PassThru
+function Install-App($setup = $installer[0].FullName) {
+  $process = Start-Process -FilePath $setup -ArgumentList '/S', '/currentuser' -Wait -PassThru
   Assert ($process.ExitCode -eq 0) "Installer failed: $($process.ExitCode)"
 }
 Assert (-not (Test-Path $installDir)) 'Runner already has an installation'
@@ -36,7 +36,10 @@ New-Item -ItemType Directory -Path $legacyDir | Out-Null
 $sample = @{ version=1; items=@(@{ id='installer-fixture'; name='Preserved wallpaper'; code='void main() { gl_FragColor = vec4(1.0); }' }); activeId=$null; settings=@{ mouseEnabled=$false; pauseWhenCovered=$true; pauseOnBattery=$false; fps=30; renderScale=0.75 } } | ConvertTo-Json -Depth 5
 Set-Content -Path (Join-Path $legacyDir 'wallpapers.json') -Value $sample -Encoding utf8NoBOM
 try {
-  Install-App
+  # Upgrade the published version, not just a second copy of the new installer.
+  $previous = Join-Path $env:TEMP 'MagmPaper-Setup-0.1.6.exe'
+  Invoke-WebRequest 'https://github.com/Magmanitos/MagmPaperEngine/releases/download/v0.1.6/MagmPaper-Setup-0.1.6.exe' -OutFile $previous
+  Install-App $previous
   Assert (Test-Path $exe) 'Application was not installed in LocalAppData/Programs/MagmPaper'
   Assert (Test-Path (Join-Path $installDir 'resources/app.asar')) 'Bundled application missing'
   Assert (@(Get-ChildItem (Join-Path $installDir 'resources') -Filter '*.node' -Recurse).Count -gt 0) 'Native Windows dependency missing'
@@ -64,12 +67,30 @@ try {
   Install-App
   Assert ((Get-Content $library -Raw) -eq $saved) 'Reinstallation modified user data'
   Assert ((Get-ItemPropertyValue -Path $runKey -Name $startupName) -eq ('"{0}" --autostart' -f $exe)) 'Installer did not relocate autostart'
+  Assert ((Get-Item $exe).VersionInfo.ProductVersion -like '0.1.7*') 'Upgrade left the old executable'
+  $entries = @(Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' | Where-Object { $_.DisplayName -eq 'MagmPaper' })
+  Assert ($entries.Count -eq 1 -and $entries[0].DisplayVersion -eq '0.1.7') 'Upgrade did not replace the old installed-apps registration'
+  $null = $shell.Run(('"{0}"' -f $desktopLink), 1, $false)
+  Wait-Until { (Get-Content $library -Raw | ConvertFrom-Json).version -eq 2 } 'Installed upgrade did not migrate to GLSL files'
+  Start-Sleep -Seconds 2
+  Assert (@(Get-Process MagmPaper -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe }).Count -gt 0) 'Upgraded application exited'
+  Stop-App
+  $data = Get-Content $library -Raw | ConvertFrom-Json
+  Assert ($data.items[0].id -eq 'installer-fixture' -and $data.settings.fps -eq 30 -and $data.settings.mouseEnabled -eq $false) 'Upgrade lost collection or settings'
+  $shader = Join-Path (Join-Path $dataDir 'Wallpapers') $data.items[0].file
+  Assert ((Get-Content $shader -Raw) -eq 'void main() { gl_FragColor = vec4(1.0); }') 'GLSL file content changed'
+  Assert ((Get-Content ($library + '.v1-backup') -Raw) -eq $saved) 'Original collection backup missing'
+  $saved = Get-Content $library -Raw
+  Install-App
+  Assert ((Get-Content $library -Raw) -eq $saved) 'Reinstallation changed the migrated library'
+  Assert ((Get-Content $shader -Raw) -eq 'void main() { gl_FragColor = vec4(1.0); }') 'Reinstallation changed GLSL code'
   $uninstaller = Join-Path $installDir 'Uninstall MagmPaper.exe'
   Assert (Test-Path $uninstaller) 'Uninstaller missing'
   $process = Start-Process -FilePath $uninstaller -ArgumentList '/S', '/currentuser' -Wait -PassThru
   Assert ($process.ExitCode -eq 0) 'Uninstaller failed'
   Wait-Until { -not (Test-Path $exe) -and -not (Test-Path $desktopLink) -and -not (Test-Path $menuLink) } 'Uninstall did not remove application and shortcuts'
   Assert ((Get-Content $library -Raw) -eq $saved) 'Uninstall deleted the collection'
+  Assert (Test-Path $shader) 'Uninstall deleted GLSL files'
   Assert (-not (Get-ItemProperty -Path $runKey -Name $startupName -ErrorAction SilentlyContinue)) 'Uninstall left a stale autostart entry'
   Assert (@(Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' | Where-Object { $_.DisplayName -eq 'MagmPaper' }).Count -eq 0) 'Uninstall left an installed-apps entry'
   Write-Output 'PASS: install, native dependencies, metadata, both shortcuts, packaged launch, library migration, reinstall, autostart relocation and uninstall with data preserved.'
