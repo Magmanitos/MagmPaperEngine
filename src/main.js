@@ -119,9 +119,10 @@ async function apply(id, current = () => !quitting && !suspended) {
       isOnBattery: () => powerMonitor.isOnBatteryPower(), isLocked: () => screenLocked, onChange: publishPlayback,
       onError: error => notify(`Автопауза временно недоступна: ${error.message}`) });
     health = setInterval(() => {
-      if (wallpaper !== next || next.isDestroyed()) return;
+      if (wallpaper !== next) return;
       try {
-        if (!healthy()) recovery.ensure();
+        if (next.isDestroyed()) { destroyWallpaper(); recovery.ensure(); }
+        else if (!healthy()) recovery.ensure();
         else if (next.isMinimized() || !next.isVisible()) next.showInactive();
       } catch { recovery.ensure(); }
     }, 1500);
