@@ -256,29 +256,37 @@ struct Watcher:implements<Watcher,IVisualTreeServiceCallback2> {
     HRESULT STDMETHODCALLTYPE OnElementStateChanged(InstanceHandle,VisualElementState,LPCWSTR) noexcept override {return S_OK;}
 };
 com_ptr<Watcher> watcher;
+HRESULT observe(IUnknown* site) noexcept {
+    try {
+        if(shared->observing) return S_OK;
+        auto service=winrt::com_ptr<IVisualTreeService3>();
+        check_hresult(site->QueryInterface(guid_of<IVisualTreeService3>(),service.put_void()));
+        auto observer=make_self<Watcher>(site);
+        {std::lock_guard lock(serviceLock);treeService=service;watcher=observer;}
+        // Advising can synchronously visit UI threads. Never do it under a UI callback.
+        using Work=std::pair<com_ptr<IVisualTreeService3>,com_ptr<Watcher>>;
+        auto data=new Work(service,observer);observerStopped=false;
+        InterlockedExchange(&shared->observing,1);
+        HANDLE thread=CreateThread(nullptr,0,[](void* value)->DWORD {
+            std::unique_ptr<Work> pair(static_cast<Work*>(value));
+            HRESULT result=pair->first->AdviseVisualTreeChange(pair->second.get());
+            if(FAILED(result)&&shared) InterlockedExchange(&shared->error,result);
+            WaitForSingleObject(hostProcess,INFINITE);
+            stopping=true;pair->first->UnadviseVisualTreeChange(pair->second.get());
+            observerStopped=true;
+            return 0;
+        },data,0,nullptr);
+        if(!thread) {delete data;observerStopped=true;InterlockedExchange(&shared->observing,0);return HRESULT_FROM_WIN32(GetLastError());}
+        CloseHandle(thread);return S_OK;
+    } catch(...) {return to_hresult();}
+}
 struct Tap:implements<Tap,IObjectWithSite> {
     com_ptr<IUnknown> site;
     HRESULT STDMETHODCALLTYPE SetSite(IUnknown* value) noexcept override {
-        try {
-            if(!value) {site=nullptr;return S_OK;}
-            if(!initialize()) return E_FAIL;
-            site.copy_from(value);
-            auto service=site.as<IVisualTreeService3>();auto observer=make_self<Watcher>(value);
-            {std::lock_guard lock(serviceLock);treeService=service;watcher=observer;}
-            // Advising can synchronously visit UI threads. Never do it under a UI callback.
-            using Work=std::pair<com_ptr<IVisualTreeService3>,com_ptr<Watcher>>;
-            auto data=new Work(service,observer);observerStopped=false;
-            HANDLE thread=CreateThread(nullptr,0,[](void* value)->DWORD {
-                std::unique_ptr<Work> pair(static_cast<Work*>(value));
-                HRESULT result=pair->first->AdviseVisualTreeChange(pair->second.get());
-                if(FAILED(result)&&shared) InterlockedExchange(&shared->error,result);
-                WaitForSingleObject(hostProcess,INFINITE);
-                stopping=true;pair->first->UnadviseVisualTreeChange(pair->second.get());
-                observerStopped=true;
-                return 0;
-            },data,0,nullptr);
-            if(!thread) {delete data;observerStopped=true;return HRESULT_FROM_WIN32(GetLastError());}CloseHandle(thread);return S_OK;
-        } catch(...) {return to_hresult();}
+        if(!value) {site=nullptr;return S_OK;}
+        if(!initialize()) return E_FAIL;
+        site.copy_from(value);
+        return observe(value);
     }
     HRESULT STDMETHODCALLTYPE GetSite(REFIID id,void** result) noexcept override {return site?site->QueryInterface(id,result):E_FAIL;}
 };
@@ -302,6 +310,12 @@ extern "C" __declspec(dllexport) LRESULT CALLBACK MagmTaskbarHook(int code,WPARA
                     RECT rect{};GetWindowRect(message->hwnd,&rect);
                     if(rect.right-rect.left>rect.bottom-rect.top&&SetWindowSubclass(message->hwnd,barProcedure,1,reinterpret_cast<DWORD_PTR>(ctx))) {
                         ctx->bars.push_back({message->hwnd,rect,GetDpiForWindow(message->hwnd)});InterlockedIncrement(&shared->bars);
+                        // XAML diagnostics remains in Explorer after a helper exits. Reuse
+                        // that service with a fresh observer instead of reinjecting its TAP.
+                        if(observerStopped&&treeService) {
+                            HRESULT result=observe(treeService.get());
+                            if(FAILED(result)) InterlockedExchange(&shared->error,result);
+                        }
                     }
                 }
             }

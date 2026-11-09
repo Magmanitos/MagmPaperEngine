@@ -30,7 +30,7 @@ struct Slot {
 };
 struct Shared {
     uint32_t magic=Magic, version=Version, hostPid=0;
-    volatile LONG generation=0, stopped=0, error=0, bars=0;
+    volatile LONG generation=0, stopped=0, error=0, bars=0, observing=0;
     Settings settings{};
     Slot slots[MaxThreads]{};
 };

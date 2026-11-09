@@ -69,7 +69,9 @@ void attach() {
     }
     hookBars();
     if(!shared->bars) {SetTimer(window,1,200,nullptr);return;}
-    diagnosticsPending=true;deadline=GetTickCount64()+12000;SetTimer(window,2,100,nullptr);
+    deadline=GetTickCount64()+12000;SetTimer(window,2,100,nullptr);
+    if(shared->observing) return;
+    diagnosticsPending=true;
     std::thread([pid]{
         HRESULT result=E_NOINTERFACE;
         HMODULE xaml=LoadLibraryExW(L"Windows.UI.Xaml.dll",nullptr,LOAD_LIBRARY_SEARCH_SYSTEM32);
@@ -118,7 +120,8 @@ LRESULT CALLBACK procedure(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp) {
         if(wp==1) {KillTimer(hwnd,1);attach();}
         if(wp==2) {
             LONG frames=0;for(auto& slot:shared->slots) frames+=slot.frames;
-            if(frames&&shared->bars) {KillTimer(hwnd,2);connected=true;event("ready",desired.sequence);apply();}
+            if(shared->error) {KillTimer(hwnd,2);event("error",desired.sequence,shared->error);stop();}
+            else if(frames&&shared->bars) {KillTimer(hwnd,2);connected=true;event("ready",desired.sequence);apply();}
             else if(GetTickCount64()>deadline) {KillTimer(hwnd,2);event("error",desired.sequence,ERROR_NOT_SUPPORTED);stop();}
         }
         if(wp==3) {
