@@ -205,7 +205,7 @@ Context* getContext() {
     context=ctx.release();return context;
 }
 // Documented XAML diagnostics callback, independent of Windhawk and symbol hooks.
-struct Watcher final:implements<Watcher,IVisualTreeServiceCallback2> {
+struct Watcher:implements<Watcher,IVisualTreeServiceCallback2> {
     com_ptr<IXamlDiagnostics> diagnostics;
     com_ptr<DiagnosticsLifetime> lifetime;
     DWORD owner=0;
@@ -248,7 +248,7 @@ struct Watcher final:implements<Watcher,IVisualTreeServiceCallback2> {
     HRESULT STDMETHODCALLTYPE OnElementStateChanged(InstanceHandle,VisualElementState,LPCWSTR) noexcept override {return S_OK;}
 };
 com_ptr<Watcher> watcher;
-struct Tap final:implements<Tap,IObjectWithSite> {
+struct Tap:implements<Tap,IObjectWithSite> {
     com_ptr<IUnknown> site;
     HRESULT STDMETHODCALLTYPE SetSite(IUnknown* value) noexcept override {
         try {
@@ -274,7 +274,7 @@ struct Tap final:implements<Tap,IObjectWithSite> {
     }
     HRESULT STDMETHODCALLTYPE GetSite(REFIID id,void** result) noexcept override {return site?site->QueryInterface(id,result):E_FAIL;}
 };
-struct Factory final:implements<Factory,IClassFactory> {
+struct Factory:implements<Factory,IClassFactory> {
     HRESULT STDMETHODCALLTYPE CreateInstance(IUnknown* outer,REFIID id,void** result) noexcept override {
         if(outer) return CLASS_E_NOAGGREGATION;
         try {return make<Tap>().as(id,result);} catch(...) {return to_hresult();}
@@ -301,10 +301,10 @@ extern "C" __declspec(dllexport) LRESULT CALLBACK MagmTaskbarHook(int code,WPARA
     }
     return CallNextHookEx(nullptr,code,wp,lp);
 }
-extern "C" __declspec(dllexport) HRESULT __stdcall DllGetClassObject(REFCLSID cls,REFIID id,void** result) {
+STDAPI DllGetClassObject(REFCLSID cls,REFIID id,void** result) {
     if(!result) return E_POINTER;*result=nullptr;
     if(cls!=TapClass) return CLASS_E_CLASSNOTAVAILABLE;
     try {return make<Factory>().as(id,result);} catch(...) {return to_hresult();}
 }
-extern "C" __declspec(dllexport) HRESULT __stdcall DllCanUnloadNow() {return S_FALSE;}
+STDAPI DllCanUnloadNow() {return S_FALSE;}
 BOOL WINAPI DllMain(HINSTANCE instance,DWORD reason,void*) {if(reason==DLL_PROCESS_ATTACH){module=instance;DisableThreadLibraryCalls(instance);}return TRUE;}

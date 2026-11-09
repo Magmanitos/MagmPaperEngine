@@ -1,0 +1,5 @@
+LIBRARY MagmTaskbar
+EXPORTS
+    DllGetClassObject
+    DllCanUnloadNow
+    MagmTaskbarHook
