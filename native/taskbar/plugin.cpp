@@ -70,8 +70,9 @@ bool initialize(DWORD host=0) {
 }
 void workArea(Bar& bar,const RECT& desired) {
 #ifdef MAGM_HARNESS
+    (void)bar;(void)desired;
     return; // The isolated surface is not the real shell and owns no work area.
-#endif
+#else
     MONITORINFO info{sizeof(info)};
     if(!GetMonitorInfoW(MonitorFromWindow(bar.window,MONITOR_DEFAULTTONEAREST),&info)) return;
     APPBARDATA data{sizeof(data)};data.hWnd=bar.window;
@@ -88,6 +89,7 @@ void workArea(Bar& bar,const RECT& desired) {
     if(!EqualRect(&next,&info.rcWork)&&SystemParametersInfoW(SPI_SETWORKAREA,0,&next,SPIF_SENDCHANGE)) {
         bar.writtenWork=next;bar.changedWork=true;
     }
+#endif
 }
 void resizeBars(Context& ctx,bool enabled) {
     for(auto& bar:ctx.bars) {

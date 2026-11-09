@@ -25,7 +25,9 @@ jobs:
           $code = $LASTEXITCODE
           $output | Write-Output
           if ($code -ne 0) {
-            $message = ($output -join "`n").Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            $message = ($output -join "`n")
+            if ($message.Length -gt 4500) { $message = $message.Substring($message.Length - 4500) }
+            $message = $message.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
             Write-Output "::error::$message"
             exit $code
           }
