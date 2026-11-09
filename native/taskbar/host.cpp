@@ -27,7 +27,7 @@ void event(const char* name,uint32_t sequence=0,LONG code=0) {
     LONG frames=0,icons=0,backgrounds=0,errors=0;
     if(shared) for(auto& slot:shared->slots) {frames+=slot.frames;icons+=slot.icons;backgrounds+=slot.backgrounds;errors+=slot.errors;}
     std::cout<<"{\"event\":\""<<name<<"\",\"sequence\":"<<sequence<<",\"code\":"<<code
-        <<",\"frames\":"<<frames<<",\"icons\":"<<icons<<",\"backgrounds\":"<<backgrounds<<",\"errors\":"<<errors<<"}"<<std::endl;
+        <<",\"frames\":"<<frames<<",\"icons\":"<<icons<<",\"backgrounds\":"<<backgrounds<<",\"errors\":"<<errors<<",\"diagnosticError\":"<<(shared?shared->error:0)<<"}"<<std::endl;
 }
 void signal(UINT message) {
     if(shared) for(auto& slot:shared->slots) if(slot.window) PostMessageW(reinterpret_cast<HWND>(slot.window),message,0,0);
