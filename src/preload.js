@@ -1,5 +1,11 @@
 const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('magm', {
+  taskbar: () => ipcRenderer.invoke('taskbar:get'),
+  setTaskbar: value => ipcRenderer.invoke('taskbar:native', value),
+  setTaskbarSizes: value => ipcRenderer.invoke('taskbar:sizes', value),
+  restoreTaskbar: group => ipcRenderer.invoke('taskbar:restore', group),
+  taskbarHelp: () => ipcRenderer.invoke('taskbar:help'),
+  taskbarWindows: () => ipcRenderer.invoke('taskbar:windows'),
   openFolder: () => ipcRenderer.invoke('library:open-folder'),
   list: () => ipcRenderer.invoke('library:list'),
   save: item => ipcRenderer.invoke('library:save', item),

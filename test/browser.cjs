@@ -11,7 +11,10 @@ const os = require('node:os');
   const store = new Store(dir);
   let startupEnabled = false, startupWriteFails = false;
   let mouseWriteFails = false;
-  let settingsWriteFails = false, folderOpened = 0;
+  let settingsWriteFails = false, folderOpened = 0, component=false, helpOpened=0;
+  const originalNative={alignment:1,search:2,taskView:1,widgets:1,autoHide:false};
+  const originalSizes={height:48,icon:24,button:44,smallIcon:16,smallButton:32};
+  let taskbarState={supported:true,build:'10.0.26100',native:{...originalNative},sizes:{...originalSizes},sizesAvailable:false,canRestoreNative:false,canRestoreSizes:false};
   store.save({ name: 'Северное сияние', code: require('../src/example') });
   const root = path.resolve(__dirname, '../src/ui');
   const server = http.createServer((req, res) => {
@@ -29,6 +32,12 @@ const os = require('node:os');
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.exposeFunction('testBridge', (method, arg) => {
+      if (method === 'taskbar') return {...taskbarState,sizesAvailable:component};
+      if (method === 'taskbarHelp') { helpOpened++; return; }
+      if (method === 'taskbarWindows') return;
+      if (method === 'setTaskbar') { taskbarState.native=arg;taskbarState.canRestoreNative=true;return {...taskbarState,sizesAvailable:component}; }
+      if (method === 'setTaskbarSizes') { require('../src/taskbar').validateSizes(arg);taskbarState.sizes=arg;taskbarState.canRestoreSizes=true;return {...taskbarState,sizesAvailable:component}; }
+      if (method === 'restoreTaskbar') { if(arg==='native'){taskbarState.native={...originalNative};taskbarState.canRestoreNative=false;}else{taskbarState.sizes={...originalSizes};taskbarState.canRestoreSizes=false;} return {...taskbarState,sizesAvailable:component}; }
       if (method === 'openFolder') { folderOpened++; return; }
       if (method === 'setSettings') {
         if (settingsWriteFails) throw new Error('Settings write failed');
@@ -50,13 +59,40 @@ const os = require('node:os');
       if (method === 'stop') return store.activate(null);
     });
     await page.addInitScript(() => {
-      window.magm = Object.fromEntries(['openFolder','list','save','remove','apply','stop','startup','setStartup','setMouseEnabled','setSettings'].map(method => [method, arg => window.testBridge(method, arg)]));
+      if(!localStorage.getItem('magmpaper-section')) localStorage.setItem('magmpaper-section','wallpapers');
+      window.previewDraws=0;
+      const draw=WebGLRenderingContext.prototype.drawArrays;
+      WebGLRenderingContext.prototype.drawArrays=function(...args){if(this.canvas.id==='canvas')window.previewDraws++;return draw.apply(this,args);};
+      window.magm = Object.fromEntries(['taskbar','taskbarHelp','taskbarWindows','setTaskbar','setTaskbarSizes','restoreTaskbar','openFolder','list','save','remove','apply','stop','startup','setStartup','setMouseEnabled','setSettings'].map(method => [method, arg => window.testBridge(method, arg)]));
       window.magm.onStatus = () => {};
       window.magm.onPlayback = callback => { window.testPlayback = callback; };
       window.magm.onOpenSettings = callback => { window.testOpenSettings = callback; };
     });
     await page.goto(`http://127.0.0.1:${server.address().port}`);
     await page.waitForFunction(() => document.getElementById('status').textContent.includes('Предпросмотр готов'));
+    await page.click('[data-route="overview"]');
+    const pausedDraws=await page.evaluate(()=>window.previewDraws);
+    await page.waitForTimeout(150);assert.equal(await page.evaluate(()=>window.previewDraws),pausedDraws,'hidden module preview consumes no GPU draws');
+    await page.screenshot({path:'/tmp/magmpaper-overview-020.png'});
+    await page.click('[data-route="taskbar"]');
+    await page.waitForFunction(()=>document.getElementById('taskbar-status').textContent.includes('Параметры прочитаны'));
+    assert.equal(await page.isDisabled('#taskbar-apply-sizes'),true);
+    await page.click('#taskbar-help');assert.equal(helpOpened,1);
+    component=true;await page.click('#taskbar-refresh');
+    await page.waitForFunction(()=>!document.getElementById('taskbar-apply-sizes').disabled);
+    await page.click('[data-taskbar-preset="large"]');await page.click('#taskbar-apply-sizes');
+    await page.waitForFunction(()=>document.getElementById('taskbar-status').textContent.includes('Размеры сохранены'));
+    assert.equal(taskbarState.sizes.icon,40);
+    await page.click('#taskbar-restore-sizes');await page.waitForFunction(()=>document.getElementById('taskbar-status').textContent.includes('Исходные'));
+    assert.equal(taskbarState.sizes.icon,24);
+    await page.selectOption('#taskbar-alignment','0');await page.check('#taskbar-autohide');await page.click('#taskbar-apply-native');
+    await page.waitForFunction(()=>document.getElementById('taskbar-status').textContent.includes('Параметры Windows сохранены'));
+    assert.equal(taskbarState.native.autoHide,true);
+    await page.screenshot({path:'/tmp/magmpaper-taskbar-020.png',fullPage:true});
+    await page.click('#taskbar-restore-native');await page.waitForFunction(()=>document.getElementById('taskbar-status').textContent.includes('Исходные'));
+    assert.equal(taskbarState.native.autoHide,false);
+    await page.click('[data-route="wallpapers"]');await page.waitForTimeout(150);
+    assert.ok(await page.evaluate(()=>window.previewDraws)>pausedDraws,'return to wallpapers resumes preview');
     await page.click('#open-folder');
     await page.waitForFunction(() => document.getElementById('status').textContent.includes('Открыта папка'));
     assert.equal(folderOpened, 1);
@@ -230,7 +266,8 @@ const os = require('node:os');
     assert.deepEqual(restored.errors, []); assert.equal(restored.fps, 30); assert.equal(restored.scale, 0.75);
     for (const [i, expected] of [64,128,191].entries()) assert.ok(Math.abs(restored.pixels[i]-expected) <= 1, JSON.stringify(restored));
     await page.click('#add'); await page.fill('#name', 'Мой шейдер');
-    await page.fill('#code', 'broken shader'); await page.click('#save');
+    await page.fill('#code', 'broken shader');
+    await page.click('[data-route=overview]');await page.click('[data-route=wallpapers]');assert.equal(await page.inputValue('#code'),'broken shader','navigation retains editor draft'); await page.click('#save');
     await page.waitForSelector('#status.error'); assert.equal(store.list().items.length, 1);
     await page.fill('#code', require('../src/example')); await page.click('#save');
     await page.waitForFunction(() => document.getElementById('count').textContent === '2');

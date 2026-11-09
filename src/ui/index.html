@@ -7,19 +7,60 @@
   <title>MagmPaper</title><link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <aside>
-    <div class="brand"><span class="logo">M</span><div>MagmPaper<small>ЖИВЫЕ ОБОИ</small></div></div>
-    <button id="add" class="primary">＋ Добавить обои</button>
-    <div class="section-label">МОЯ КОЛЛЕКЦИЯ <span id="count">0</span></div>
-    <nav id="list" aria-label="Сохранённые обои"></nav>
+  <aside class="app-sidebar">
+    <div class="brand"><span class="logo">M</span><div>MagmPaper<small>ВАШ WINDOWS</small></div></div>
+    <div class="nav-label">ПЕРСОНАЛИЗАЦИЯ</div>
+    <nav class="app-nav" aria-label="Разделы приложения">
+      <button data-route="overview"><span>◫</span> Обзор</button>
+      <button data-route="wallpapers"><span>◈</span> Обои</button>
+      <button data-route="taskbar"><span>▰</span> Панель задач</button>
+    </nav>
     <div class="sidebar-bottom">
-      <button id="open-folder" class="quiet folder-button" title="Открыть папку с GLSL-файлами"><svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path d="M3 7V5h6l2 2h10v13H3Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>Папка обоев</button>
-      <button id="refresh-library" class="quiet folder-button" title="Прочитать изменения файлов из папки">↻ Обновить коллекцию</button>
       <button id="open-settings" class="quiet settings-button">⚙ Параметры</button>
-      <span class="dot"></span> Локальная библиотека<p>Закрытие окна сворачивает приложение в трей.</p>
+      <div class="app-version"><span class="dot"></span> MagmPaper 0.2.0</div><p>Настройте пространство под себя.<br>Закрытие окна оставляет обои в трее.</p>
     </div>
   </aside>
   <main>
+    <section id="page-overview" class="app-page" hidden aria-labelledby="overview-title">
+      <div class="page-heading"><div><div class="eyebrow">ВАШЕ ЛИЧНОЕ ПРОСТРАНСТВО</div><h1 id="overview-title">Windows в вашем стиле</h1><p>Обои, панель задач и единые настройки в одном месте.</p></div><span class="version-badge">MAGMPAPER / 0.2</span></div>
+      <div class="overview-hero"><div><span class="pill">НАСТРОЙТЕ СВОЙ РАБОЧИЙ СТОЛ</span><h2>Больше возможностей.<br>Меньше отвлечений.</h2><p>Начните с обоев или подберите удобные размеры панели задач.</p><button class="primary" data-go="wallpapers">Открыть коллекцию ↗</button></div><div class="hero-art" aria-hidden="true"><div class="hero-wave"></div><div class="mini-taskbar"><i></i><i></i><i></i><i></i><i></i></div></div></div>
+      <div class="module-grid"><button class="module-card" data-go="wallpapers"><span class="module-symbol">◈</span><h2>Обои</h2><p>Живые GLSL-обои, редактор и ваша коллекция.</p><small id="overview-count">Локальная коллекция</small></button><button class="module-card" data-go="taskbar"><span class="module-symbol">▰</span><h2>Панель задач</h2><p>Поведение, размеры панели, значков и кнопок.</p><small>Настройки Windows 11</small></button></div>
+      <div class="info-strip"><span class="dot"></span><p>Экономия ресурсов: скрытый предпросмотр не рисуется. Настройки панели задач не требуют постоянного опроса.</p></div>
+    </section>
+    <section id="page-taskbar" class="app-page" hidden aria-labelledby="taskbar-title">
+      <div class="page-heading"><div><div class="eyebrow">ПЕРСОНАЛИЗАЦИЯ / ПАНЕЛЬ ЗАДАЧ</div><h1 id="taskbar-title">Удобство в деталях</h1><p>Настройте поведение панели и размеры её элементов.</p></div><button id="taskbar-refresh" class="quiet">↻ Обновить</button></div>
+      <div class="taskbar-preview" aria-label="Схематический предпросмотр панели задач"><span class="preview-caption">ПРЕДПРОСМОТР РАЗМЕРОВ · СХЕМА</span><div id="taskbar-model"><div class="model-start">⊞</div><div class="model-icon">▣</div><div class="model-icon">◉</div><div class="model-icon">▧</div><div class="model-icon">✦</div></div></div>
+      <p id="taskbar-status" role="status" aria-live="polite">Откройте раздел для чтения текущих параметров.</p>
+      <div class="taskbar-columns">
+        <section class="settings-card"><div class="card-heading"><h2>Поведение панели</h2><span class="pill">WINDOWS</span></div><p class="muted">Настройки сохраняются в Windows и работают после закрытия MagmPaper.</p>
+          <fieldset id="taskbar-native-fields" disabled>
+            <label for="taskbar-alignment">Расположение кнопок</label><select id="taskbar-alignment"><option value="1">По центру</option><option value="0">Слева</option></select>
+            <label for="taskbar-search">Поиск</label><select id="taskbar-search"><option value="0">Скрыт</option><option value="1">Значок</option><option value="2">Поле поиска</option><option value="3">Значок и подпись</option></select>
+            <label class="check-row"><input type="checkbox" id="taskbar-autohide">Автоматически скрывать панель</label>
+            <label class="check-row"><input type="checkbox" id="taskbar-taskview">Кнопка «Представление задач»</label>
+            <label class="check-row"><input type="checkbox" id="taskbar-widgets">Виджеты</label>
+          </fieldset>
+          <p class="muted">Скрытие применяется сразу. Если остальные изменения не видны, выйдите из учётной записи и войдите снова. Политики организации могут ограничивать параметры.</p>
+          <div class="card-actions"><button id="taskbar-restore-native" class="quiet" disabled>Вернуть исходные</button><button id="taskbar-apply-native" class="primary" disabled>Применить</button></div><button id="taskbar-windows" class="text-button">Открыть параметры Windows ↗</button>
+        </section>
+        <section class="settings-card"><div class="card-heading"><h2>Размеры элементов</h2><span class="pill">WINDHAWK</span></div>
+          <p id="taskbar-component" class="component-state">Проверка компонента…</p>
+          <p class="muted">Для высоты панели и точных размеров нужен Windhawk и включённый мод <b>Taskbar height and icon size</b>. Поддерживается обычная установка, общая конфигурация мода. Windhawk должен быть запущен.</p>
+          <button id="taskbar-help" class="quiet">Открыть страницу компонента ↗</button>
+          <fieldset id="taskbar-size-fields" disabled>
+            <div class="size-row"><label for="taskbar-height">Высота панели</label><input id="taskbar-height" type="number" min="32" max="96" step="1" value="48"><span>px</span></div>
+            <div class="size-row"><label for="taskbar-icon">Размер значков</label><input id="taskbar-icon" type="number" min="16" max="64" step="1" value="24"><span>px</span></div>
+            <div class="size-row"><label for="taskbar-button">Ширина кнопок</label><input id="taskbar-button" type="number" min="28" max="100" step="1" value="44"><span>px</span></div>
+            <details><summary>Режим маленьких значков Windows</summary><div class="size-row"><label for="taskbar-smallIcon">Размер значков</label><input id="taskbar-smallIcon" type="number" min="16" max="32" value="16"><span>px</span></div><div class="size-row"><label for="taskbar-smallButton">Ширина кнопок</label><input id="taskbar-smallButton" type="number" min="24" max="64" value="32"><span>px</span></div></details>
+            <div class="presets"><button type="button" data-taskbar-preset="compact">Компактная</button><button type="button" data-taskbar-preset="standard">Стандартная</button><button type="button" data-taskbar-preset="large">Крупная</button></div>
+          </fieldset>
+          <p class="muted">Размеры указаны до масштабирования Windows. Применение запросит права администратора и изменит общие настройки этого мода. Исходные значения сохраняются для возврата.</p>
+          <div class="card-actions"><button id="taskbar-restore-sizes" class="quiet" disabled>Вернуть исходные</button><button id="taskbar-apply-sizes" class="primary" disabled>Применить размеры</button></div>
+        </section>
+      </div>
+    </section>
+    <section id="page-wallpapers" class="app-page" aria-label="Обои">
+      <div class="wallpapers-layout"><div class="collection-panel"><div class="eyebrow">ОБОИ / КОЛЛЕКЦИЯ</div><h2>Ваши обои</h2><button id="add" class="primary">＋ Добавить обои</button><div class="section-label">МОЯ КОЛЛЕКЦИЯ <span id="count">0</span></div><nav id="list" aria-label="Сохранённые обои"></nav><div class="collection-actions"><button id="open-folder" class="quiet folder-button">▱ Папка обоев</button><button id="refresh-library" class="quiet folder-button">↻ Обновить коллекцию</button></div></div><div class="wallpaper-content">
     <header><div><div class="eyebrow">ВАШ РАБОЧИЙ СТОЛ, В ДВИЖЕНИИ</div><h1 id="title">Выберите обои</h1></div><button id="stop" class="quiet">Остановить обои</button></header>
     <div class="preview"><canvas id="canvas" aria-label="Предпросмотр шейдера"></canvas><div class="preview-label">ПРЕДПРОСМОТР <span>WebGL · до 60 FPS</span></div><div id="empty">Добавьте свой первый шейдер</div></div>
     <div class="toolbar"><span id="selection-info">GLSL Sandbox</span><div><button id="edit" class="quiet">Редактировать</button><button id="delete" class="danger">Удалить</button><button id="apply" class="primary">На рабочий стол ↗</button></div></div>
@@ -31,7 +72,8 @@
       <div class="editor-footer"><p>Вставьте GLSL-код с glslsandbox.com.<br>Поддерживаются time, resolution, mouse и backbuffer.</p><button id="preview" class="quiet">Проверить</button><button id="save" class="primary">Сохранить</button></div>
     </section>
     <div id="status" role="status" aria-live="polite">Выберите обои или добавьте собственный GLSL-шейдер.</div>
-    <footer>MAGMPAPER / 0.1 <span>Один экран. Бесконечно много настроений.</span></footer>
+      </div></div>
+    </section>
   </main>
   <dialog id="confirm-delete"><h2>Удалить обои?</h2><p id="delete-name"></p><p>Это действие нельзя отменить.</p><div><button id="keep" class="quiet">Отмена</button><button id="confirm" class="danger">Удалить</button></div></dialog>
   <dialog id="settings-dialog" aria-labelledby="settings-title">

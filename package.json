@@ -1,7 +1,7 @@
 {
   "name": "magmpaper-engine",
-  "version": "0.1.8",
-  "description": "Minimal GLSL live wallpapers for Windows 11",
+  "version": "0.2.0",
+  "description": "Windows customization with GLSL live wallpapers and taskbar controls",
   "author": "MagmPaperEngine",
   "license": "MIT",
   "main": "src/main.js",

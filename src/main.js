@@ -2,6 +2,9 @@ const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, dialog, po
 const path = require('node:path');
 const fs = require('node:fs');
 const { Store } = require('./store');
+const { createTaskbar } = require('./taskbar');
+let taskbar;
+const taskbarModule = () => taskbar ||= createTaskbar(app.getPath('userData'));
 const { createRecoveryController } = require('./recovery');
 const { attach } = require('./desktop');
 const { createCursorController } = require('./cursor');
@@ -160,6 +163,12 @@ else {
       return { ...data, runningId: wallpaper && !wallpaper.isDestroyed() ? data.activeId : null, platform: process.platform, playback: playbackState };
     });
     handle('library:open-folder', openWallpaperFolder);
+    handle('taskbar:get', () => taskbarModule().state());
+    handle('taskbar:native', patch => taskbarModule().applyNative(patch));
+    handle('taskbar:sizes', patch => taskbarModule().applySizes(patch));
+    handle('taskbar:restore', group => taskbarModule().restore(group));
+    handle('taskbar:help', () => shell.openExternal('https://windhawk.net/mods/taskbar-icon-size'));
+    handle('taskbar:windows', () => shell.openExternal('ms-settings:taskbar'));
     handle('library:save', item => library.save(item));
     handle('startup:get', () => startup.get());
     handle('startup:set', enabled => startup.set(enabled));
@@ -200,7 +209,7 @@ else {
       else { wallpaper.showInactive(); playbackController?.refresh(); }
     });
     tray = new Tray(nativeImage.createFromPath(iconPath).resize({ width: 32, height: 32 }));
-    tray.setToolTip('MagmPaper — живые обои');
+    tray.setToolTip('MagmPaper — ваш Windows');
     tray.setContextMenu(Menu.buildFromTemplate([
       { label: 'Открыть MagmPaper', click: openManager },
       { label: 'Папка обоев', click: () => openWallpaperFolder().catch(e => notify(e.message)) },

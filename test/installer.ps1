@@ -67,9 +67,9 @@ try {
   Install-App
   Assert ((Get-Content $library -Raw) -eq $saved) 'Reinstallation modified user data'
   Assert ((Get-ItemPropertyValue -Path $runKey -Name $startupName) -eq ('"{0}" --autostart' -f $exe)) 'Installer did not relocate autostart'
-  Assert ((Get-Item $exe).VersionInfo.ProductVersion -like '0.1.8*') 'Upgrade left the old executable'
+  Assert ((Get-Item $exe).VersionInfo.ProductVersion -like '0.2.0*') 'Upgrade left the old executable'
   $entries = @(Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' | Where-Object { $_.DisplayName -eq 'MagmPaper' })
-  Assert ($entries.Count -eq 1 -and $entries[0].DisplayVersion -eq '0.1.8') 'Upgrade did not replace the old installed-apps registration'
+  Assert ($entries.Count -eq 1 -and $entries[0].DisplayVersion -eq '0.2.0') 'Upgrade did not replace the old installed-apps registration'
   $null = $shell.Run(('"{0}"' -f $desktopLink), 1, $false)
   Wait-Until { (Get-Content $library -Raw | ConvertFrom-Json).version -eq 2 } 'Installed upgrade did not migrate to GLSL files'
   Start-Sleep -Seconds 2

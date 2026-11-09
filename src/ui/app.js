@@ -1,6 +1,8 @@
+import { loadTaskbar } from './taskbar.js';
 import { ShaderPlayer } from './shader.js';
 const $ = id => document.getElementById(id);
 let data = { items: [] }, selected = null, editing = undefined, player, busy = false, dirty = false;
+let currentRoute = 'overview';
 let startupState = { supported: false, enabled: false };
 function status(text, error = false) {
   for (const id of ['status', 'settings-status']) { $(id).textContent = text; $(id).classList.toggle('error', error); }
@@ -39,6 +41,7 @@ async function action(task) {
 }
 function renderList() {
   $('count').textContent = data.items.length;
+  $('overview-count').textContent = `${data.items.length} в коллекции`;
   $('list').replaceChildren();
   for (const item of data.items) {
     const button = document.createElement('button');
@@ -88,12 +91,26 @@ function preview() {
   player.load($('code').value); $('empty').hidden = true;
 }
 $('name').oninput = $('code').oninput = () => { dirty = true; };
-function updatePreviewPause() { if (player) player.paused = document.hidden || $('settings-dialog').open; }
+function updatePreviewPause() { if (player) player.paused = document.hidden || $('settings-dialog').open || currentRoute !== 'wallpapers'; }
 function openSettings() {
   showSettings(); $('settings-status').textContent = '';
   if (!$('settings-dialog').open) $('settings-dialog').showModal();
   updatePreviewPause();
 }
+function navigate(route) {
+  if (!['overview','wallpapers','taskbar'].includes(route)) return;
+  currentRoute = route;
+  for (const name of ['overview','wallpapers','taskbar']) $('page-'+name).hidden = route !== name;
+  for (const button of document.querySelectorAll('[data-route]')) {
+    if (button.dataset.route === route) button.setAttribute('aria-current','page');
+    else button.removeAttribute('aria-current');
+  }
+  localStorage.setItem('magmpaper-section', route);
+  updatePreviewPause();
+  if (route === 'taskbar') void loadTaskbar();
+}
+for (const button of document.querySelectorAll('[data-route],[data-go]')) button.onclick = () => navigate(button.dataset.route || button.dataset.go);
+navigate(localStorage.getItem('magmpaper-section') || 'overview');
 $('open-settings').onclick = openSettings;
 $('close-settings').onclick = () => $('settings-dialog').close();
 $('settings-dialog').addEventListener('close', updatePreviewPause);
@@ -118,7 +135,7 @@ $('startup').onchange = () => action(async () => {
 });
 $('open-folder').onclick = () => action(async () => { await window.magm.openFolder(); status('Открыта папка обоев. Изменения файлов появятся после обновления коллекции.'); });
 $('refresh-library').onclick = () => action(async () => { await refresh(); status('Коллекция обновлена из GLSL-файлов.'); });
-window.addEventListener('focus', () => { if (!busy && editing === undefined) void action(() => refresh()); });
+window.addEventListener('focus', () => { if (!busy && editing === undefined && currentRoute === 'wallpapers') void action(() => refresh()); });
 $('add').onclick = () => openEditor(null);
 $('edit').onclick = () => openEditor(selected);
 $('cancel').onclick = () => { if (leaveEditor()) select(selected); };
