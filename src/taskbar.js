@@ -8,6 +8,8 @@ const ADVANCED = 'Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanc
 const SEARCH = 'Software\\Microsoft\\Windows\\CurrentVersion\\Search';
 const MOD = 'SOFTWARE\\Windhawk\\Engine\\Mods\\taskbar-icon-size';
 const NATIVE = { alignment: [ADVANCED, 'TaskbarAl'], search: [SEARCH, 'SearchboxTaskbarMode'], taskView: [ADVANCED, 'ShowTaskViewButton'], widgets: [ADVANCED, 'TaskbarDa'] };
+const NATIVE_DEFAULTS = { alignment:1, search:2, taskView:1, widgets:1 };
+const NATIVE_LABELS = { alignment:'Расположение кнопок', search:'Поиск', taskView:'Представление задач', widgets:'Виджеты', autoHide:'Автоматическое скрытие' };
 const SIZE = { height: ['TaskbarHeight', 32, 96, 48], icon: ['IconSize', 16, 64, 24], button: ['TaskbarButtonWidth', 28, 100, 44], smallIcon: ['IconSizeSmall', 16, 32, 16], smallButton: ['TaskbarButtonWidthSmall', 24, 64, 32] };
 function validateNative(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Некорректные параметры панели задач.');
@@ -33,6 +35,13 @@ function windowsApi() {
   const rect = k.struct('TaskbarRect', { left:'int32_t',top:'int32_t',right:'int32_t',bottom:'int32_t' });
   const appbar = k.struct('MagmAppbar', { size:'uint32_t', hwnd:'void *', callback:'uint32_t', edge:'uint32_t', rect, param:'intptr_t' });
   const get = adv.func('int32_t __stdcall RegGetValueW(void *key, str16 subkey, str16 name, uint32_t flags, void *type, _Out_ uint32_t *data, _Inout_ uint32_t *size)');
+  const open = adv.func('int32_t __stdcall RegOpenKeyExW(void *key, str16 subkey, uint32_t options, uint32_t access, _Out_ void **result)');
+  const create = adv.func('int32_t __stdcall RegCreateKeyExW(void *key, str16 subkey, uint32_t reserved, str16 className, uint32_t options, uint32_t access, void *security, _Out_ void **result, void *disposition)');
+  const set = adv.func('int32_t __stdcall RegSetValueExW(void *key, str16 name, uint32_t reserved, uint32_t type, uint32_t *data, uint32_t size)');
+  const remove = adv.func('int32_t __stdcall RegDeleteValueW(void *key, str16 name)');
+  const close = adv.func('int32_t __stdcall RegCloseKey(void *key)');
+  const currentUser=BigInt.asUintN(64,-2147483647n);
+  function check(code) { if(code) { const error=new Error(`Ошибка Windows (код ${code}).`); error.win32Code=code; throw error; } }
   const appMessage = shell.func('uintptr_t __stdcall SHAppBarMessage(uint32_t message, MagmAppbar *data)');
   const broadcast = user.func('intptr_t __stdcall SendMessageTimeoutW(void *hwnd, uint32_t msg, uintptr_t wparam, str16 lparam, uint32_t flags, uint32_t timeout, _Out_ uintptr_t *result)');
   const find = user.func('void * __stdcall FindWindowW(str16 className, str16 title)');
@@ -48,6 +57,19 @@ function windowsApi() {
       if (result === 2 || result === 3) return null;
       if (result) throw new Error(`Не удалось прочитать параметры Windows (код ${result}).`);
       return data[0];
+    },
+    writeUserDword(subkey, name, value) {
+      const key=[null];
+      let code=open(currentUser,subkey,0,0x102,key); // KEY_SET_VALUE | KEY_WOW64_64KEY
+      if(code===2 || code===3) {
+        if(value===null) return;
+        code=create(currentUser,subkey,0,null,0,0x102,null,key,null);
+      }
+      check(code);
+      try {
+        const result=value===null ? remove(key[0],name) : set(key[0],name,0,4,[value],4);
+        if(value!==null || result!==2) check(result);
+      } finally { close(key[0]); }
     },
     autoHide: () => !!(bar(4) & 1),
     setAutoHide: enabled => { const state=bar(4); bar(10,enabled ? state|1 : state&~1); },
@@ -92,24 +114,72 @@ function createTaskbar(directory, platform=process.platform, adapter) {
     const disabled=a.read('HKLM',MOD,'Disabled');
     return {supported:true,build:os.release(),native:{alignment:raw.alignment??1,search:raw.search??2,taskView:raw.taskView??1,widgets:raw.widgets??1,autoHide:a.autoHide()},sizes:Object.fromEntries(Object.entries(SIZE).map(([key,spec])=>[key,settings[key]??spec[3]])),sizesAvailable:disabled===0 && settings.height!==null && settings.icon!==null,canRestoreNative:Object.keys(backup.native).length>0,canRestoreSizes:!!backup.sizes};
   }
+  function readNative(key) { return key==='autoHide' ? api().autoHide() : api().read('HKCU',...NATIVE[key]); }
   async function writeNative(key,value) {
-    if (key==='autoHide') return api().setAutoHide(value);
-    const [sub,name]=NATIVE[key];
-    if (adapter) return adapter.write(key,value);
-    const args=value===null?['delete','HKCU\\'+sub,'/v',name,'/f','/reg:64']:['add','HKCU\\'+sub,'/v',name,'/t','REG_DWORD','/d',String(value),'/f','/reg:64'];
-    try { await run('reg.exe',args,{windowsHide:true,timeout:10000}); }
-    catch(error) { if(value!==null || api().read('HKCU',sub,name)!==null) throw error; }
+    if(key==='autoHide') return api().setAutoHide(value);
+    if(adapter) return adapter.write(key,value);
+    return api().writeUserDword(...NATIVE[key],value);
+  }
+  function failure(key,error) {
+    const code=Number.isInteger(error.win32Code)?error.win32Code:null;
+    const detail=code===5
+      ? 'Windows запретила изменение из приложения. Используйте «Открыть параметры Windows».'
+      : error.message || 'Windows не подтвердила изменение.';
+    return {key,code,message:`${NATIVE_LABELS[key]}: ${detail}`};
+  }
+  function notify(result) {
+    if(!result.changed.length) return;
+    try { api().notify(); }
+    catch { result.refreshWarning='Не удалось уведомить панель задач. Для отображения сохранённых настроек может потребоваться повторный вход в Windows.'; }
   }
   async function applyNative(patch) {
     assertSupported();validateNative(patch);
-    const a=api(), previous={};
-    for(const key of Object.keys(patch)) { previous[key]=key==='autoHide'?a.autoHide():a.read('HKCU',...NATIVE[key]); if(!(key in backup.native)) backup.native[key]=previous[key]; }
-    saveBackup();
-    try { for(const [key,value] of Object.entries(patch)) await writeNative(key,value); a.notify();
-      for(const [key,value] of Object.entries(patch)) if((key==='autoHide'?a.autoHide():a.read('HKCU',...NATIVE[key]))!==value) throw new Error('Windows не подтвердила изменение панели задач.');
+    const result={mode:'apply',changed:[],unchanged:[],failed:[]}, pending=[];
+    for(const [key,value] of Object.entries(patch)) {
+      const before=readNative(key);
+      if((before ?? NATIVE_DEFAULTS[key])===value) { result.unchanged.push(key);continue; }
+      const existing=Object.hasOwn(backup.native,key);
+      if(!existing) backup.native[key]=before;
+      pending.push({key,value,before,existing});
     }
-    catch(error) { for(const [key,value] of Object.entries(previous)) await writeNative(key,value); a.notify(); throw error; }
-    return state();
+    // Persist recovery values before any system write. A protected setting must
+    // neither cancel unrelated changes nor leave an unmodified value in backup.
+    if(pending.length) saveBackup();
+    for(const {key,value,before,existing} of pending) {
+      try {
+        await writeNative(key,value);
+        if(readNative(key)!==value) throw new Error('Windows не подтвердила изменение.');
+        result.changed.push(key);
+      } catch(error) {
+        const item=failure(key,error);
+        try {
+          if(readNative(key)!==before) await writeNative(key,before);
+          if(readNative(key)!==before) throw new Error('Восстановление не подтверждено.');
+          if(!existing) delete backup.native[key];
+        } catch { item.message+=' Исходное значение осталось в резервной копии; возврат не подтверждён.'; }
+        result.failed.push(item);
+      }
+    }
+    if(pending.length) saveBackup();
+    notify(result);
+    return {...state(),nativeResult:result};
+  }
+  async function restoreNative() {
+    const result={mode:'restore',changed:[],unchanged:[],failed:[]};
+    for(const [key,value] of Object.entries(backup.native)) {
+      try {
+        // Also repairs old 0.2.0 backups containing protected but unchanged keys.
+        if(readNative(key)===value) result.unchanged.push(key);
+        else {
+          await writeNative(key,value);
+          if(readNative(key)!==value) throw new Error('Windows не подтвердила восстановление.');
+          result.changed.push(key);
+        }
+        delete backup.native[key];
+      } catch(error) { result.failed.push(failure(key,error)); }
+    }
+    saveBackup();notify(result);
+    return {...state(),nativeResult:result};
   }
   async function applySizes(input) {
     assertSupported();validateSizes(input);
@@ -122,12 +192,7 @@ function createTaskbar(directory, platform=process.platform, adapter) {
   }
   async function restore(group) {
     assertSupported();
-    if(group==='native') {
-      for(const [key,value] of Object.entries(backup.native)) await writeNative(key,value);
-      api().notify();
-      for(const [key,value] of Object.entries(backup.native)) if((key==='autoHide'?api().autoHide():api().read('HKCU',...NATIVE[key]))!==value) throw new Error('Windows не подтвердила восстановление. Резервная копия сохранена.');
-      backup.native={};
-    }
+    if(group==='native') return restoreNative();
     else if(group==='sizes' && backup.sizes) {
       if(!state().sizesAvailable) throw new Error('Включите мод Windhawk для восстановления размеров.');
       await (adapter?.writeSizes||writeSizes)(backup.sizes);

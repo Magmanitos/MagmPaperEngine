@@ -12,6 +12,7 @@ const os = require('node:os');
   let startupEnabled = false, startupWriteFails = false;
   let mouseWriteFails = false;
   let settingsWriteFails = false, folderOpened = 0, component=false, helpOpened=0;
+  const nativePatches=[];
   const originalNative={alignment:1,search:2,taskView:1,widgets:1,autoHide:false};
   const originalSizes={height:48,icon:24,button:44,smallIcon:16,smallButton:32};
   let taskbarState={supported:true,build:'10.0.26100',native:{...originalNative},sizes:{...originalSizes},sizesAvailable:false,canRestoreNative:false,canRestoreSizes:false};
@@ -35,9 +36,22 @@ const os = require('node:os');
       if (method === 'taskbar') return {...taskbarState,sizesAvailable:component};
       if (method === 'taskbarHelp') { helpOpened++; return; }
       if (method === 'taskbarWindows') return;
-      if (method === 'setTaskbar') { taskbarState.native=arg;taskbarState.canRestoreNative=true;return {...taskbarState,sizesAvailable:component}; }
+      if (method === 'setTaskbar') {
+        nativePatches.push(arg);
+        const nativeResult={mode:'apply',changed:[],unchanged:[],failed:[]};
+        for(const [key,value] of Object.entries(arg)) {
+          if(key==='widgets') nativeResult.failed.push({key,code:5,message:'Виджеты: Windows запретила изменение из приложения. Используйте «Открыть параметры Windows».'});
+          else { taskbarState.native[key]=value;nativeResult.changed.push(key); }
+        }
+        taskbarState.canRestoreNative=true;return {...taskbarState,sizesAvailable:component,nativeResult};
+      }
       if (method === 'setTaskbarSizes') { require('../src/taskbar').validateSizes(arg);taskbarState.sizes=arg;taskbarState.canRestoreSizes=true;return {...taskbarState,sizesAvailable:component}; }
-      if (method === 'restoreTaskbar') { if(arg==='native'){taskbarState.native={...originalNative};taskbarState.canRestoreNative=false;}else{taskbarState.sizes={...originalSizes};taskbarState.canRestoreSizes=false;} return {...taskbarState,sizesAvailable:component}; }
+      if (method === 'restoreTaskbar') {
+        const nativeResult={mode:'restore',changed:[],unchanged:[],failed:[]};
+        if(arg==='native'){nativeResult.changed=Object.keys(originalNative).filter(key=>taskbarState.native[key]!==originalNative[key]);taskbarState.native={...originalNative};taskbarState.canRestoreNative=false;}
+        else{taskbarState.sizes={...originalSizes};taskbarState.canRestoreSizes=false;}
+        return {...taskbarState,sizesAvailable:component,nativeResult};
+      }
       if (method === 'openFolder') { folderOpened++; return; }
       if (method === 'setSettings') {
         if (settingsWriteFails) throw new Error('Settings write failed');
@@ -86,11 +100,22 @@ const os = require('node:os');
     await page.click('#taskbar-restore-sizes');await page.waitForFunction(()=>document.getElementById('taskbar-status').textContent.includes('Исходные'));
     assert.equal(taskbarState.sizes.icon,24);
     await page.selectOption('#taskbar-alignment','0');await page.check('#taskbar-autohide');await page.click('#taskbar-apply-native');
-    await page.waitForFunction(()=>document.getElementById('taskbar-status').textContent.includes('Параметры Windows сохранены'));
+    await page.waitForFunction(()=>document.getElementById('taskbar-status').textContent.includes('Сохранено:'));
     assert.equal(taskbarState.native.autoHide,true);
+    assert.deepEqual(nativePatches.at(-1),{alignment:0,autoHide:true});
     await page.screenshot({path:'/tmp/magmpaper-taskbar-020.png',fullPage:true});
-    await page.click('#taskbar-restore-native');await page.waitForFunction(()=>document.getElementById('taskbar-status').textContent.includes('Исходные'));
+    await page.click('#taskbar-restore-native');await page.waitForFunction(()=>document.getElementById('taskbar-status').textContent.includes('Восстановлено:'));
     assert.equal(taskbarState.native.autoHide,false);
+    await page.selectOption('#taskbar-search','0');await page.uncheck('#taskbar-widgets');await page.check('#taskbar-autohide');await page.click('#taskbar-apply-native');
+    await page.waitForFunction(()=>document.getElementById('taskbar-status').textContent.includes('Windows запретила'));
+    assert.equal(await page.isChecked('#taskbar-widgets'),true,'denied checkbox reflects actual Windows value');
+    assert.equal(await page.isChecked('#taskbar-autohide'),true,'unrelated successful change remains applied');
+    assert.equal(await page.inputValue('#taskbar-search'),'0');
+    assert.ok((await page.textContent('#taskbar-status')).includes('Сохранено:'));
+    const nativeCallCount=nativePatches.length;await page.click('#taskbar-apply-native');
+    await page.waitForFunction(()=>document.getElementById('taskbar-status').textContent.includes('Нет изменений'));
+    assert.equal(nativePatches.length,nativeCallCount,'unchanged form does not write settings again');
+    await page.click('#taskbar-restore-native');await page.waitForFunction(()=>document.getElementById('taskbar-status').textContent.includes('Восстановлено:'));
     await page.click('[data-route="wallpapers"]');await page.waitForTimeout(150);
     assert.ok(await page.evaluate(()=>window.previewDraws)>pausedDraws,'return to wallpapers resumes preview');
     await page.click('#open-folder');

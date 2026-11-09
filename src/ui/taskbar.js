@@ -1,5 +1,6 @@
 const $ = id => document.getElementById(id);
 const sizeKeys=['height','icon','button','smallIcon','smallButton'];
+const nativeLabels={alignment:'Расположение кнопок',search:'Поиск',autoHide:'Автоматическое скрытие',taskView:'Представление задач',widgets:'Виджеты'};
 let state=null, busy=false;
 function status(message,error=false) { $('taskbar-status').textContent=message; $('taskbar-status').classList.toggle('error',error); }
 function controls() {
@@ -42,9 +43,24 @@ export async function loadTaskbar(force=false) {
   await action(async()=>{state=await window.magm.taskbar();render();status(state.supported?`Windows ${state.build}. Параметры прочитаны. Изменения применяются только по кнопке.`:'Этот раздел доступен в Windows 11.');});
 }
 $('taskbar-refresh').onclick=()=>loadTaskbar(true);
+function nativeStatus(result) {
+  const report=result.nativeResult;
+  if(!report) { status('Параметры Windows прочитаны.');return; }
+  const parts=[];
+  if(report.changed.length) parts.push(`${report.mode==='restore'?'Восстановлено':'Сохранено'}: ${report.changed.map(key=>nativeLabels[key]).join(', ')}.`);
+  if(report.failed.length) parts.push(...report.failed.map(item=>item.message));
+  if(!report.changed.length&&!report.failed.length) parts.push(report.mode==='restore'?'Исходные значения уже установлены.':'Нет изменений для применения.');
+  if(report.failed.length&&report.mode==='restore') parts.push('Исходные значения недоступных пунктов сохранены для повторного возврата.');
+  if(report.refreshWarning) parts.push(report.refreshWarning);
+  else if(report.changed.some(key=>key!=='autoHide')) parts.push('Если изменения ещё не видны, выйдите из учётной записи Windows и войдите снова.');
+  status(parts.join('\n'),report.failed.length>0);
+}
 $('taskbar-apply-native').onclick=()=>action(async()=>{
-  state=await window.magm.setTaskbar({alignment:Number($('taskbar-alignment').value),search:Number($('taskbar-search').value),autoHide:$('taskbar-autohide').checked,taskView:Number($('taskbar-taskview').checked),widgets:Number($('taskbar-widgets').checked)});
-  render();status('Параметры Windows сохранены. Если расположение или кнопки ещё не изменились, выйдите из учётной записи и войдите снова.');
+  const values={alignment:Number($('taskbar-alignment').value),search:Number($('taskbar-search').value),autoHide:$('taskbar-autohide').checked,taskView:Number($('taskbar-taskview').checked),widgets:Number($('taskbar-widgets').checked)};
+  const patch=Object.fromEntries(Object.entries(values).filter(([key,value])=>value!==state.native[key]));
+  if(!Object.keys(patch).length) { status('Нет изменений для применения.');return; }
+  state=await window.magm.setTaskbar(patch);
+  render();nativeStatus(state);
 });
 $('taskbar-apply-sizes').onclick=()=>action(async()=>{
   const values=Object.fromEntries(sizeKeys.map(key=>[key,Number($('taskbar-'+key).value)]));
@@ -53,7 +69,9 @@ $('taskbar-apply-sizes').onclick=()=>action(async()=>{
   state=await window.magm.setTaskbarSizes(values);render();status('Размеры сохранены и переданы Windhawk. Для отображения мод и Windhawk должны быть включены.');
 });
 for(const group of ['native','sizes']) $('taskbar-restore-'+group).onclick=()=>action(async()=>{
-  state=await window.magm.restoreTaskbar(group);render();status('Исходные значения восстановлены. Для некоторых настроек Windows может потребоваться повторный вход в систему.');
+  state=await window.magm.restoreTaskbar(group);render();
+  if(group==='native') nativeStatus(state);
+  else status('Исходные значения восстановлены. Для некоторых настроек Windows может потребоваться повторный вход в систему.');
 });
 $('taskbar-help').onclick=()=>action(async()=>{await window.magm.taskbarHelp();status('На странице компонента установите Windhawk и мод Taskbar height and icon size. Затем вернитесь и нажмите «Обновить».');});
 $('taskbar-windows').onclick=()=>action(()=>window.magm.taskbarWindows());

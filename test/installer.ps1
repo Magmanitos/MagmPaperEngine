@@ -8,6 +8,7 @@ $exe = Join-Path $installDir 'MagmPaper.exe'
 $dataDir = Join-Path $env:APPDATA 'MagmPaper'
 $legacyDir = Join-Path $env:APPDATA 'magmpaper-engine'
 $library = Join-Path $dataDir 'wallpapers.json'
+$taskbarBackup = Join-Path $dataDir 'taskbar-backup.json'
 $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 $startupName = 'com.magmanitos.magmpaper'
 $desktopLink = Join-Path ([Environment]::GetFolderPath('DesktopDirectory')) 'MagmPaper.lnk'
@@ -37,8 +38,8 @@ $sample = @{ version=1; items=@(@{ id='installer-fixture'; name='Preserved wallp
 Set-Content -Path (Join-Path $legacyDir 'wallpapers.json') -Value $sample -Encoding utf8NoBOM
 try {
   # Upgrade the published version, not just a second copy of the new installer.
-  $previous = Join-Path $env:TEMP 'MagmPaper-Setup-0.1.6.exe'
-  Invoke-WebRequest 'https://github.com/Magmanitos/MagmPaperEngine/releases/download/v0.1.6/MagmPaper-Setup-0.1.6.exe' -OutFile $previous
+  $previous = Join-Path $env:TEMP 'MagmPaper-Setup-0.2.0.exe'
+  Invoke-WebRequest 'https://github.com/Magmanitos/MagmPaperEngine/releases/download/v0.2.0/MagmPaper-Setup-0.2.0.exe' -OutFile $previous
   Install-App $previous
   Assert (Test-Path $exe) 'Application was not installed in LocalAppData/Programs/MagmPaper'
   Assert (Test-Path (Join-Path $installDir 'resources/app.asar')) 'Bundled application missing'
@@ -61,15 +62,19 @@ try {
   Assert ($data.items[0].id -eq 'installer-fixture' -and $data.settings.fps -eq 30 -and $data.settings.mouseEnabled -eq $false) 'Collection or preferences were lost during migration'
   Stop-App
   $saved = Get-Content $library -Raw
+  $legacyBackup = Get-Content ($library + '.v1-backup') -Raw
+  Set-Content -Path $taskbarBackup -Value '{"native":{"alignment":1,"widgets":1},"sizes":null}' -Encoding utf8NoBOM
+  $savedTaskbar = Get-Content $taskbarBackup -Raw
   # An upgrade must preserve data and relocate an existing development autostart.
   New-Item -Path $runKey -Force | Out-Null
   Set-ItemProperty -Path $runKey -Name $startupName -Value '"C:\Old source\electron.exe" "C:\Old source\MagmPaper" --autostart'
   Install-App
   Assert ((Get-Content $library -Raw) -eq $saved) 'Reinstallation modified user data'
+  Assert ((Get-Content $taskbarBackup -Raw) -eq $savedTaskbar) 'Upgrade changed taskbar recovery settings'
   Assert ((Get-ItemPropertyValue -Path $runKey -Name $startupName) -eq ('"{0}" --autostart' -f $exe)) 'Installer did not relocate autostart'
-  Assert ((Get-Item $exe).VersionInfo.ProductVersion -like '0.2.0*') 'Upgrade left the old executable'
+  Assert ((Get-Item $exe).VersionInfo.ProductVersion -like '0.2.1*') 'Upgrade left the old executable'
   $entries = @(Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' | Where-Object { $_.DisplayName -eq 'MagmPaper' })
-  Assert ($entries.Count -eq 1 -and $entries[0].DisplayVersion -eq '0.2.0') 'Upgrade did not replace the old installed-apps registration'
+  Assert ($entries.Count -eq 1 -and $entries[0].DisplayVersion -eq '0.2.1') 'Upgrade did not replace the old installed-apps registration'
   $null = $shell.Run(('"{0}"' -f $desktopLink), 1, $false)
   Wait-Until { (Get-Content $library -Raw | ConvertFrom-Json).version -eq 2 } 'Installed upgrade did not migrate to GLSL files'
   Start-Sleep -Seconds 2
@@ -79,7 +84,8 @@ try {
   Assert ($data.items[0].id -eq 'installer-fixture' -and $data.settings.fps -eq 30 -and $data.settings.mouseEnabled -eq $false) 'Upgrade lost collection or settings'
   $shader = Join-Path (Join-Path $dataDir 'Wallpapers') $data.items[0].file
   Assert ((Get-Content $shader -Raw) -eq 'void main() { gl_FragColor = vec4(1.0); }') 'GLSL file content changed'
-  Assert ((Get-Content ($library + '.v1-backup') -Raw) -eq $saved) 'Original collection backup missing'
+  Assert ((Get-Content ($library + '.v1-backup') -Raw) -eq $legacyBackup) 'Original collection backup changed'
+  Assert ((Get-Content $taskbarBackup -Raw) -eq $savedTaskbar) 'Launch changed taskbar recovery settings'
   $saved = Get-Content $library -Raw
   Install-App
   Assert ((Get-Content $library -Raw) -eq $saved) 'Reinstallation changed the migrated library'
@@ -91,6 +97,7 @@ try {
   Wait-Until { -not (Test-Path $exe) -and -not (Test-Path $desktopLink) -and -not (Test-Path $menuLink) } 'Uninstall did not remove application and shortcuts'
   Assert ((Get-Content $library -Raw) -eq $saved) 'Uninstall deleted the collection'
   Assert (Test-Path $shader) 'Uninstall deleted GLSL files'
+  Assert ((Get-Content $taskbarBackup -Raw) -eq $savedTaskbar) 'Uninstall deleted taskbar recovery settings'
   Assert (-not (Get-ItemProperty -Path $runKey -Name $startupName -ErrorAction SilentlyContinue)) 'Uninstall left a stale autostart entry'
   Assert (@(Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' | Where-Object { $_.DisplayName -eq 'MagmPaper' }).Count -eq 0) 'Uninstall left an installed-apps entry'
   Write-Output 'PASS: install, native dependencies, metadata, both shortcuts, packaged launch, library migration, reinstall, autostart relocation and uninstall with data preserved.'
