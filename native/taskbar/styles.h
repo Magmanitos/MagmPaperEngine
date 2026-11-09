@@ -1,5 +1,9 @@
 #pragma once
 #include "protocol.h"
+#include <unknwn.h>
+#ifdef GetCurrentTime
+#undef GetCurrentTime
+#endif
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.UI.h>
 #include <winrt/Windows.UI.Xaml.h>

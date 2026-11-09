@@ -21,6 +21,12 @@ const UINT updateMessage=RegisterWindowMessageW(UpdateMessage);
 const UINT stopMessage=RegisterWindowMessageW(StopMessage);
 constexpr UINT Revisit=WM_APP+44;
 const CLSID TapClass={0x0476aa92,0x2461,0x4c27,{0xb2,0xe2,0x86,0x6f,0x66,0x92,0x42,0x09}};
+// XAML's diagnostics lifetime interface: release each diagnostic handle once
+// discovery finishes. Keeping these handles would retain removed shell elements.
+struct __declspec(uuid("735941a2-3ee3-495a-8da9-972627003075")) DiagnosticsLifetime:IUnknown {
+    virtual HRESULT STDMETHODCALLTYPE UnregisterInstance(InstanceHandle)=0;
+    virtual HRESULT STDMETHODCALLTYPE TryGetDispatcherQueueForObject(InstanceHandle,void**)=0;
+};
 struct Bar { HWND window; RECT original; bool resized=false; RECT previousWork{},writtenWork{}; bool changedWork=false; };
 struct Context {
     HWND window=nullptr;
@@ -30,6 +36,8 @@ struct Context {
     std::unordered_map<InstanceHandle,weak_ref<xaml::FrameworkElement>> pending;
     Settings settings{};
     bool revisitQueued=false;
+    com_ptr<DiagnosticsLifetime> lifetime;
+    std::vector<InstanceHandle> releases;
 };
 thread_local Context* context=nullptr;
 com_ptr<IVisualTreeService3> treeService;
@@ -166,6 +174,8 @@ LRESULT CALLBACK contextProcedure(HWND window,UINT message,WPARAM wp,LPARAM lp) 
             ctx->revisitQueued=false;
             auto pending=std::move(ctx->pending);ctx->pending.clear();
             for(auto& [id,weak]:pending) if(auto element=weak.get()) remember(*ctx,id,element,std::wstring(get_class_name(element)));
+            if(ctx->lifetime) for(auto id:ctx->releases) ctx->lifetime->UnregisterInstance(id);
+            ctx->releases.clear();
             update(*ctx);return 0;
         }
         if(message==updateMessage) {update(*ctx);return 0;}
@@ -196,12 +206,20 @@ Context* getContext() {
 // Documented XAML diagnostics callback, independent of Windhawk and symbol hooks.
 struct Watcher final:implements<Watcher,IVisualTreeServiceCallback2> {
     com_ptr<IXamlDiagnostics> diagnostics;
+    com_ptr<DiagnosticsLifetime> lifetime;
     DWORD owner=0;
-    explicit Watcher(IUnknown* site):owner(shared->hostPid) {check_hresult(site->QueryInterface(guid_of<IXamlDiagnostics>(),diagnostics.put_void()));}
-    HRESULT STDMETHODCALLTYPE OnVisualTreeChange(ParentChildRelation,VisualElement element,VisualMutationType mutation) noexcept override {
+    explicit Watcher(IUnknown* site):owner(shared->hostPid) {
+        check_hresult(site->QueryInterface(guid_of<IXamlDiagnostics>(),diagnostics.put_void()));
+        check_hresult(site->QueryInterface(__uuidof(DiagnosticsLifetime),lifetime.put_void()));
+    }
+    HRESULT STDMETHODCALLTYPE OnVisualTreeChange(ParentChildRelation relation,VisualElement element,VisualMutationType mutation) noexcept override {
         if(stopping||!shared||shared->hostPid!=owner) return S_OK;
         try {
             auto ctx=getContext();if(!ctx) return S_OK;
+            ctx->lifetime=lifetime;
+            ctx->releases.push_back(element.Handle);
+            if(relation.Parent) ctx->releases.push_back(relation.Parent);
+            if(!ctx->revisitQueued) {ctx->revisitQueued=true;PostMessageW(ctx->window,Revisit,0,0);}
             if(mutation==Add) {
                 Windows::Foundation::IInspectable object{nullptr};
                 check_hresult(diagnostics->GetIInspectableFromHandle(element.Handle,reinterpret_cast<::IInspectable**>(put_abi(object))));
@@ -211,7 +229,6 @@ struct Watcher final:implements<Watcher,IVisualTreeServiceCallback2> {
                         remember(*ctx,element.Handle,value,type);
                         // Parent links can become available only after Add returns.
                         ctx->pending.insert_or_assign(element.Handle,make_weak(value));
-                        if(!ctx->revisitQueued) {ctx->revisitQueued=true;PostMessageW(ctx->window,Revisit,0,0);}
                     }
                 }
             } else if(mutation==Remove) {
