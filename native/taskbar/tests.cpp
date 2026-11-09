@@ -35,7 +35,7 @@ struct Host {
     void send(const char* line){DWORD written=0;require(WriteFile(input,line,static_cast<DWORD>(strlen(line)),&written,nullptr)!=FALSE,"write host settings");}
     void applied(int sequence){
         const auto expected="\"event\":\"applied\",\"sequence\":"+std::to_string(sequence)+",";
-        until([&]{DWORD available=0;if(PeekNamedPipe(output,nullptr,0,nullptr,&available,nullptr)&&available){char buffer[4096];DWORD count=0;ReadFile(output,buffer,std::min<DWORD>(sizeof(buffer),available),&count,nullptr);data.append(buffer,count);}
+        until([&]{DWORD available=0;if(PeekNamedPipe(output,nullptr,0,nullptr,&available,nullptr)&&available){char buffer[4096];DWORD count=0;ReadFile(output,buffer,std::min<DWORD>(sizeof(buffer),available),&count,nullptr);data.append(buffer,count);std::cout.write(buffer,count).flush();}
             if(data.find("\"event\":\"error\"")!=std::string::npos)throw std::runtime_error("native host: "+data);
             return data.find(expected)!=std::string::npos;},"native host did not confirm configuration");
     }
@@ -76,6 +76,7 @@ int main() try {
     require(frame.Height()==48&&icon.Width()==24&&background.Fill()==original&&widgets.Visibility()==xaml::Visibility::Visible,"restore original values");
     icon.Width(28);require(icon.Width()==28,"remove callbacks on disable");
     icon.Width(24);
+    std::cout<<"PASS: direct XAML styling and restoration. Starting helper attachment."<<std::endl;
     {
         Host host;host.send("1 1 64 40 52 1193046 25 1 8\n");host.applied(1);
         require(frame.Height()==64&&icon.Width()==40,"external module changed real XAML elements");
@@ -85,12 +86,14 @@ int main() try {
         require(frame.Height()==48&&icon.Width()==24&&widgets.Visibility()==xaml::Visibility::Visible,"disable restores native XAML");
         host.send("3 1 64 40 52 1193046 25 1 8\n");host.applied(3);host.crash();
         until([&]{return frame.Height()==48&&icon.Width()==24;},"host crash did not restore XAML");
+        std::cout<<"PASS: helper attachment and crash restoration."<<std::endl;
     }
     {
         Host restarted;restarted.send("1 1 60 32 48 3355443 50 0 0\n");restarted.applied(1);
         require(frame.Height()==60&&icon.Width()==32,"reconnect after host termination");
         restarted.send("2 0 60 32 48 3355443 50 0 0\n");restarted.applied(2);restarted.crash();
         until([&]{return frame.Height()==48;},"final restoration");
+        std::cout<<"PASS: helper reconnection. Closing XAML source."<<std::endl;
     }
     source.Close();DestroyWindow(window);manager.Close();
     std::cout<<"PASS: native XAML sizes, color, opacity, visibility, shell reset and restoration; DPI geometry; IPC validation."<<std::endl;
