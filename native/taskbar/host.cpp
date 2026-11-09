@@ -42,7 +42,7 @@ void hookBars() {
     if(!hook) return;
     EnumWindows([](HWND bar,LPARAM address)->BOOL {
         wchar_t name[64]{};GetClassNameW(bar,name,64);
-        if((wcscmp(name,L"Shell_TrayWnd")&&wcscmp(name,L"Shell_SecondaryTrayWnd"))||!sameShell(bar)) return TRUE;
+        if((wcscmp(name,MainBarClass)&&wcscmp(name,SecondaryBarClass))||!sameShell(bar)) return TRUE;
         DWORD thread=GetWindowThreadProcessId(bar,nullptr);
         HHOOK handle=SetWindowsHookExW(WH_CALLWNDPROC,reinterpret_cast<HOOKPROC>(address),library,thread);
         if(handle) {
@@ -54,7 +54,7 @@ void hookBars() {
 }
 void attach() {
     if(closing||diagnosticsPending) return;
-    HWND bar=FindWindowW(L"Shell_TrayWnd",nullptr);DWORD pid=0;
+    HWND bar=FindWindowW(MainBarClass,nullptr);DWORD pid=0;
     if(!bar) {SetTimer(window,1,500,nullptr);return;}
     GetWindowThreadProcessId(bar,&pid);
     if(shared&&pid==explorer&&connected) {hookBars();return;}
@@ -139,7 +139,7 @@ LRESULT CALLBACK procedure(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp) {
 void CALLBACK shellEvent(HWINEVENTHOOK,DWORD eventId,HWND bar,LONG object,LONG,DWORD,DWORD) {
     if(object!=OBJID_WINDOW||closing) return;
     wchar_t name[64]{};GetClassNameW(bar,name,64);
-    if(eventId==EVENT_OBJECT_CREATE&&(!wcscmp(name,L"Shell_TrayWnd")||!wcscmp(name,L"Shell_SecondaryTrayWnd"))) PostMessageW(window,Attach,0,0);
+    if(eventId==EVENT_OBJECT_CREATE&&(!wcscmp(name,MainBarClass)||!wcscmp(name,SecondaryBarClass))) PostMessageW(window,Attach,0,0);
 }
 }
 int wmain(int argc,wchar_t** argv) {
@@ -148,7 +148,7 @@ int wmain(int argc,wchar_t** argv) {
     parent=OpenProcess(SYNCHRONIZE,FALSE,parentId);if(!parent) return 3;
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     wchar_t path[32768]{};GetModuleFileNameW(nullptr,path,32768);pluginPath=path;
-    pluginPath=pluginPath.substr(0,pluginPath.find_last_of(L"\\/")+1)+L"MagmTaskbar.dll";
+    pluginPath=pluginPath.substr(0,pluginPath.find_last_of(L"\\/")+1)+PluginName;
     library=LoadLibraryExW(pluginPath.c_str(),nullptr,LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR|LOAD_LIBRARY_SEARCH_SYSTEM32);
     if(!library) {event("error",0,GetLastError());return 4;}
     taskbarCreated=RegisterWindowMessageW(L"TaskbarCreated");attachMessage=RegisterWindowMessageW(AttachMessage);

@@ -2,6 +2,11 @@
 namespace magm {
 using namespace winrt;
 Kind classify(const std::wstring& type,const std::wstring& name,bool inTaskbar) {
+#ifdef MAGM_HARNESS
+    if(name==L"MagmPaper.Test.Frame") return Kind::Frame;
+    if(name==L"MagmPaper.Test.Widgets") return Kind::Widgets;
+    if(name==L"MagmPaper.Test.Button") return Kind::Button;
+#endif
     if(type==L"Taskbar.TaskbarFrame") return Kind::Frame;
     if(type==L"SystemTray.SystemTrayFrame") return Kind::Tray;
     if(!inTaskbar) return Kind::None;

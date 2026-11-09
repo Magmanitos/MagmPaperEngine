@@ -69,6 +69,9 @@ bool initialize(DWORD host=0) {
     return true;
 }
 void workArea(Bar& bar,const RECT& desired) {
+#ifdef MAGM_HARNESS
+    return; // The isolated surface is not the real shell and owns no work area.
+#endif
     MONITORINFO info{sizeof(info)};
     if(!GetMonitorInfoW(MonitorFromWindow(bar.window,MONITOR_DEFAULTTONEAREST),&info)) return;
     APPBARDATA data{sizeof(data)};data.hWnd=bar.window;
@@ -143,6 +146,9 @@ LRESULT CALLBACK barProcedure(HWND window,UINT message,WPARAM wp,LPARAM lp,UINT_
 bool underTaskbar(xaml::FrameworkElement element) {
     for(int depth=0;element&&depth<30;depth++) {
         auto type=get_class_name(element);
+#ifdef MAGM_HARNESS
+        if(element.Name()==L"MagmPaper.Test.Frame") return true;
+#endif
         if(type==L"Taskbar.TaskbarFrame"||type==L"SystemTray.SystemTrayFrame") return true;
         element=xaml::Media::VisualTreeHelper::GetParent(element).try_as<xaml::FrameworkElement>();
     }
@@ -290,7 +296,7 @@ extern "C" __declspec(dllexport) LRESULT CALLBACK MagmTaskbarHook(int code,WPARA
             auto ctx=getContext();
             if(ctx&&std::none_of(ctx->bars.begin(),ctx->bars.end(),[&](auto& bar){return bar.window==message->hwnd;})) {
                 wchar_t name[64]{};GetClassNameW(message->hwnd,name,64);
-                if(wcscmp(name,L"Shell_TrayWnd")==0||wcscmp(name,L"Shell_SecondaryTrayWnd")==0) {
+                if(wcscmp(name,MainBarClass)==0||wcscmp(name,SecondaryBarClass)==0) {
                     RECT rect{};GetWindowRect(message->hwnd,&rect);
                     if(rect.right-rect.left>rect.bottom-rect.top&&SetWindowSubclass(message->hwnd,barProcedure,1,reinterpret_cast<DWORD_PTR>(ctx))) {
                         ctx->bars.push_back({message->hwnd,rect,GetDpiForWindow(message->hwnd)});InterlockedIncrement(&shared->bars);

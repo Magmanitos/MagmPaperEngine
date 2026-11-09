@@ -5,6 +5,15 @@
 #include <algorithm>
 
 namespace magm {
+#ifdef MAGM_HARNESS
+inline constexpr wchar_t MainBarClass[]=L"MagmPaperTaskbar.TestSurface";
+inline constexpr wchar_t SecondaryBarClass[]=L"MagmPaperTaskbar.TestSecondary";
+inline constexpr wchar_t PluginName[]=L"MagmTaskbarHarness.dll";
+#else
+inline constexpr wchar_t MainBarClass[]=L"Shell_TrayWnd";
+inline constexpr wchar_t SecondaryBarClass[]=L"Shell_SecondaryTrayWnd";
+inline constexpr wchar_t PluginName[]=L"MagmTaskbar.dll";
+#endif
 constexpr uint32_t Magic=0x4d475431, Version=1;
 constexpr size_t MaxThreads=16;
 inline constexpr wchar_t AttachMessage[]=L"MagmPaper.Taskbar.Attach.1";
