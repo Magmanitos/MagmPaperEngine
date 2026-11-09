@@ -1,3 +1,4 @@
+import {loadComponent} from './taskbar-component.js';
 const $ = id => document.getElementById(id);
 const sizeKeys=['height','icon','button','smallIcon','smallButton'];
 const nativeLabels={alignment:'Расположение кнопок',search:'Поиск',autoHide:'Автоматическое скрытие',taskView:'Представление задач',widgets:'Виджеты'};
@@ -20,6 +21,7 @@ function preview() {
   model.style.setProperty('--button-width',Math.max(28,Math.min(100,Number($('taskbar-button').value)||44))+'px');
 }
 function render() {
+  $('legacy-taskbar').hidden=!state?.canRestoreSizes&&!state?.sizesAvailable;
   if(state?.supported) {
     $('taskbar-alignment').value=String(state.native.alignment);
     $('taskbar-search').value=String(state.native.search);
@@ -29,7 +31,7 @@ function render() {
     for(const key of sizeKeys) $('taskbar-'+key).value=state.sizes[key];
   }
   $('taskbar-component').textContent=state?.sizesAvailable?'Мод найден и включён. Размеры доступны.':'Компонент размеров не найден или выключен. Установите Windhawk, включите мод и нажмите «Обновить».';
-  preview();controls();
+  controls();
 }
 async function action(task) {
   if(busy)return;
@@ -40,7 +42,8 @@ async function action(task) {
 }
 export async function loadTaskbar(force=false) {
   if(state&&!force)return;
-  await action(async()=>{state=await window.magm.taskbar();render();status(state.supported?`Windows ${state.build}. Параметры прочитаны. Изменения применяются только по кнопке.`:'Этот раздел доступен в Windows 11.');});
+  await action(async()=>{state=await window.magm.taskbar();render();status(state.supported?'Параметры прочитаны. Изменения применяются только по кнопке.':'Этот раздел доступен в Windows 11.');});
+  await loadComponent(force);
 }
 $('taskbar-refresh').onclick=()=>loadTaskbar(true);
 function nativeStatus(result) {

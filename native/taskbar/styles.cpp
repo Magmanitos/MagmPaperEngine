@@ -19,22 +19,25 @@ Kind classify(const std::wstring& type,const std::wstring& name,bool inTaskbar) 
 }
 void StyledElement::set(xaml::DependencyProperty const& key,Windows::Foundation::IInspectable const& value) {
     auto element=target.get();if(!element) return;
-    Property* property=nullptr;
-    for(auto& p:properties) if(p->key==key) {property=p.get();break;}
+    std::shared_ptr<Property> property;
+    for(auto& p:properties) if(p->key==key) {property=p;break;}
     if(!property) {
-        auto p=std::make_unique<Property>();p->key=key;p->original=element.ReadLocalValue(key);
+        auto p=std::make_shared<Property>();p->key=key;p->original=element.ReadLocalValue(key);
         if(auto expression=element.GetBindingExpression(key)) p->binding=expression.ParentBinding();
-        property=p.get();properties.push_back(std::move(p));
-        property->token=element.RegisterPropertyChangedCallback(key,[this,property](auto const& sender,auto const& changed){
-            if(writing||!property->desired) return;
-            writing=true;
-            try { sender.SetValue(changed,property->desired); } catch(...) {}
-            writing=false;
+        property=p;properties.push_back(p);
+        std::weak_ptr<Property> saved=property;
+        std::weak_ptr<bool> guard=writing;
+        property->token=element.RegisterPropertyChangedCallback(key,[saved,guard](auto const& sender,auto const& changed){
+            auto current=saved.lock();auto locked=guard.lock();
+            if(!current||!locked||*locked||!current->desired) return;
+            *locked=true;
+            try { sender.SetValue(changed,current->desired); } catch(...) {}
+            *locked=false;
         });
     }
-    property->desired=value;writing=true;
-    try { element.SetValue(key,value); } catch(...) {writing=false;throw;}
-    writing=false;
+    property->desired=value;*writing=true;
+    try { element.SetValue(key,value); } catch(...) {*writing=false;throw;}
+    *writing=false;
 }
 void StyledElement::apply(const Settings& settings) {
     if(!settings.enabled) {if(!restore()) throw hresult_error(E_FAIL);return;}
@@ -66,7 +69,7 @@ void StyledElement::apply(const Settings& settings) {
 }
 bool StyledElement::restore() noexcept {
     bool restored=true;
-    writing=true;
+    *writing=true;
     if(auto element=target.get()) for(auto& p:properties) {
         try { element.UnregisterPropertyChangedCallback(p->key,p->token); } catch(...) {}
         try {
@@ -75,7 +78,7 @@ bool StyledElement::restore() noexcept {
             else element.SetValue(p->key,p->original);
         } catch(...) {restored=false;}
     }
-    properties.clear();writing=false;return restored;
+    properties.clear();*writing=false;return restored;
 }
 StyledElement::~StyledElement() {restore();}
 }

@@ -26,8 +26,8 @@ class StyledElement {
         int64_t token=0;
     };
     winrt::weak_ref<xaml::FrameworkElement> target;
-    std::vector<std::unique_ptr<Property>> properties;
-    bool writing=false;
+    std::vector<std::shared_ptr<Property>> properties;
+    std::shared_ptr<bool> writing=std::make_shared<bool>(false);
     void set(xaml::DependencyProperty const&,winrt::Windows::Foundation::IInspectable const&);
 public:
     Kind kind;

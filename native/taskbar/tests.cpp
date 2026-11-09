@@ -40,6 +40,7 @@ struct Host {
             return data.find(expected)!=std::string::npos;},"native host did not confirm configuration");
     }
     void crash(){TerminateProcess(process,99);}
+    void close(){CloseHandle(input);input=nullptr;until([&]{return WaitForSingleObject(process,0)==WAIT_OBJECT_0;},"helper did not exit after EOF");}
     ~Host(){if(process){TerminateProcess(process,99);CloseHandle(process);}if(input)CloseHandle(input);if(output)CloseHandle(output);}
 };
 int main() try {
@@ -81,7 +82,7 @@ int main() try {
         Host host;host.send("1 1 64 40 52 1193046 25 1 8\n");host.applied(1);
         require(frame.Height()==64&&icon.Width()==40,"external module changed real XAML elements");
         require(background.Fill().as<xaml::Media::SolidColorBrush>().Color().A==64,"external module background alpha");
-        RECT rect{};GetWindowRect(window,&rect);require(rect.bottom-rect.top==MulDiv(64,GetDpiForWindow(window),96),"native taskbar window resized");
+        RECT actual{};GetWindowRect(window,&actual);require(actual.bottom-actual.top==MulDiv(64,GetDpiForWindow(window),96),"native taskbar window resized");
         host.send("2 0 64 40 52 1193046 25 1 8\n");host.applied(2);
         require(frame.Height()==48&&icon.Width()==24&&widgets.Visibility()==xaml::Visibility::Visible,"disable restores native XAML");
         host.send("3 1 64 40 52 1193046 25 1 8\n");host.applied(3);host.crash();
@@ -91,8 +92,8 @@ int main() try {
     {
         Host restarted;restarted.send("1 1 60 32 48 3355443 50 0 0\n");restarted.applied(1);
         require(frame.Height()==60&&icon.Width()==32,"reconnect after host termination");
-        restarted.send("2 0 60 32 48 3355443 50 0 0\n");restarted.applied(2);restarted.crash();
-        until([&]{return frame.Height()==48;},"final restoration");
+        restarted.close();
+        until([&]{return frame.Height()==48&&icon.Width()==24&&background.Fill()==original;},"normal helper exit did not restore settings");
         std::cout<<"PASS: helper reconnection. Closing XAML source."<<std::endl;
     }
     source.Close();DestroyWindow(window);manager.Close();

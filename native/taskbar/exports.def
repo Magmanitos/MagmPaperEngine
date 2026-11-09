@@ -1,4 +1,4 @@
 EXPORTS
-    DllGetClassObject
-    DllCanUnloadNow
+    DllGetClassObject PRIVATE
+    DllCanUnloadNow PRIVATE
     MagmTaskbarHook

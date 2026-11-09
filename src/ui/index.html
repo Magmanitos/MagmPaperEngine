@@ -17,7 +17,7 @@
     </nav>
     <div class="sidebar-bottom">
       <button id="open-settings" class="quiet settings-button">⚙ Параметры</button>
-      <div class="app-version"><span class="dot"></span> MagmPaper 0.2.1</div><p>Настройте пространство под себя.<br>Закрытие окна оставляет обои в трее.</p>
+      <div class="app-version"><span class="dot"></span> MagmPaper 0.3.0</div><p>Настройте пространство под себя.<br>Закрытие окна оставляет обои в трее.</p>
     </div>
   </aside>
   <main>
@@ -38,12 +38,30 @@
             <label for="taskbar-search">Поиск</label><select id="taskbar-search"><option value="0">Скрыт</option><option value="1">Значок</option><option value="2">Поле поиска</option><option value="3">Значок и подпись</option></select>
             <label class="check-row"><input type="checkbox" id="taskbar-autohide">Автоматически скрывать панель</label>
             <label class="check-row"><input type="checkbox" id="taskbar-taskview">Кнопка «Представление задач»</label>
-            <label class="check-row"><input type="checkbox" id="taskbar-widgets">Виджеты</label>
+            <label class="check-row" hidden><input type="checkbox" id="taskbar-widgets">Виджеты</label>
           </fieldset>
-          <p class="muted">Применяются только изменённые пункты. Скрытие работает сразу; остальным настройкам может потребоваться повторный вход в Windows. Защищённые параметры (например, виджеты на некоторых сборках) меняются через «Открыть параметры Windows». Отказ для одного пункта не отменяет остальные.</p>
+          <p class="muted">Применяются только изменённые пункты. Скрытие работает сразу; остальным настройкам может потребоваться повторный вход в Windows. Кнопку виджетов можно скрыть встроенным модулем справа. Включение самих виджетов Windows доступно через «Открыть параметры Windows». Отказ для одного пункта не отменяет остальные.</p>
           <div class="card-actions"><button id="taskbar-restore-native" class="quiet" disabled>Вернуть исходные</button><button id="taskbar-apply-native" class="primary" disabled>Применить</button></div><button id="taskbar-windows" class="text-button">Открыть параметры Windows ↗</button>
         </section>
-        <section class="settings-card"><div class="card-heading"><h2>Размеры элементов</h2><span class="pill">WINDHAWK</span></div>
+        <section class="settings-card" id="appearance-card">
+          <div class="card-heading"><h2>Оформление панели</h2><span class="pill">MAGMPAPER</span></div>
+          <p class="muted">Встроенный модуль для стандартной панели Windows 11. Трей, закреплённые приложения и системные меню сохраняются.</p>
+          <p id="appearance-status" role="status" aria-live="polite" class="component-state">Чтение настроек модуля…</p>
+          <fieldset id="appearance-fields" disabled>
+            <label class="check-row"><input type="checkbox" id="appearance-enabled">Включить оформление MagmPaper</label>
+            <div class="size-row"><label for="appearance-height">Высота панели</label><input id="appearance-height" type="number" min="32" max="96" value="48"><span>px</span></div>
+            <div class="size-row"><label for="appearance-icon">Размер значков</label><input id="appearance-icon" type="number" min="16" max="64" value="24"><span>px</span></div>
+            <div class="size-row"><label for="appearance-button">Ширина кнопок</label><input id="appearance-button" type="number" min="28" max="100" value="44"><span>px</span></div>
+            <div class="size-row"><label for="appearance-color">Цвет фона</label><input id="appearance-color" type="color" value="#171923"><span></span></div>
+            <div class="size-row"><label for="appearance-opacity">Непрозрачность фона</label><input id="appearance-opacity" type="number" min="0" max="100" value="80"><span>%</span></div>
+            <div class="size-row"><label for="appearance-radius">Скругление фона</label><input id="appearance-radius" type="number" min="0" max="24" value="0"><span>px</span></div>
+            <label class="check-row"><input type="checkbox" id="appearance-hideWidgets">Скрыть кнопку виджетов на панели</label>
+            <div class="presets"><button data-appearance-preset="compact">Компактная</button><button data-appearance-preset="standard">Стандартная</button><button data-appearance-preset="large">Крупная</button></div>
+          </fieldset>
+          <p class="muted">0% — прозрачный фон, 100% — непрозрачный. Размеры указаны до масштабирования Windows. Оформление действует, пока MagmPaper работает, включая режим в трее. При полном выходе возвращается исходный вид; сохранённое оформление возобновляется при следующем запуске.</p>
+          <div class="card-actions"><button id="appearance-disable" class="quiet" disabled>Вернуть оформление Windows</button><button id="appearance-apply" class="primary" disabled>Применить оформление</button></div>
+        </section>
+        <details class="settings-card legacy-taskbar" id="legacy-taskbar" hidden><summary>Прежние настройки Windhawk</summary><p class="muted">Сохранены для совместимости. Перед включением встроенного оформления отключите моды панели задач в Windhawk.</p><div class="card-heading"><h2>Размеры через Windhawk</h2><span class="pill">LEGACY</span></div>
           <p id="taskbar-component" class="component-state">Проверка компонента…</p>
           <p class="muted">Для высоты панели и точных размеров нужен Windhawk и включённый мод <b>Taskbar height and icon size</b>. Поддерживается обычная установка, общая конфигурация мода. Windhawk должен быть запущен.</p>
           <button id="taskbar-help" class="quiet">Открыть страницу компонента ↗</button>
@@ -56,7 +74,7 @@
           </fieldset>
           <p class="muted">Размеры указаны до масштабирования Windows. Применение запросит права администратора и изменит общие настройки этого мода. Исходные значения сохраняются для возврата.</p>
           <div class="card-actions"><button id="taskbar-restore-sizes" class="quiet" disabled>Вернуть исходные</button><button id="taskbar-apply-sizes" class="primary" disabled>Применить размеры</button></div>
-        </section>
+        </details>
       </div>
     </section>
     <section id="page-wallpapers" class="app-page" aria-label="Обои">

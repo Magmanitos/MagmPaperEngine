@@ -2,7 +2,9 @@ const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, dialog, po
 const path = require('node:path');
 const fs = require('node:fs');
 const { Store } = require('./store');
-const { createTaskbar } = require('./taskbar');
+const { createTaskbar, windowsApi } = require('./taskbar');
+const { createComponent } = require('./taskbar-component');
+let taskbarComponent;
 let taskbar;
 const taskbarModule = () => taskbar ||= createTaskbar(app.getPath('userData'));
 const { createRecoveryController } = require('./recovery');
@@ -169,6 +171,11 @@ else {
     handle('taskbar:restore', group => taskbarModule().restore(group));
     handle('taskbar:help', () => shell.openExternal('https://windhawk.net/mods/taskbar-icon-size'));
     handle('taskbar:windows', () => shell.openExternal('ms-settings:taskbar'));
+    taskbarComponent=createComponent({directory:app.getPath('userData'),binaries:app.isPackaged?path.join(process.resourcesPath,'taskbar'):path.join(__dirname,'../native/bin'),
+      conflicts:()=>process.platform==='win32'&&['taskbar-icon-size','windows-11-taskbar-styler'].some(id=>windowsApi().read('HKLM','SOFTWARE\\Windhawk\\Engine\\Mods\\'+id,'Disabled')===0),
+      onChange:state=>{if(manager&&!manager.isDestroyed())manager.webContents.send('taskbar:component:state',state);}});
+    handle('taskbar:component:get',()=>taskbarComponent.status());
+    handle('taskbar:component:apply',value=>taskbarComponent.apply(value));
     handle('library:save', item => library.save(item));
     handle('startup:get', () => startup.get());
     handle('startup:set', enabled => startup.set(enabled));
@@ -230,8 +237,16 @@ else {
     powerMonitor.on('on-battery', () => playbackController?.refresh());
     powerMonitor.on('on-ac', () => playbackController?.refresh());
     void restoreLastWallpaper();
+    void serial(()=>taskbarComponent.restoreOnStart());
   }).catch(error => { dialog.showErrorBox('MagmPaper', error.message); app.quit(); });
-  app.on('before-quit', () => { quitting = true; recovery.cancel(); destroyWallpaper(); });
+  let taskbarStopped=false;
+  app.on('before-quit', event => {
+    quitting = true; recovery.cancel(); destroyWallpaper();
+    if(taskbarComponent&&!taskbarStopped) {
+      event.preventDefault();taskbarStopped=true;
+      void taskbarComponent.shutdown().finally(()=>app.quit());
+    }
+  });
   app.on('child-process-gone', (_event, details) => { if (details.type === 'GPU') recovery.ensure(); });
   app.on('window-all-closed', () => {});
 }

@@ -91,7 +91,8 @@ void workArea(Bar& bar,const RECT& desired) {
     }
 #endif
 }
-void resizeBars(Context& ctx,bool enabled) {
+LONG resizeBars(Context& ctx,bool enabled) {
+    LONG errors=0;
     for(auto& bar:ctx.bars) {
         if(!IsWindow(bar.window)) continue;
         if(enabled) {
@@ -100,7 +101,9 @@ void resizeBars(Context& ctx,bool enabled) {
             RECT target=barRect(info.rcMonitor,GetDpiForWindow(bar.window),ctx.settings.height);
             RECT actual{};GetWindowRect(bar.window,&actual);
             int y=actual.top>=info.rcMonitor.bottom-4?actual.top:target.top;
-            SetWindowPos(bar.window,nullptr,actual.left,y,actual.right-actual.left,target.bottom-target.top,SWP_NOZORDER|SWP_NOACTIVATE);
+            if(!SetWindowPos(bar.window,nullptr,actual.left,y,actual.right-actual.left,target.bottom-target.top,SWP_NOZORDER|SWP_NOACTIVATE)) errors++;
+            RECT confirmed{};
+            if(!GetWindowRect(bar.window,&confirmed)||confirmed.bottom-confirmed.top!=target.bottom-target.top) errors++;
             bar.resized=true;workArea(bar,target);
         } else if(bar.resized) {
             MONITORINFO info{sizeof(info)};GetMonitorInfoW(MonitorFromWindow(bar.window,MONITOR_DEFAULTTONEAREST),&info);
@@ -109,10 +112,11 @@ void resizeBars(Context& ctx,bool enabled) {
             RECT actual{};GetWindowRect(bar.window,&actual);
             int height=MulDiv(bar.original.bottom-bar.original.top,GetDpiForWindow(bar.window),bar.originalDpi);
             int y=actual.top>=info.rcMonitor.bottom-4?actual.top:info.rcMonitor.bottom-height;
-            SetWindowPos(bar.window,nullptr,info.rcMonitor.left,y,info.rcMonitor.right-info.rcMonitor.left,height,SWP_NOZORDER|SWP_NOACTIVATE);
+            if(!SetWindowPos(bar.window,nullptr,info.rcMonitor.left,y,info.rcMonitor.right-info.rcMonitor.left,height,SWP_NOZORDER|SWP_NOACTIVATE)) errors++;
             bar.resized=false;
         }
     }
+    return errors;
 }
 void update(Context& ctx) {
     Settings value{};if(!shared||!read(shared,value)) return;
@@ -120,13 +124,14 @@ void update(Context& ctx) {
     ctx.settings=value;
     LONG errors=0;
     for(auto& [id,element]:ctx.elements) try {element->apply(value);} catch(...) {errors++;}
-    resizeBars(ctx,value.enabled!=0);
+    errors+=resizeBars(ctx,value.enabled!=0);
     InterlockedExchange(&ctx.slot->errors,errors);
     InterlockedExchange(&ctx.slot->applied,static_cast<LONG>(value.sequence));
 }
 LRESULT CALLBACK barProcedure(HWND window,UINT message,WPARAM wp,LPARAM lp,UINT_PTR,DWORD_PTR data) {
     auto& ctx=*reinterpret_cast<Context*>(data);
     if(message==WM_WINDOWPOSCHANGING&&ctx.settings.enabled&&!stopping) {
+        auto result=DefSubclassProc(window,message,wp,lp);
         auto pos=reinterpret_cast<WINDOWPOS*>(lp);
         if(!(pos->flags&SWP_NOSIZE)||!(pos->flags&SWP_NOMOVE)) {
             MONITORINFO info{sizeof(info)};
@@ -136,6 +141,7 @@ LRESULT CALLBACK barProcedure(HWND window,UINT message,WPARAM wp,LPARAM lp,UINT_
                 if(!(pos->flags&SWP_NOMOVE)&&pos->y<info.rcMonitor.bottom-4) pos->y=target.top;
             }
         }
+        return result;
     }
     if(message==WM_DPICHANGED||message==WM_DISPLAYCHANGE||message==WM_SETTINGCHANGE) PostMessageW(ctx.window,updateMessage,0,0);
     if(message==WM_NCDESTROY) {

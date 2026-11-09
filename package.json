@@ -1,6 +1,6 @@
 {
   "name": "magmpaper-engine",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Windows customization with GLSL live wallpapers and taskbar controls",
   "author": "MagmPaperEngine",
   "license": "MIT",
@@ -13,7 +13,8 @@
     "dist:zip": "electron-builder --win zip --x64",
     "dist": "electron-builder --win nsis --x64",
     "pack": "electron-builder --dir",
-    "dist:release": "electron-builder --win nsis zip --x64"
+    "dist:release": "electron-builder --win nsis zip --x64",
+    "build:native": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-taskbar.ps1"
   },
   "dependencies": {
     "koffi": "3.3.6"
@@ -58,6 +59,17 @@
       ],
       "include": "build/installer.nsh",
       "artifactName": "MagmPaper-Setup-${version}.${ext}"
-    }
+    },
+    "beforePack": "scripts/require-native.cjs",
+    "extraResources": [
+      {
+        "from": "native/bin",
+        "to": "taskbar",
+        "filter": [
+          "MagmTaskbar.dll",
+          "MagmTaskbarHost.exe"
+        ]
+      }
+    ]
   }
 }

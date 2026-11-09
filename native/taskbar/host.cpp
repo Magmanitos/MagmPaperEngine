@@ -119,9 +119,9 @@ LRESULT CALLBACK procedure(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp) {
     if(msg==WM_TIMER) {
         if(wp==1) {KillTimer(hwnd,1);attach();}
         if(wp==2) {
-            LONG frames=0;for(auto& slot:shared->slots) frames+=slot.frames;
+            LONG frames=0,icons=0,backgrounds=0;for(auto& slot:shared->slots) {frames+=slot.frames;icons+=slot.icons;backgrounds+=slot.backgrounds;}
             if(shared->error) {KillTimer(hwnd,2);event("error",desired.sequence,shared->error);stop();}
-            else if(frames&&shared->bars) {KillTimer(hwnd,2);connected=true;event("ready",desired.sequence);apply();}
+            else if(shared->bars&&frames>=shared->bars&&icons>0&&backgrounds>0) {KillTimer(hwnd,2);connected=true;event("ready",desired.sequence);apply();}
             else if(GetTickCount64()>deadline) {KillTimer(hwnd,2);event("error",desired.sequence,ERROR_NOT_SUPPORTED);stop();}
         }
         if(wp==3) {

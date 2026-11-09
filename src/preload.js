@@ -1,5 +1,8 @@
 const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('magm', {
+  taskbarComponent: () => ipcRenderer.invoke('taskbar:component:get'),
+  setTaskbarComponent: value => ipcRenderer.invoke('taskbar:component:apply',value),
+  onTaskbarComponent: callback => ipcRenderer.on('taskbar:component:state',(_event,state)=>callback(state)),
   taskbar: () => ipcRenderer.invoke('taskbar:get'),
   setTaskbar: value => ipcRenderer.invoke('taskbar:native', value),
   setTaskbarSizes: value => ipcRenderer.invoke('taskbar:sizes', value),

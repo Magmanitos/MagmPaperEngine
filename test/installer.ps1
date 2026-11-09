@@ -9,6 +9,7 @@ $dataDir = Join-Path $env:APPDATA 'MagmPaper'
 $legacyDir = Join-Path $env:APPDATA 'magmpaper-engine'
 $library = Join-Path $dataDir 'wallpapers.json'
 $taskbarBackup = Join-Path $dataDir 'taskbar-backup.json'
+$appearance = Join-Path $dataDir 'taskbar-appearance.json'
 $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 $startupName = 'com.magmanitos.magmpaper'
 $desktopLink = Join-Path ([Environment]::GetFolderPath('DesktopDirectory')) 'MagmPaper.lnk'
@@ -38,8 +39,8 @@ $sample = @{ version=1; items=@(@{ id='installer-fixture'; name='Preserved wallp
 Set-Content -Path (Join-Path $legacyDir 'wallpapers.json') -Value $sample -Encoding utf8NoBOM
 try {
   # Upgrade the published version, not just a second copy of the new installer.
-  $previous = Join-Path $env:TEMP 'MagmPaper-Setup-0.2.0.exe'
-  Invoke-WebRequest 'https://github.com/Magmanitos/MagmPaperEngine/releases/download/v0.2.0/MagmPaper-Setup-0.2.0.exe' -OutFile $previous
+  $previous = Join-Path $env:TEMP 'MagmPaper-Setup-0.2.1.exe'
+  Invoke-WebRequest 'https://github.com/Magmanitos/MagmPaperEngine/releases/download/v0.2.1/MagmPaper-Setup-0.2.1.exe' -OutFile $previous
   Install-App $previous
   Assert (Test-Path $exe) 'Application was not installed in LocalAppData/Programs/MagmPaper'
   Assert (Test-Path (Join-Path $installDir 'resources/app.asar')) 'Bundled application missing'
@@ -65,6 +66,8 @@ try {
   $legacyBackup = Get-Content ($library + '.v1-backup') -Raw
   Set-Content -Path $taskbarBackup -Value '{"native":{"alignment":1,"widgets":1},"sizes":null}' -Encoding utf8NoBOM
   $savedTaskbar = Get-Content $taskbarBackup -Raw
+  Set-Content -Path $appearance -Value '{"enabled":false,"height":60,"icon":32,"button":48,"color":"#223344","opacity":50,"hideWidgets":true,"radius":8}' -Encoding utf8NoBOM
+  $savedAppearance = Get-Content $appearance -Raw
   # An upgrade must preserve data and relocate an existing development autostart.
   New-Item -Path $runKey -Force | Out-Null
   Set-ItemProperty -Path $runKey -Name $startupName -Value '"C:\Old source\electron.exe" "C:\Old source\MagmPaper" --autostart'
@@ -72,9 +75,14 @@ try {
   Assert ((Get-Content $library -Raw) -eq $saved) 'Reinstallation modified user data'
   Assert ((Get-Content $taskbarBackup -Raw) -eq $savedTaskbar) 'Upgrade changed taskbar recovery settings'
   Assert ((Get-ItemPropertyValue -Path $runKey -Name $startupName) -eq ('"{0}" --autostart' -f $exe)) 'Installer did not relocate autostart'
-  Assert ((Get-Item $exe).VersionInfo.ProductVersion -like '0.2.1*') 'Upgrade left the old executable'
+  foreach ($file in @('MagmTaskbar.dll','MagmTaskbarHost.exe')) {
+    Assert (Test-Path (Join-Path $installDir "resources/taskbar/$file")) "Bundled taskbar component missing: $file"
+  }
+  Assert (@(Get-ChildItem (Join-Path $installDir 'resources/taskbar')).Count -eq 2) 'Test harness must not ship in installer'
+  Assert ((Get-Content $appearance -Raw) -eq $savedAppearance) 'Upgrade changed appearance preferences'
+  Assert ((Get-Item $exe).VersionInfo.ProductVersion -like '0.3.0*') 'Upgrade left the old executable'
   $entries = @(Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' | Where-Object { $_.DisplayName -eq 'MagmPaper' })
-  Assert ($entries.Count -eq 1 -and $entries[0].DisplayVersion -eq '0.2.1') 'Upgrade did not replace the old installed-apps registration'
+  Assert ($entries.Count -eq 1 -and $entries[0].DisplayVersion -eq '0.3.0') 'Upgrade did not replace the old installed-apps registration'
   $null = $shell.Run(('"{0}"' -f $desktopLink), 1, $false)
   Wait-Until { (Get-Content $library -Raw | ConvertFrom-Json).version -eq 2 } 'Installed upgrade did not migrate to GLSL files'
   Start-Sleep -Seconds 2
@@ -97,6 +105,7 @@ try {
   Wait-Until { -not (Test-Path $exe) -and -not (Test-Path $desktopLink) -and -not (Test-Path $menuLink) } 'Uninstall did not remove application and shortcuts'
   Assert ((Get-Content $library -Raw) -eq $saved) 'Uninstall deleted the collection'
   Assert (Test-Path $shader) 'Uninstall deleted GLSL files'
+  Assert ((Get-Content $appearance -Raw) -eq $savedAppearance) 'Uninstall deleted appearance preferences'
   Assert ((Get-Content $taskbarBackup -Raw) -eq $savedTaskbar) 'Uninstall deleted taskbar recovery settings'
   Assert (-not (Get-ItemProperty -Path $runKey -Name $startupName -ErrorAction SilentlyContinue)) 'Uninstall left a stale autostart entry'
   Assert (@(Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' | Where-Object { $_.DisplayName -eq 'MagmPaper' }).Count -eq 0) 'Uninstall left an installed-apps entry'
