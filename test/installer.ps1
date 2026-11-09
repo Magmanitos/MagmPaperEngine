@@ -80,9 +80,9 @@ try {
   }
   Assert (@(Get-ChildItem (Join-Path $installDir 'resources/taskbar')).Count -eq 2) 'Test harness must not ship in installer'
   Assert ((Get-Content $appearance -Raw) -eq $savedAppearance) 'Upgrade changed appearance preferences'
-  Assert ((Get-Item $exe).VersionInfo.ProductVersion -like '0.3.0*') 'Upgrade left the old executable'
+  Assert ((Get-Item $exe).VersionInfo.ProductVersion -like '0.3.1*') 'Upgrade left the old executable'
   $entries = @(Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' | Where-Object { $_.DisplayName -eq 'MagmPaper' })
-  Assert ($entries.Count -eq 1 -and $entries[0].DisplayVersion -eq '0.3.0') 'Upgrade did not replace the old installed-apps registration'
+  Assert ($entries.Count -eq 1 -and $entries[0].DisplayVersion -eq '0.3.1') 'Upgrade did not replace the old installed-apps registration'
   $null = $shell.Run(('"{0}"' -f $desktopLink), 1, $false)
   Wait-Until { (Get-Content $library -Raw | ConvertFrom-Json).version -eq 2 } 'Installed upgrade did not migrate to GLSL files'
   Start-Sleep -Seconds 2

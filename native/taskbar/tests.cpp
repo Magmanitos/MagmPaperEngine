@@ -48,6 +48,10 @@ int main() try {
     settings.icon=64;require(!valid(settings),"reject oversized icon");settings.icon=24;
     RECT monitor{-1920,0,0,1080};auto rect=barRect(monitor,144,64);
     require(rect.top==984&&rect.left==-1920&&rect.right==0,"physical geometry and negative monitor origin");
+    RECT changedMonitor{-2560,0,0,1440},changedWork{-2500,32,0,1344};
+    auto restored=restoredWorkArea(changedWork,changedMonitor,144,48,96,false);
+    require(restored.bottom==1368&&restored.left==-2500&&restored.top==32,"restore after resolution and DPI change while preserving other appbars");
+    require(restoredWorkArea(changedWork,changedMonitor,144,48,96,true).bottom==1440,"auto-hide restores the full monitor work area");
     Shared shared{};publish(&shared,settings);Settings readback{};require(read(&shared,readback)&&readback.icon==24,"shared protocol roundtrip");
     require(classify(L"Taskbar.TaskbarFrame",L"",false)==Kind::Frame,"frame detection");
     require(classify(L"Windows.UI.Xaml.Shapes.Rectangle",L"BackgroundFill",false)==Kind::None,"do not style unrelated windows");

@@ -27,7 +27,7 @@ struct __declspec(uuid("735941a2-3ee3-495a-8da9-972627003075")) DiagnosticsLifet
     virtual HRESULT STDMETHODCALLTYPE UnregisterInstance(InstanceHandle)=0;
     virtual HRESULT STDMETHODCALLTYPE TryGetDispatcherQueueForObject(InstanceHandle,void**)=0;
 };
-struct Bar { HWND window; RECT original; UINT originalDpi=96; bool resized=false; RECT previousWork{},writtenWork{}; bool changedWork=false; };
+struct Bar { HWND window; RECT original; UINT originalDpi=96; bool resized=false; RECT writtenWork{}; bool changedWork=false; };
 struct Context {
     HWND window=nullptr;
     Slot* slot=nullptr;
@@ -68,6 +68,17 @@ bool initialize(DWORD host=0) {
     },nullptr,INFINITE,WT_EXECUTEONLYONCE);
     return true;
 }
+void restoreWorkArea(Bar& bar) {
+    if(!bar.changedWork) return;
+    MONITORINFO info{sizeof(info)};
+    if(GetMonitorInfoW(MonitorFromWindow(bar.window,MONITOR_DEFAULTTONEAREST),&info)&&EqualRect(&info.rcWork,&bar.writtenWork)) {
+        APPBARDATA data{sizeof(data)};data.hWnd=bar.window;
+        auto restored=restoredWorkArea(info.rcWork,info.rcMonitor,GetDpiForWindow(bar.window),
+            bar.original.bottom-bar.original.top,bar.originalDpi,(SHAppBarMessage(ABM_GETSTATE,&data)&ABS_AUTOHIDE)!=0);
+        SystemParametersInfoW(SPI_SETWORKAREA,0,&restored,SPIF_SENDCHANGE);
+    }
+    bar.changedWork=false;
+}
 void workArea(Bar& bar,const RECT& desired) {
 #ifdef MAGM_HARNESS
     (void)bar;(void)desired;
@@ -78,11 +89,9 @@ void workArea(Bar& bar,const RECT& desired) {
     APPBARDATA data{sizeof(data)};data.hWnd=bar.window;
     bool autoHide=(SHAppBarMessage(ABM_GETSTATE,&data)&ABS_AUTOHIDE)!=0;
     if(autoHide) {
-        if(bar.changedWork&&EqualRect(&info.rcWork,&bar.writtenWork)) SystemParametersInfoW(SPI_SETWORKAREA,0,&bar.previousWork,SPIF_SENDCHANGE);
-        bar.changedWork=false;return;
+        restoreWorkArea(bar);return;
     }
     // Preserve other appbars and only adjust the bottom strip owned by Explorer.
-    if(!bar.changedWork) bar.previousWork=info.rcWork;
     LONG originalTop=info.rcMonitor.bottom-MulDiv(bar.original.bottom-bar.original.top,GetDpiForWindow(bar.window),bar.originalDpi);
     if(info.rcWork.bottom!=originalTop&&(!bar.changedWork||info.rcWork.bottom!=bar.writtenWork.bottom)) return;
     RECT next=info.rcWork;next.bottom=desired.top;
@@ -107,8 +116,7 @@ LONG resizeBars(Context& ctx,bool enabled) {
             bar.resized=true;workArea(bar,target);
         } else if(bar.resized) {
             MONITORINFO info{sizeof(info)};GetMonitorInfoW(MonitorFromWindow(bar.window,MONITOR_DEFAULTTONEAREST),&info);
-            if(bar.changedWork&&EqualRect(&info.rcWork,&bar.writtenWork)) SystemParametersInfoW(SPI_SETWORKAREA,0,&bar.previousWork,SPIF_SENDCHANGE);
-            bar.changedWork=false;
+            restoreWorkArea(bar);
             RECT actual{};GetWindowRect(bar.window,&actual);
             int height=MulDiv(bar.original.bottom-bar.original.top,GetDpiForWindow(bar.window),bar.originalDpi);
             int y=actual.top>=info.rcMonitor.bottom-4?actual.top:info.rcMonitor.bottom-height;

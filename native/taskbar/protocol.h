@@ -59,4 +59,10 @@ inline bool read(Shared* shared,Settings& value) {
 inline RECT barRect(RECT monitor,UINT dpi,UINT height) {
     monitor.top=monitor.bottom-MulDiv(static_cast<int>(height),static_cast<int>(dpi),96);return monitor;
 }
+inline RECT restoredWorkArea(RECT current,RECT monitor,UINT dpi,LONG originalHeight,UINT originalDpi,bool autoHide) {
+    // A saved absolute rectangle is invalid after a game changes resolution/DPI.
+    // Preserve other appbars and restore only Explorer's strip on this monitor.
+    current.bottom=monitor.bottom-(autoHide?0:MulDiv(originalHeight,dpi,originalDpi));
+    return current;
+}
 }
