@@ -27,7 +27,7 @@ struct __declspec(uuid("735941a2-3ee3-495a-8da9-972627003075")) DiagnosticsLifet
     virtual HRESULT STDMETHODCALLTYPE UnregisterInstance(InstanceHandle)=0;
     virtual HRESULT STDMETHODCALLTYPE TryGetDispatcherQueueForObject(InstanceHandle,void**)=0;
 };
-struct Bar { HWND window; RECT original; bool resized=false; RECT previousWork{},writtenWork{}; bool changedWork=false; };
+struct Bar { HWND window; RECT original; UINT originalDpi=96; bool resized=false; RECT previousWork{},writtenWork{}; bool changedWork=false; };
 struct Context {
     HWND window=nullptr;
     Slot* slot=nullptr;
@@ -79,7 +79,8 @@ void workArea(Bar& bar,const RECT& desired) {
     }
     // Preserve other appbars and only adjust the bottom strip owned by Explorer.
     if(!bar.changedWork) bar.previousWork=info.rcWork;
-    if(info.rcWork.bottom!=bar.original.top&&(!bar.changedWork||info.rcWork.bottom!=bar.writtenWork.bottom)) return;
+    LONG originalTop=info.rcMonitor.bottom-MulDiv(bar.original.bottom-bar.original.top,GetDpiForWindow(bar.window),bar.originalDpi);
+    if(info.rcWork.bottom!=originalTop&&(!bar.changedWork||info.rcWork.bottom!=bar.writtenWork.bottom)) return;
     RECT next=info.rcWork;next.bottom=desired.top;
     if(!EqualRect(&next,&info.rcWork)&&SystemParametersInfoW(SPI_SETWORKAREA,0,&next,SPIF_SENDCHANGE)) {
         bar.writtenWork=next;bar.changedWork=true;
@@ -101,7 +102,7 @@ void resizeBars(Context& ctx,bool enabled) {
             if(bar.changedWork&&EqualRect(&info.rcWork,&bar.writtenWork)) SystemParametersInfoW(SPI_SETWORKAREA,0,&bar.previousWork,SPIF_SENDCHANGE);
             bar.changedWork=false;
             RECT actual{};GetWindowRect(bar.window,&actual);
-            int height=bar.original.bottom-bar.original.top;
+            int height=MulDiv(bar.original.bottom-bar.original.top,GetDpiForWindow(bar.window),bar.originalDpi);
             int y=actual.top>=info.rcMonitor.bottom-4?actual.top:info.rcMonitor.bottom-height;
             SetWindowPos(bar.window,nullptr,info.rcMonitor.left,y,info.rcMonitor.right-info.rcMonitor.left,height,SWP_NOZORDER|SWP_NOACTIVATE);
             bar.resized=false;
@@ -292,7 +293,7 @@ extern "C" __declspec(dllexport) LRESULT CALLBACK MagmTaskbarHook(int code,WPARA
                 if(wcscmp(name,L"Shell_TrayWnd")==0||wcscmp(name,L"Shell_SecondaryTrayWnd")==0) {
                     RECT rect{};GetWindowRect(message->hwnd,&rect);
                     if(rect.right-rect.left>rect.bottom-rect.top&&SetWindowSubclass(message->hwnd,barProcedure,1,reinterpret_cast<DWORD_PTR>(ctx))) {
-                        ctx->bars.push_back({message->hwnd,rect});InterlockedIncrement(&shared->bars);
+                        ctx->bars.push_back({message->hwnd,rect,GetDpiForWindow(message->hwnd)});InterlockedIncrement(&shared->bars);
                     }
                 }
             }

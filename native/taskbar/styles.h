@@ -5,6 +5,7 @@
 #undef GetCurrentTime
 #endif
 #include <winrt/Windows.Foundation.h>
+#include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.UI.h>
 #include <winrt/Windows.UI.Xaml.h>
 #include <winrt/Windows.UI.Xaml.Controls.h>
@@ -33,6 +34,6 @@ public:
     StyledElement(xaml::FrameworkElement const& element,Kind type):target(element),kind(type){}
     ~StyledElement();
     void apply(const Settings&);
-    void restore() noexcept;
+    bool restore() noexcept;
 };
 }

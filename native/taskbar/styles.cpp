@@ -32,7 +32,7 @@ void StyledElement::set(xaml::DependencyProperty const& key,Windows::Foundation:
     writing=false;
 }
 void StyledElement::apply(const Settings& settings) {
-    if(!settings.enabled) {restore();return;}
+    if(!settings.enabled) {if(!restore()) throw hresult_error(E_FAIL);return;}
     const double height=static_cast<double>(settings.height);
     switch(kind) {
     case Kind::Frame:case Kind::Content:case Kind::Tray:
@@ -59,7 +59,8 @@ void StyledElement::apply(const Settings& settings) {
     default:break;
     }
 }
-void StyledElement::restore() noexcept {
+bool StyledElement::restore() noexcept {
+    bool restored=true;
     writing=true;
     if(auto element=target.get()) for(auto& p:properties) {
         try { element.UnregisterPropertyChangedCallback(p->key,p->token); } catch(...) {}
@@ -67,9 +68,9 @@ void StyledElement::restore() noexcept {
             if(p->binding) xaml::Data::BindingOperations::SetBinding(element,p->key,p->binding);
             else if(p->original==xaml::DependencyProperty::UnsetValue()) element.ClearValue(p->key);
             else element.SetValue(p->key,p->original);
-        } catch(...) {}
+        } catch(...) {restored=false;}
     }
-    properties.clear();writing=false;
+    properties.clear();writing=false;return restored;
 }
 StyledElement::~StyledElement() {restore();}
 }
