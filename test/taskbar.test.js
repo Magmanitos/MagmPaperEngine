@@ -59,7 +59,7 @@ test('Windows PowerShell writes DWORD settings, notifies the mod and restores ab
   assert.equal(a.read('HKCU',fixtureKey+'\\Settings','TaskbarHeight'),60);
   assert.equal(a.read('HKCU',fixtureKey+'\\Settings','IconSize'),40);
   const stamp=a.read('HKCU',fixtureKey,'SettingsChangeTime');assert.ok(stamp>0);
-  ps(script({TaskbarHeight:null,IconSize:24}));
+  ps(script({TaskbarHeight:null,IconSize:24,IconSizeSmall:null}));
   assert.equal(a.read('HKCU',fixtureKey+'\\Settings','TaskbarHeight'),null);
   assert.equal(a.read('HKCU',fixtureKey+'\\Settings','IconSize'),24);
   assert.equal(a.read('HKCU',fixtureKey+'\\Settings','Unrelated'),99);
