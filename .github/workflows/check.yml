@@ -18,6 +18,17 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
+      - name: Build and test integrated taskbar module
+        shell: pwsh
+        run: |
+          $output = & ./scripts/build-taskbar.ps1 2>&1
+          $code = $LASTEXITCODE
+          $output | Write-Output
+          if ($code -ne 0) {
+            $message = ($output -join "`n").Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Output "::error::$message"
+            exit $code
+          }
       - name: Test library and Windows settings
         shell: pwsh
         run: |
