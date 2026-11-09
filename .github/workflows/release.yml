@@ -22,8 +22,17 @@ jobs:
           cache: npm
       - name: Install locked dependencies
         run: npm ci
-      - name: Test library
-        run: npm test
+      - name: Test library and Windows settings
+        shell: pwsh
+        run: |
+          $output = & npm test 2>&1
+          $code = $LASTEXITCODE
+          $output | Write-Output
+          if ($code -ne 0) {
+            $message = ($output -join "`n").Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Output "::error::$message"
+            exit $code
+          }
       - name: Test Electron window and Windows autostart
         run: npm run test:windows
       - name: Build Windows installer and ZIP
