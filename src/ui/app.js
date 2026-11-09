@@ -108,6 +108,7 @@ function navigate(route) {
   localStorage.setItem('magmpaper-section', route);
   updatePreviewPause();
   if (route === 'taskbar') void loadTaskbar();
+  if (route === 'wallpapers' && data.platform && !busy && editing === undefined) void action(() => refresh());
 }
 for (const button of document.querySelectorAll('[data-route],[data-go]')) button.onclick = () => navigate(button.dataset.route || button.dataset.go);
 navigate(localStorage.getItem('magmpaper-section') || 'overview');
