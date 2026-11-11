@@ -46,7 +46,8 @@ Set-Content -Path (Join-Path $legacyDir 'wallpapers.json') -Value $sample -Encod
 try {
   # Upgrade the published version, not just a second copy of the new installer.
   $previous = Join-Path $env:TEMP 'MagmPaper-Setup-0.3.1.exe'
-  Invoke-WebRequest 'https://github.com/Magmanitos/MagmPaperEngine/releases/download/v0.3.1/MagmPaper-Setup-0.3.1.exe' -OutFile $previous
+  Write-Output '::notice::Downloading the published 0.3.1 installer'
+  Invoke-WebRequest 'https://github.com/Magmanitos/MagmPaperEngine/releases/download/v0.3.1/MagmPaper-Setup-0.3.1.exe' -OutFile $previous -TimeoutSec 120
   Install-App $previous
   Assert (Test-Path $exe) 'Application was not installed in LocalAppData/Programs/MagmPaper'
   Assert (Test-Path (Join-Path $installDir 'resources/app.asar')) 'Bundled application missing'
