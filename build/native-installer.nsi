@@ -39,7 +39,17 @@ Var PreviousNative
 Var StartupPreference
 Var Updated
 
+!macro AbortWithError Message
+  FileOpen $R9 "$TEMP\MagmPaper-setup-error.txt" w
+  FileWriteUTF16LE $R9 "${Message}"
+  FileClose $R9
+  SetErrorLevel 1
+  MessageBox MB_ICONSTOP "${Message}" /SD IDOK
+  Abort
+!macroend
+
 Function .onInit
+  Delete "$TEMP\MagmPaper-setup-error.txt"
   SetShellVarContext current
   SetRegView 64
   ReadRegStr $StartupPreference HKCU "${RUN}" "${ID}"
@@ -53,13 +63,36 @@ Function .onInit
     ReadRegStr $2 HKCU "${UNINSTALL}\$1" "DisplayName"
     ${If} $2 == "MagmPaper"
       ReadRegStr $3 HKCU "${UNINSTALL}\$1" "InstallLocation"
+      ; electron-builder stores InstallLocation outside the Windows uninstall
+      ; entry. Recover the directory from its quoted UninstallString instead.
       ${If} $3 == ""
-        MessageBox MB_ICONSTOP "Не удалось определить папку прежней версии MagmPaper. Удалите её через параметры Windows; коллекция обоев сохранится."
-        Abort
+        ReadRegStr $4 HKCU "${UNINSTALL}\$1" "UninstallString"
+        StrCpy $5 $4 1
+        ${If} $5 == '$\"'
+          StrCpy $6 1
+          ${Do}
+            StrCpy $5 $4 1 $6
+            ${If} $5 == ""
+              ${ExitDo}
+            ${EndIf}
+            ${If} $5 == '$\"'
+              IntOp $6 $6 - 1
+              StrCpy $4 $4 $6 1
+              ${GetFileName} $4 $5
+              ${If} $5 == "Uninstall MagmPaper.exe"
+                ${GetParent} $4 $3
+              ${EndIf}
+              ${ExitDo}
+            ${EndIf}
+            IntOp $6 $6 + 1
+          ${Loop}
+        ${EndIf}
+      ${EndIf}
+      ${If} $3 == ""
+        !insertmacro AbortWithError "Не удалось определить папку прежней версии MagmPaper. Удалите её через параметры Windows; коллекция обоев сохранится."
       ${EndIf}
       ${If} $PreviousKey != ""
-        MessageBox MB_ICONSTOP "Найдено несколько установок MagmPaper. Удалите лишние через параметры Windows; коллекция обоев сохранится."
-        Abort
+        !insertmacro AbortWithError "Найдено несколько установок MagmPaper. Удалите лишние через параметры Windows; коллекция обоев сохранится."
       ${EndIf}
       StrCpy $PreviousKey $1
       StrCpy $PreviousDirectory $3
@@ -75,18 +108,21 @@ Section "MagmPaper"
       ExecWait '"$PreviousDirectory\MagmPaper.exe" --quit'
     ${EndIf}
     IfFileExists "$PreviousDirectory\Uninstall MagmPaper.exe" +3 0
-      MessageBox MB_ICONSTOP "Не найден деинсталлятор прежней версии. Восстановите прежнюю установку перед обновлением."
-      Abort
+      !insertmacro AbortWithError "Не найден деинсталлятор прежней версии. Восстановите прежнюю установку перед обновлением."
+    InitPluginsDir
     ClearErrors
-    ExecWait '"$PreviousDirectory\Uninstall MagmPaper.exe" /S /currentuser --updated _?=$PreviousDirectory' $0
+    CopyFiles /SILENT "$PreviousDirectory\Uninstall MagmPaper.exe" "$PLUGINSDIR\PreviousUninstall.exe"
+    ${If} ${Errors}
+      !insertmacro AbortWithError "Не удалось подготовить удаление прежней версии MagmPaper."
+    ${EndIf}
+    ClearErrors
+    ExecWait '"$PLUGINSDIR\PreviousUninstall.exe" /S /currentuser --updated _?=$PreviousDirectory' $0
     ${If} ${Errors}
     ${OrIf} $0 != 0
-      MessageBox MB_ICONSTOP "Не удалось закрыть или удалить прежнюю версию. Завершите MagmPaper через трей и повторите установку."
-      Abort
+      !insertmacro AbortWithError "Не удалось закрыть или удалить прежнюю версию. Завершите MagmPaper через трей и повторите установку."
     ${EndIf}
     IfFileExists "$PreviousDirectory\MagmPaper.exe" 0 +3
-      MessageBox MB_ICONSTOP "Прежняя версия ещё запущена. Завершите MagmPaper через трей и повторите установку."
-      Abort
+      !insertmacro AbortWithError "Прежняя версия ещё запущена. Завершите MagmPaper через трей и повторите установку."
     Delete "$PreviousDirectory\Uninstall MagmPaper.exe"
     DeleteRegKey HKCU "${UNINSTALL}\$PreviousKey"
   ${EndIf}
@@ -112,6 +148,7 @@ Section "MagmPaper"
 SectionEnd
 
 Function un.onInit
+  Delete "$TEMP\MagmPaper-setup-error.txt"
   SetShellVarContext current
   SetRegView 64
   ${GetParameters} $0
@@ -138,9 +175,7 @@ Section "Uninstall"
     IntOp $0 $0 + 1
   ${LoopWhile} $0 < 50
   ${If} ${FileExists} "$INSTDIR\MagmPaper.exe"
-    MessageBox MB_ICONSTOP "Завершите MagmPaper через трей (сохраните изменения в редакторе), затем повторите удаление."
-    SetErrorLevel 1
-    Abort
+    !insertmacro AbortWithError "Завершите MagmPaper через трей (сохраните изменения в редакторе), затем повторите удаление."
   ${EndIf}
   !include "${DELETE_FILES}"
   Delete "$INSTDIR\Uninstall MagmPaper.exe"

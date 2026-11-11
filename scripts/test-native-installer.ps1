@@ -34,7 +34,10 @@ function Install-App($setup = $installer[0].FullName) {
     $process.Kill($true)
     throw "Installer timed out: $setup`n$windows"
   }
-  Assert ($process.ExitCode -eq 0) "Installer failed: $($process.ExitCode)"
+  if ($process.ExitCode -ne 0) {
+    $detail = Get-Content (Join-Path $env:TEMP 'MagmPaper-setup-error.txt') -Raw -Encoding Unicode -ErrorAction SilentlyContinue
+    throw "Installer failed: $($process.ExitCode). $detail"
+  }
 }
 Assert (-not (Test-Path $installDir)) 'Runner already has an installation'
 Assert (-not (Test-Path $dataDir)) 'Runner already has application data'
