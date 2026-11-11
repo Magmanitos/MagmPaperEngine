@@ -111,11 +111,17 @@ internal sealed class ShaderContext : IDisposable
     }
     private void Quad(uint value)
     {
+        Diagnostics.Trace("Quad bind");
         Gpu.UseProgram(value); Gpu.BindBuffer(0x8892, quad);
+        Diagnostics.Trace("Quad attribute");
         var location = Gpu.GetAttribLocation(value, "position");
         if (location < 0) throw new InvalidDataException("Вершинный атрибут position отсутствует.");
+        Diagnostics.Trace("Quad pointer");
         Gpu.EnableVertexAttribArray((uint)location); Gpu.VertexAttribPointer((uint)location, 2, 0x1406, 0, 0, 0);
-        Gpu.DrawArrays(4, 0, 6); Gpu.DisableVertexAttribArray((uint)location);
+        Diagnostics.Trace("Quad draw");
+        Gpu.DrawArrays(4, 0, 6);
+        Diagnostics.Trace("Quad disable");
+        Gpu.DisableVertexAttribArray((uint)location);
     }
     public PixelFrame? Draw(int outputWidth, int outputHeight, double quality, double seconds, double x, double y, bool capture = false)
     {
@@ -144,6 +150,7 @@ internal sealed class ShaderContext : IDisposable
     public void Dispose()
     {
         if (display == 0) return;
+        Diagnostics.Trace("Dispose shader context start");
         if (context != 0)
         {
             Gpu.EglMakeCurrent(display, surface, surface, context);
@@ -152,6 +159,6 @@ internal sealed class ShaderContext : IDisposable
         }
         if (surface != 0) Gpu.EglDestroySurface(display, surface);
         display = surface = context = 0; program = copy = quad = 0;
-        Gpu.EglReleaseThread(); AngleDevice.Release();
+        Gpu.EglReleaseThread(); AngleDevice.Release(); Diagnostics.Trace("Dispose shader context done");
     }
 }

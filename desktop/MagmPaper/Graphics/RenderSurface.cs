@@ -18,6 +18,7 @@ internal sealed class RenderSurface : IDisposable
     private volatile bool stopping;
     private string? source;
     private double seconds;
+    private double mouseX = .5, mouseY = .5;
     private long frames;
     public long Frames => Interlocked.Read(ref frames);
     public event Action<string>? Error;
@@ -51,7 +52,7 @@ internal sealed class RenderSurface : IDisposable
     public Task<PixelFrame> CaptureAsync() => Submit(context =>
     {
         if (!Win32.GetClientRect(window, out var rect)) throw new IOException("Окно предпросмотра закрыто.");
-        return context.Draw(Math.Max(1, rect.Width), Math.Max(1, rect.Height), options.Quality, seconds, .5, .5, true)
+        return context.Draw(Math.Max(1, rect.Width), Math.Max(1, rect.Height), options.Quality, seconds, mouseX, mouseY, true)
             ?? throw new InvalidOperationException("Сначала загрузите шейдер.");
     });
     private void Loop()
@@ -94,6 +95,7 @@ internal sealed class RenderSurface : IDisposable
                     }
                     else motion.Target(.5, .5, false);
                     motion.Advance(elapsed);
+                    mouseX = motion.X; mouseY = motion.Y;
                     context.Draw(bounds.Width, bounds.Height, current.Quality, seconds, motion.X, motion.Y);
                     Interlocked.Increment(ref frames);
                     if (++successful >= 60) { failures = 0; successful = 0; }

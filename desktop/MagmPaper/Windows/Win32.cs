@@ -59,6 +59,7 @@ internal static class Win32
     [DllImport("user32.dll")] internal static extern bool GetClientRect(nint hwnd, out Rect value);
     [DllImport("user32.dll")] internal static extern bool GetWindowRect(nint hwnd, out Rect value);
     [DllImport("user32.dll")] internal static extern bool GetCursorPos(out Point point);
+    [DllImport("user32.dll")] internal static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] internal static extern bool ScreenToClient(nint hwnd, ref Point point);
     [DllImport("user32.dll")] internal static extern int MapWindowPoints(nint from, nint to, ref Point point, uint count);
     [DllImport("user32.dll")] internal static extern nint SetParent(nint child, nint parent);

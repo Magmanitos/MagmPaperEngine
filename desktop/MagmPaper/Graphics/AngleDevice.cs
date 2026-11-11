@@ -16,7 +16,7 @@ internal static class AngleDevice
         lock (Gate)
         {
             while (resetting && references != 0) Monitor.Wait(Gate);
-            if (resetting && display != 0) { Gpu.EglTerminate(display); display = 0; }
+            if (resetting && display != 0) { Diagnostics.Trace("Terminate shared display"); Gpu.EglTerminate(display); display = 0; }
             if (display == 0)
             {
                 Diagnostics.Trace("EGL get display");

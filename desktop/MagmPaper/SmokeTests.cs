@@ -44,6 +44,7 @@ internal static class SmokeTests
         await Until(() => surface.Frames > 2, "render loop did not start");
         surface.Configure(new(Paused: true)); await Task.Delay(150); var count = surface.Frames; await Task.Delay(350);
         Assert(surface.Frames == count, "paused preview keeps rendering");
+        Diagnostics.Trace("Pixels, shader rollback, backbuffer, scaling and pause passed");
         var host = Win32.CreateSurface(0); nint child = 0;
         try
         {
@@ -53,12 +54,42 @@ internal static class SmokeTests
             var origin = new Win32.Point(0, 0); Win32.MapWindowPoints(child, 0, ref origin, 1);
             Assert(origin.X == monitor.Left && origin.Y == monitor.Top, "wallpaper origin does not match monitor");
             Assert(((uint)Win32.GetWindowLongPtr(child, -20) & 0x20) != 0, "wallpaper is not click-through");
-            using var secondSurface = new RenderSurface(child); await secondSurface.LoadAsync(Red);
+            Win32.ShowWindow(host, 4);
+            Win32.SetWindowPos(host, 0, monitor.Left, monitor.Top, monitor.Width, monitor.Height, 0x14);
+            await Task.Delay(100);
+            Assert(DesktopHost.Inspect(host, child, Win32.PrimaryMonitor().Work.Area) == 1, "fullscreen native window did not pause wallpaper");
+            Win32.SetWindowPos(host, 0, 37, 53, monitor.Width / 2, monitor.Height / 2, 0x14);
+            await Task.Delay(100);
+            Assert(DesktopHost.Inspect(host, child, Win32.PrimaryMonitor().Work.Area) == 0, "partial window incorrectly pauses wallpaper");
+            Win32.SetWindowPos(host, 0, monitor.Left, monitor.Top, monitor.Width, monitor.Height, 0x14);
+            Win32.ShowWindow(host, 6);
+            Assert(DesktopHost.Inspect(host, child, Win32.PrimaryMonitor().Work.Area) == 0, "minimized window incorrectly pauses wallpaper");
+            Win32.ShowWindow(host, 4); Win32.SetWindowLongPtr(host, -20, 0x20);
+            Assert(DesktopHost.Inspect(host, child, Win32.PrimaryMonitor().Work.Area) == 0, "click-through overlay incorrectly pauses wallpaper");
+            DesktopHost.Fit(child, host);
+            using var secondSurface = new RenderSurface(child, true); await secondSurface.LoadAsync(Red);
+            await secondSurface.LoadAsync("precision mediump float; uniform vec2 mouse; void main(){gl_FragColor=vec4(mouse,0.0,1.0);}");
+            Win32.GetCursorPos(out var oldCursor);
+            try
+            {
+                // The surface is transparent to mouse input but reads the real OS cursor.
+                var upperRight = new Win32.Point(monitor.Left + monitor.Width * 3 / 4, monitor.Top + monitor.Height / 4);
+                Assert(Win32.SetCursorPos(upperRight.X, upperRight.Y), "could not position test cursor");
+                secondSurface.Configure(new(Paused: false)); await Task.Delay(250);
+                var mousePixels = await secondSurface.CaptureAsync();
+                Assert(Math.Abs(mousePixels.Rgba[0] - 191) < 5 && Math.Abs(mousePixels.Rgba[1] - 191) < 5, "desktop cursor did not reach GLSL uniforms");
+                secondSurface.Configure(new(Paused: false, MouseEnabled: false)); await Task.Delay(100);
+                mousePixels = await secondSurface.CaptureAsync();
+                Assert(Math.Abs(mousePixels.Rgba[0] - 128) < 3 && Math.Abs(mousePixels.Rgba[1] - 128) < 3, "disabled mouse is not centered");
+                secondSurface.Configure(new(Paused: true));
+            }
+            finally { Win32.SetCursorPos(oldCursor.X, oldCursor.Y); }
             surface.Configure(new(Paused: false)); long before = surface.Frames; AngleDevice.Reset(AngleDevice.Generation);
             await Until(() => surface.Frames > before + 3, "GPU contexts did not recreate after device reset");
             surface.Configure(new(Paused: true));
         }
         finally { if (child != 0) Win32.DestroyWindow(child); Win32.DestroyWindow(host); }
+        Diagnostics.Trace("Native monitor geometry, coverage, cursor and GPU reset passed");
         // Exercise real WPF controls and their async handlers, not a renderer mock.
         window.AddWallpaperButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         window.NameInput.Text = "Нативный UI тест"; window.CodeInput.Text = Red;
@@ -80,7 +111,7 @@ internal static class SmokeTests
         Assert(surface.Frames == idleFrames, "hidden preview consumes frames");
         var process = Process.GetCurrentProcess(); var startCpu = process.TotalProcessorTime; var clockIdle = Stopwatch.StartNew(); await Task.Delay(2000); process.Refresh();
         var report = new { passed = true, nativeUi = "WPF", gpuTests = "ANGLE D3D11 WARP", workingSetBytes = process.WorkingSet64, idleCpuMilliseconds = (process.TotalProcessorTime - startCpu).TotalMilliseconds, idleSampleMilliseconds = clockIdle.Elapsed.TotalMilliseconds,
-            tests = new[] { "real GLSL pixels", "compile error preserves program", "backbuffer", "quality fills window", "pause stops frames", "physical monitor geometry", "click-through", "GPU reset with paused second context", "WPF editor/save/navigation", "settings", "hidden preview" } };
+            tests = new[] { "real GLSL pixels", "compile error preserves program", "backbuffer", "quality fills window", "pause stops frames", "physical monitor geometry", "native window coverage/minimize/transparent overlay", "click-through and real cursor uniforms", "mouse toggle", "GPU reset with paused second context", "WPF editor/save/navigation", "settings", "hidden preview" } };
         File.WriteAllText(Path.Combine(output, "report.json"), JsonSerializer.Serialize(report, DataFiles.Json));
     }
 }
