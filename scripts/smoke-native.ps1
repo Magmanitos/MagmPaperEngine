@@ -1,5 +1,6 @@
 param([string]$Application = "$PSScriptRoot/../artifacts/native/MagmPaper.exe")
 $ErrorActionPreference = 'Stop'
+try {
 $report = Join-Path (Split-Path $PSScriptRoot -Parent) 'artifacts/smoke'
 New-Item -ItemType Directory -Path $report -Force | Out-Null
 $process = Start-Process -FilePath $Application -ArgumentList '--smoke-test', ('"{0}"' -f $report) -PassThru
@@ -14,3 +15,9 @@ if ($process.ExitCode -ne 0) { throw "Native application exited with $($process.
 $result = Get-Content (Join-Path $report 'report.json') -Raw | ConvertFrom-Json
 if (-not $result.passed) { throw 'Native app did not confirm validation' }
 Get-Content (Join-Path $report 'report.json') -Raw | Write-Output
+
+} catch {
+  $message = ($_ | Out-String).Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+  Write-Output "::error::$message"
+  throw
+}
