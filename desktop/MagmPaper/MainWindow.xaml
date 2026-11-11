@@ -1,5 +1,5 @@
 <Window x:Class="MagmPaper.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework" xmlns:graphics="clr-namespace:MagmPaper.Graphics"
- Title="MagmPaper" Width="1280" Height="850" MinWidth="980" MinHeight="650" WindowStyle="None" ResizeMode="CanResize" WindowStartupLocation="CenterScreen">
+ Title="MagmPaper" Style="{StaticResource AppWindow}" Width="1280" Height="850" MinWidth="980" MinHeight="650" WindowStyle="None" ResizeMode="CanResize" WindowStartupLocation="CenterScreen">
  <shell:WindowChrome.WindowChrome><shell:WindowChrome CaptionHeight="42" ResizeBorderThickness="6" GlassFrameThickness="0" CornerRadius="0" UseAeroCaptionButtons="False"/></shell:WindowChrome.WindowChrome>
  <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="1">
  <Grid><Grid.RowDefinitions><RowDefinition Height="42"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
@@ -7,7 +7,7 @@
   <Grid Grid.Row="1"><Grid.ColumnDefinitions><ColumnDefinition Width="212"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
    <Border Background="#14151B" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,1,0"><DockPanel>
     <StackPanel DockPanel.Dock="Top" Margin="22,32,20,26"><TextBlock Text="MagmPaper" FontSize="24" FontWeight="Bold"/><TextBlock Text="ВАШ WINDOWS" FontSize="10" Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0"/></StackPanel>
-    <StackPanel DockPanel.Dock="Bottom" Margin="20,20,20,24"><TextBlock Text="●  MagmPaper 0.4.1" FontSize="11" Foreground="{StaticResource SuccessBrush}"/><TextBlock Text="Закрытие окна оставляет обои и оформление в трее." Style="{StaticResource Muted}" FontSize="12" Margin="0,12,0,0"/></StackPanel>
+    <StackPanel DockPanel.Dock="Bottom" Margin="20,20,20,24"><TextBlock Text="●  MagmPaper 0.4.2" FontSize="11" Foreground="{StaticResource SuccessBrush}"/><TextBlock Text="Закрытие окна оставляет обои и оформление в трее." Style="{StaticResource Muted}" FontSize="12" Margin="0,12,0,0"/></StackPanel>
     <StackPanel><TextBlock Text="ПЕРСОНАЛИЗАЦИЯ" FontSize="10" Foreground="{StaticResource MutedBrush}" Margin="26,6,0,12"/>
      <RadioButton x:Name="NavOverview" Content="◫     Обзор" Style="{StaticResource Nav}" GroupName="Navigation" Tag="overview" Click="NavigateClick"/>
      <RadioButton x:Name="NavWallpapers" Content="◈     Обои" Style="{StaticResource Nav}" GroupName="Navigation" Tag="wallpapers" Click="NavigateClick"/>

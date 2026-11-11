@@ -14,6 +14,26 @@ internal static class SmokeTests
 {
     private const string Red = "precision mediump float; void main(){gl_FragColor=vec4(1.0,0.0,0.0,1.0);}";
     private static void Assert(bool value, string message) { if (!value) throw new Exception(message); }
+    private static IEnumerable<TextBlock> TextElements(DependencyObject parent)
+    {
+        for (int index = 0; index < VisualTreeHelper.GetChildrenCount(parent); index++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, index);
+            if (child is TextBlock text) yield return text;
+            foreach (var descendant in TextElements(child)) yield return descendant;
+        }
+    }
+    private static double Luminance(Color color)
+    {
+        static double Linear(byte value) { double channel = value / 255.0; return channel <= .04045 ? channel / 12.92 : Math.Pow((channel + .055) / 1.055, 2.4); }
+        return .2126 * Linear(color.R) + .7152 * Linear(color.G) + .0722 * Linear(color.B);
+    }
+    private static void AssertReadable(Brush foreground, Brush background, string label)
+    {
+        Assert(foreground is SolidColorBrush && background is SolidColorBrush, $"{label}: missing opaque theme brushes");
+        double text = Luminance(((SolidColorBrush)foreground).Color), surface = Luminance(((SolidColorBrush)background).Color);
+        Assert((Math.Max(text, surface) + .05) / (Math.Min(text, surface) + .05) >= 4.5, $"{label}: unreadable text contrast");
+    }
     private static async Task Until(Func<bool> condition, string message)
     {
         var clock = Stopwatch.StartNew();
@@ -133,6 +153,14 @@ internal static class SmokeTests
         await Until(() => !window.Busy, "settings did not save"); Assert(window.Library.State.Settings.Fps == 30, "native performance preference lost");
         window.Navigate("taskbar");
         await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+        // Check rendered control text as well as the window. Implicit Window
+        // styles do not automatically apply to a derived MainWindow class.
+        Assert(window.Background is SolidColorBrush background && Luminance(background.Color) < .05, "native window lost its dark background");
+        AssertReadable(window.Foreground, window.Background, "window");
+        var heading = TextElements(window.TaskbarPage).Single(text => text.Text == "Поведение панели");
+        AssertReadable(heading.Foreground, (Brush)window.FindResource("PanelBrush"), "card heading");
+        var buttonText = TextElements(window.AddWallpaperButton).First(text => !string.IsNullOrEmpty(text.Text));
+        AssertReadable(buttonText.Foreground, window.AddWallpaperButton.Background, "primary button");
         var bitmap = new RenderTargetBitmap((int)window.ActualWidth, (int)window.ActualHeight, 96, 96, PixelFormats.Pbgra32); bitmap.Render(window);
         var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
         using (var image = File.Create(Path.Combine(output, "native-interface.png"))) encoder.Save(image);
@@ -141,7 +169,7 @@ internal static class SmokeTests
         await Task.Delay(3000); // Let startup compilation, layout and deferred GPU release settle.
         var process = Process.GetCurrentProcess(); var startCpu = process.TotalProcessorTime; var clockIdle = Stopwatch.StartNew(); await Task.Delay(5000); process.Refresh();
         var report = new { passed = true, nativeUi = "WPF", gpuTests = "ANGLE D3D11 WARP", workingSetBytes = process.WorkingSet64, idleCpuMilliseconds = (process.TotalProcessorTime - startCpu).TotalMilliseconds, idleSampleMilliseconds = clockIdle.Elapsed.TotalMilliseconds,
-            tests = new[] { "real GLSL pixels", "compile error preserves program", "backbuffer", "quality fills window", "pause stops frames", "physical monitor geometry", "native window coverage/minimize/transparent overlay", "click-through and real cursor uniforms", "mouse toggle", "six GPU resets with active and paused second context", "Windows autostart and StartupApproved", "WPF editor/save/navigation", "settings", "hidden preview" } };
+            tests = new[] { "real GLSL pixels", "compile error preserves program", "backbuffer", "quality fills window", "pause stops frames", "physical monitor geometry", "native window coverage/minimize/transparent overlay", "click-through and real cursor uniforms", "mouse toggle", "six GPU resets with active and paused second context", "Windows autostart and StartupApproved", "WPF editor/save/navigation", "settings", "WPF theme contrast", "hidden preview" } };
         File.WriteAllText(Path.Combine(output, "report.json"), JsonSerializer.Serialize(report, DataFiles.Json));
     }
 }

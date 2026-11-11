@@ -4,7 +4,7 @@
 
 ## Установка и запуск
 
-Скачайте **MagmPaper-Setup-0.4.1.exe** из [релиза 0.4.1](https://github.com/Magmanitos/MagmPaperEngine/releases/tag/v0.4.1), полностью закройте прежнюю версию через трей → «Выход» и запустите установщик.
+Скачайте **MagmPaper-Setup-0.4.2.exe** из [релиза 0.4.2](https://github.com/Magmanitos/MagmPaperEngine/releases/tag/v0.4.2), полностью закройте прежнюю версию через трей → «Выход» и запустите установщик.
 
 - По умолчанию программа устанавливается для текущего пользователя в `%LOCALAPPDATA%\Programs\MagmPaper`. Папку можно выбрать в мастере установки.
 - Приложение, среда .NET, ANGLE и нативные модули Windows включены в установщик. Интерфейс WPF не использует Chromium, Electron или WebView. Собственный модуль оформления стандартной панели задач также входит в комплект; Windhawk не нужен. Устанавливать Node.js, npm или VS Code не требуется. Интернет во время установки не нужен.
@@ -36,7 +36,7 @@ dotnet publish desktop/MagmPaper/MagmPaper.csproj -c Release -r win-x64 --self-c
 pwsh -File scripts/package-native.ps1
 ```
 
-Результат: `dist/MagmPaper-Setup-0.4.1.exe` и `dist/MagmPaper-0.4.1-win.zip`. Установка SDK на компьютер пользователя не требуется. ZIP нужно полностью распаковать в отдельную папку; файлы рядом с `MagmPaper.exe` обязательны. Упаковка проверяет наличие собственного модуля панели и ANGLE, а также отсутствие Electron.
+Результат: `dist/MagmPaper-Setup-0.4.2.exe` и `dist/MagmPaper-0.4.2-win.zip`. Установка SDK на компьютер пользователя не требуется. ZIP нужно полностью распаковать в отдельную папку; файлы рядом с `MagmPaper.exe` обязательны. Упаковка проверяет наличие собственного модуля панели и ANGLE, а также отсутствие Electron.
 
 ## Устройство нативной версии
 
