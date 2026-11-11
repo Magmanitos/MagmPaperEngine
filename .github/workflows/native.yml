@@ -6,31 +6,17 @@ on:
   workflow_call:
 permissions:
   contents: read
+concurrency:
+  group: native-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   native:
     runs-on: windows-latest
     timeout-minutes: 25
-    permissions:
-      contents: read
-      actions: write
     env:
       DOTNET_CLI_TELEMETRY_OPTOUT: '1'
       DOTNET_NOLOGO: '1'
     steps:
-      - name: Cancel superseded checks on the native development branch
-        if: github.ref == 'refs/heads/native-desktop'
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          $runs = gh run list --branch native-desktop --limit 30 --json databaseId,status,workflowName | ConvertFrom-Json
-          foreach ($run in $runs) {
-            if ($run.workflowName -eq 'Native Windows checks' -and $run.status -in @('in_progress','queued','waiting') -and [long]$run.databaseId -lt [long]$env:GITHUB_RUN_ID) {
-              gh run cancel $run.databaseId
-            }
-          }
-          exit 0
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
