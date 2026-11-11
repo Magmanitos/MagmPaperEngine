@@ -36,13 +36,13 @@ VIAddVersionKey /LANG=1033 "LegalCopyright" "MagmPaper contributors"
 Var PreviousDirectory
 Var PreviousKey
 Var PreviousNative
-Var Startup
+Var StartupPreference
 Var Updated
 
 Function .onInit
   SetShellVarContext current
   SetRegView 64
-  ReadRegStr $Startup HKCU "${RUN}" "${ID}"
+  ReadRegStr $StartupPreference HKCU "${RUN}" "${ID}"
   StrCpy $0 0
   ${Do}
     EnumRegKey $1 HKCU "${UNINSTALL}" $0
@@ -106,7 +106,7 @@ Section "MagmPaper"
   WriteRegDWORD HKCU "${UNINSTALL}\MagmPaper" "NoModify" 1
   WriteRegDWORD HKCU "${UNINSTALL}\MagmPaper" "NoRepair" 1
   WriteRegDWORD HKCU "${UNINSTALL}\MagmPaper" "NativeDesktop" 1
-  ${If} $Startup != ""
+  ${If} $StartupPreference != ""
     WriteRegStr HKCU "${RUN}" "${ID}" '$\"$INSTDIR\MagmPaper.exe$\" --autostart'
   ${EndIf}
 SectionEnd

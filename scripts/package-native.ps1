@@ -19,8 +19,10 @@ try {
   $deleteFile = "$root/artifacts/native-uninstall.nsh"
   Set-Content $deleteFile -Value ($cleanup -join "`r`n") -Encoding utf8NoBOM
   $size = [int][Math]::Ceiling(($files | Measure-Object Length -Sum).Sum / 1024)
-  & $nsis /V2 "/DVERSION=$version" "/DPAYLOAD=$Payload" "/DOUTPUT=$($dist.FullName)/MagmPaper-Setup-$version.exe" "/DICON=$root/build/icon.ico" "/DDELETE_FILES=$deleteFile" "/DSIZE=$size" "$root/build/native-installer.nsi"
-  if ($LASTEXITCODE -ne 0) { throw "NSIS failed: $LASTEXITCODE" }
+  $compilerOutput = & $nsis /V2 "/DVERSION=$version" "/DPAYLOAD=$Payload" "/DOUTPUT=$($dist.FullName)/MagmPaper-Setup-$version.exe" "/DICON=$root/build/icon.ico" "/DDELETE_FILES=$deleteFile" "/DSIZE=$size" "$root/build/native-installer.nsi" 2>&1
+  $compilerExit = $LASTEXITCODE
+  $compilerOutput | Write-Output
+  if ($compilerExit -ne 0) { throw ("NSIS failed: $compilerExit`n" + ($compilerOutput -join "`n")) }
   Compress-Archive -Path "$Payload/*" -DestinationPath "$($dist.FullName)/MagmPaper-$version-win.zip" -Force
 } catch {
   $message = ($_ | Out-String).Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
