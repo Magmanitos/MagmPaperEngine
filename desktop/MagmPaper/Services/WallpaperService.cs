@@ -53,6 +53,9 @@ internal sealed class WallpaperService : IDisposable
             var parent = DesktopHost.Attach(candidate); renderer = new RenderSurface(candidate, true);
             await renderer.LoadAsync(item.Code);
             if (request != generation || disposed) return;
+            // Shader compilation can overlap a game's resolution switch.
+            // Fit again on the UI thread before recording the current monitor.
+            DesktopHost.Fit(candidate, parent);
             library.Activate(id); Destroy(); window = candidate; worker = parent; surface = renderer;
             candidate = 0; renderer = null; RunningId = id; previousMonitor = Win32.PrimaryMonitor().Monitor.Area;
             surface.Error += message => Post(() => Status?.Invoke(message, true));
@@ -105,6 +108,7 @@ internal sealed class WallpaperService : IDisposable
                     candidate = Win32.CreateSurface(0, true); var parent = DesktopHost.Attach(candidate);
                     renderer = new RenderSurface(candidate, true); await renderer.LoadAsync(library.Get(id).Code);
                     if (token.IsCancellationRequested || request != generation) return;
+                    DesktopHost.Fit(candidate, parent);
                     Destroy(); window = candidate; worker = parent; surface = renderer; candidate = 0; renderer = null; RunningId = id;
                     surface.Error += message => Post(() => Status?.Invoke(message, true));
                     surface.Recovered += message => Post(() => Status?.Invoke(message, false));

@@ -22,6 +22,9 @@
     <Content Include="../../native/bin/MagmTaskbar.dll" Link="taskbar/MagmTaskbar.dll" CopyToOutputDirectory="PreserveNewest" Condition="Exists('../../native/bin/MagmTaskbar.dll')" />
     <Content Include="../../native/bin/MagmTaskbarHost.exe" Link="taskbar/MagmTaskbarHost.exe" CopyToOutputDirectory="PreserveNewest" Condition="Exists('../../native/bin/MagmTaskbarHost.exe')" />
     <Content Include="../ThirdParty/ANGLE-LICENSE.txt" Link="Licenses/ANGLE.txt" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../ThirdParty/DOTNET-LICENSE.txt" Link="Licenses/DOTNET.txt" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../ThirdParty/DOTNET-NOTICES.txt" Link="Licenses/DOTNET-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../ThirdParty/WINDOWS-DESKTOP-LICENSE.txt" Link="Licenses/WINDOWS-DESKTOP.txt" CopyToOutputDirectory="PreserveNewest" />
     <EmbeddedResource Include="../../build/icon.ico" Link="Assets/icon.ico" />
     <EmbeddedResource Include="Assets/example.glsl" />
   </ItemGroup>
