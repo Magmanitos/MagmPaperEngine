@@ -4,7 +4,16 @@ namespace MagmPaper.Windows;
 
 internal static class DesktopHost
 {
-    public static nint Attach(nint window)
+    public static (nint Window, nint Parent) Create()
+    {
+        var parent = FindParent();
+        // Create directly under Explorer with its window DPI context. Reparenting
+        // a WPF-owned popup across different DPI contexts can reset process DPI.
+        var window = Win32.CreateDesktopSurface(parent);
+        try { Fit(window, parent); return (window, parent); }
+        catch { Win32.DestroyWindow(window); throw; }
+    }
+    private static nint FindParent()
     {
         var progman = Win32.FindWindow("Progman", null);
         if (progman == 0) throw new IOException("Рабочий стол Explorer ещё не готов.");
@@ -17,7 +26,7 @@ internal static class DesktopHost
             if (Win32.FindWindowEx(progman, 0, "SHELLDLL_DefView", null) == 0 ||
                 Win32.FindWindowEx(progman, 0, "WorkerW", null) == 0)
                 throw new IOException("Windows ещё создаёт слои рабочего стола. Повторите установку обоев.");
-            Fit(window, progman); return progman;
+            return progman;
         }
         nint worker = 0;
         Win32.EnumWindows((hwnd, _) =>
@@ -28,7 +37,7 @@ internal static class DesktopHost
         }, 0);
         if (worker == 0) worker = Win32.FindWindowEx(progman, 0, "WorkerW", null);
         if (worker == 0) throw new IOException("Windows не предоставила слой обоев WorkerW.");
-        Fit(window, worker); return worker;
+        return worker;
     }
     public static void Fit(nint window, nint worker)
     {
@@ -41,7 +50,7 @@ internal static class DesktopHost
         var rect = Win32.PrimaryMonitor().Monitor;
         var style = (uint)Win32.GetWindowLongPtr(window, Win32.Style);
         Win32.SetWindowLongPtr(window, Win32.Style, (nint)((style & ~(Win32.Popup | 0x00c40000)) | Win32.Child));
-        Win32.SetParent(window, worker);
+        if (Win32.GetParent(window) != worker) Win32.SetParent(window, worker);
         if (Win32.GetParent(window) != worker) throw new IOException("Не удалось прикрепить обои за значками рабочего стола.");
         var point = new Win32.Point(rect.Left, rect.Top); Win32.MapWindowPoints(0, worker, ref point, 1);
         if (!Win32.SetWindowPos(window, icons, point.X, point.Y, rect.Width, rect.Height, icons != 0 ? 0x0030u : 0x0034u)) throw new Win32Exception();

@@ -41,15 +41,15 @@ public static class ShaderSource
             else if (name == "version" && guards.Count == 0) { version = text; versionLine = index; versionComments = new string(commentsOnly); }
             else if (name == "extension" && guards.All(group => group.All(IsBuiltinGuard)))
             {
-                foreach (var group in guards) foreach (var guard in group) header.AppendLine(guard);
-                header.AppendLine(text);
-                for (int count = 0; count < guards.Count; count++) header.AppendLine("#endif");
+                foreach (var group in guards) foreach (var guard in group) header.Append(guard).Append('\n');
+                header.Append(text).Append('\n');
+                for (int count = 0; count < guards.Count; count++) header.Append("#endif\n");
                 lines[index] = new string(commentsOnly);
             }
         }
         if (header.Length == 0) return source;
         if (versionLine >= 0) { lines[versionLine] = versionComments!; header.Insert(0, version + "\n"); }
-        return header.AppendLine("#line 1").AppendJoin('\n', lines).ToString();
+        return header.Append("#line 1\n").AppendJoin('\n', lines).ToString();
     }
     private static bool IsBuiltinGuard(string guard) => Regex.Matches(guard, @"[A-Za-z_]\w*")
         .All(match => match.Value is "if" or "ifdef" or "ifndef" or "elif" or "else" or "defined" || match.Value.StartsWith("GL_", StringComparison.Ordinal));

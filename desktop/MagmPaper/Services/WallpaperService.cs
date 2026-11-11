@@ -58,10 +58,10 @@ internal sealed class WallpaperService : IDisposable
     {
         CancelRecovery(); int request = generation; var item = library.Get(id);
         // Build and validate a new surface before replacing the current wallpaper.
-        nint candidate = Win32.CreateSurface(0, true); RenderSurface? renderer = null;
+        var attachment = DesktopHost.Create(); nint candidate = attachment.Window; RenderSurface? renderer = null;
         try
         {
-            var parent = DesktopHost.Attach(candidate); renderer = new RenderSurface(candidate, true);
+            var parent = attachment.Parent; renderer = new RenderSurface(candidate, true);
             await renderer.LoadAsync(item.Code);
             if (request != generation || disposed) return;
             // Shader compilation can overlap a game's resolution switch.
@@ -117,7 +117,7 @@ internal sealed class WallpaperService : IDisposable
                 nint candidate = 0; RenderSurface? renderer = null;
                 try
                 {
-                    candidate = Win32.CreateSurface(0, true); var parent = DesktopHost.Attach(candidate);
+                    var attachment = DesktopHost.Create(); candidate = attachment.Window; var parent = attachment.Parent;
                     renderer = new RenderSurface(candidate, true); await renderer.LoadAsync(library.Get(id).Code);
                     if (token.IsCancellationRequested || request != generation) return;
                     DesktopHost.Fit(candidate, parent);

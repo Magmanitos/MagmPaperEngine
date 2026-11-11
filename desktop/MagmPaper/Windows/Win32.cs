@@ -39,6 +39,13 @@ internal static class Win32
     private static readonly WindowProc SurfaceProcedure = (hwnd, msg, wp, lp) => msg switch { 0x14 => 1, 0x84 => -1, 0x21 => 3, _ => DefWindowProc(hwnd, msg, wp, lp) };
     private static readonly string SurfaceClass = "MagmPaper.Native.Surface.1";
     private static bool registered;
+    internal static nint CreateDesktopSurface(nint parent)
+    {
+        var previous = SetThreadDpiAwarenessContext(GetWindowDpiAwarenessContext(parent));
+        if (previous == 0) throw new Win32Exception();
+        try { return CreateSurface(parent, true); }
+        finally { SetThreadDpiAwarenessContext(previous); }
+    }
     public static nint CreateSurface(nint parent, bool desktop = false)
     {
         if (!registered)
@@ -49,7 +56,7 @@ internal static class Win32
         // Opaque layered presentation keeps the wallpaper in DWM composition.
         // A fullscreen flip surface can engage windowed VRR on NVIDIA and pace
         // the whole desktop to the wallpaper's (deliberately lower) frame rate.
-        var hwnd = CreateWindowEx(desktop ? 0x080800a0u : 0u, SurfaceClass, "MagmPaper GLSL", parent != 0 ? Child | Visible : Popup,
+        var hwnd = CreateWindowEx(desktop ? 0x080800a0u : 0u, SurfaceClass, "MagmPaper GLSL", parent != 0 ? Child | (desktop ? 0 : Visible) : Popup,
             0, 0, 16, 16, parent, 0, GetModuleHandle(null), 0);
         if (hwnd == 0) throw new Win32Exception();
         if (desktop && !SetLayeredWindowAttributes(hwnd, 0, 255, 2)) { DestroyWindow(hwnd); throw new Win32Exception(); }
@@ -83,6 +90,10 @@ internal static class Win32
     [DllImport("user32.dll")] internal static extern nint GetWindow(nint hwnd, uint command);
     [DllImport("user32.dll")] internal static extern nint GetForegroundWindow();
     [DllImport("user32.dll")] internal static extern nint GetAncestor(nint hwnd, uint flags);
+    [DllImport("user32.dll", SetLastError = true)] internal static extern nint SetThreadDpiAwarenessContext(nint value);
+    [DllImport("user32.dll")] internal static extern nint GetThreadDpiAwarenessContext();
+    [DllImport("user32.dll")] internal static extern nint GetWindowDpiAwarenessContext(nint hwnd);
+    [DllImport("user32.dll")] internal static extern bool AreDpiAwarenessContextsEqual(nint first, nint second);
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] internal static extern nint GetWindowLongPtr(nint hwnd, int index);
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] internal static extern nint SetWindowLongPtr(nint hwnd, int index, nint value);
     [DllImport("user32.dll")] internal static extern bool EnumWindows(EnumProc callback, nint param);

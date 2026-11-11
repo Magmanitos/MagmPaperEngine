@@ -24,7 +24,16 @@ jobs:
         with:
           dotnet-version: '10.0.x'
       - name: Test native library and migration
-        run: dotnet run --project desktop/MagmPaper.Tests/MagmPaper.Tests.csproj -c Release
+        shell: pwsh
+        run: |
+          $output = & dotnet run --project desktop/MagmPaper.Tests/MagmPaper.Tests.csproj -c Release 2>&1
+          $code = $LASTEXITCODE
+          $output | Write-Output
+          if ($code -ne 0) {
+            $message = ($output -join "`n").Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+            Write-Output "::error::$message"
+            exit $code
+          }
       - uses: actions/cache/restore@v4
         id: taskbar-cache
         with:
@@ -63,6 +72,7 @@ jobs:
         if: failure()
         shell: pwsh
         run: |
+          if (-not (Test-Path artifacts/smoke)) { exit 0 }
           $dump = Get-ChildItem artifacts/smoke -Filter '*.dmp' | Select-Object -First 1
           if ($dump) {
             dotnet tool install dotnet-dump --tool-path artifacts/tools

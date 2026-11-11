@@ -67,6 +67,17 @@ internal static class SmokeTests
         surface.Configure(new(Paused: true)); await Task.Delay(150); var count = surface.Frames; await Task.Delay(350);
         Assert(surface.Frames == count, "paused preview keeps rendering");
         Diagnostics.Trace("Pixels, shader rollback, backbuffer, scaling and pause passed");
+        nint previousDpi = Win32.SetThreadDpiAwarenessContext(-2), dpiParent;
+        try { dpiParent = Win32.CreateSurface(0); }
+        finally { Win32.SetThreadDpiAwarenessContext(previousDpi); }
+        nint dpiChild = 0;
+        try
+        {
+            dpiChild = Win32.CreateDesktopSurface(dpiParent);
+            Assert(Win32.AreDpiAwarenessContextsEqual(Win32.GetWindowDpiAwarenessContext(dpiParent), Win32.GetWindowDpiAwarenessContext(dpiChild)), "desktop child DPI differs from Explorer host");
+            Assert(Win32.AreDpiAwarenessContextsEqual(Win32.GetThreadDpiAwarenessContext(), previousDpi), "wallpaper creation changed WPF thread DPI");
+        }
+        finally { if (dpiChild != 0) Win32.DestroyWindow(dpiChild); Win32.DestroyWindow(dpiParent); }
         var host = Win32.CreateSurface(0); nint child = 0;
         try
         {
