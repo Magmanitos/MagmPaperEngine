@@ -99,6 +99,26 @@ internal static class SmokeTests
         }
         finally { if (child != 0) Win32.DestroyWindow(child); Win32.DestroyWindow(host); }
         Diagnostics.Trace("Native monitor geometry, coverage, cursor and GPU reset passed");
+        // Real Windows autostart round-trip under a unique value; never edit
+        // the user's actual MagmPaper preference or StartupApproved entry.
+        string startupTestName = "MagmPaper.Smoke." + Guid.NewGuid();
+        using (var startup = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run"))
+        using (var approved = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run"))
+        {
+            try
+            {
+                Assert(!SystemSettings.ReadStartup(startupTestName), "test autostart already exists");
+                SystemSettings.WriteStartup(startupTestName, true);
+                Assert((string?)startup.GetValue(startupTestName) == $"\"{Environment.ProcessPath}\" --autostart", "autostart executable was not quoted");
+                approved.SetValue(startupTestName, new byte[] { 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }, Microsoft.Win32.RegistryValueKind.Binary);
+                Assert(!SystemSettings.ReadStartup(startupTestName), "StartupApproved disabled state was ignored");
+                SystemSettings.WriteStartup(startupTestName, true);
+                Assert(SystemSettings.ReadStartup(startupTestName), "autostart did not reenable");
+                SystemSettings.WriteStartup(startupTestName, false);
+                Assert(!SystemSettings.ReadStartup(startupTestName), "autostart did not disable");
+            }
+            finally { startup.DeleteValue(startupTestName, false); approved.DeleteValue(startupTestName, false); }
+        }
         // Exercise real WPF controls and their async handlers, not a renderer mock.
         window.AddWallpaperButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         window.NameInput.Text = "Нативный UI тест"; window.CodeInput.Text = Red;
@@ -120,7 +140,7 @@ internal static class SmokeTests
         Assert(surface.Frames == idleFrames, "hidden preview consumes frames");
         var process = Process.GetCurrentProcess(); var startCpu = process.TotalProcessorTime; var clockIdle = Stopwatch.StartNew(); await Task.Delay(2000); process.Refresh();
         var report = new { passed = true, nativeUi = "WPF", gpuTests = "ANGLE D3D11 WARP", workingSetBytes = process.WorkingSet64, idleCpuMilliseconds = (process.TotalProcessorTime - startCpu).TotalMilliseconds, idleSampleMilliseconds = clockIdle.Elapsed.TotalMilliseconds,
-            tests = new[] { "real GLSL pixels", "compile error preserves program", "backbuffer", "quality fills window", "pause stops frames", "physical monitor geometry", "native window coverage/minimize/transparent overlay", "click-through and real cursor uniforms", "mouse toggle", "six GPU resets with active and paused second context", "WPF editor/save/navigation", "settings", "hidden preview" } };
+            tests = new[] { "real GLSL pixels", "compile error preserves program", "backbuffer", "quality fills window", "pause stops frames", "physical monitor geometry", "native window coverage/minimize/transparent overlay", "click-through and real cursor uniforms", "mouse toggle", "six GPU resets with active and paused second context", "Windows autostart and StartupApproved", "WPF editor/save/navigation", "settings", "hidden preview" } };
         File.WriteAllText(Path.Combine(output, "report.json"), JsonSerializer.Serialize(report, DataFiles.Json));
     }
 }

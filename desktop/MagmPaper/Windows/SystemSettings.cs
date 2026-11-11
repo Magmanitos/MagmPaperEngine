@@ -105,27 +105,25 @@ internal sealed class SystemSettings
         return failures.Count == 0 ? "Исходные настройки поведения возвращены." : string.Join(" ", failures);
     }
     private static void Notify() => Win32.Broadcast(0xffff, 0x1a, 0, "TraySettings", 2, 1000, out _);
-    public static bool StartupEnabled
+    public static bool StartupEnabled { get => ReadStartup(StartupName); set => WriteStartup(StartupName, value); }
+    internal static bool ReadStartup(string name)
     {
-        get
+        using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");
+        using var approved = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run");
+        var bytes = approved?.GetValue(name) as byte[];
+        return key?.GetValue(name) is string value && value.Length > 0 && !(bytes is { Length: > 0 } && bytes[0] is 3 or 7);
+    }
+    internal static void WriteStartup(string name, bool enabled)
+    {
+        using var key = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");
+        if (enabled)
         {
-            using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");
-            using var approved = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run");
-            var bytes = approved?.GetValue(StartupName) as byte[];
-            return key?.GetValue(StartupName) is string value && value.Length > 0 && !(bytes is { Length: > 0 } && bytes[0] is 3 or 7);
+            key.SetValue(name, $"\"{Environment.ProcessPath}\" --autostart", RegistryValueKind.String);
+            using var approved = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run", true);
+            approved?.DeleteValue(name, false);
         }
-        set
-        {
-            using var key = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");
-            if (value)
-            {
-                key.SetValue(StartupName, $"\"{Environment.ProcessPath}\" --autostart", RegistryValueKind.String);
-                using var approved = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run", true);
-                approved?.DeleteValue(StartupName, false);
-            }
-            else key.DeleteValue(StartupName, false);
-            if (StartupEnabled != value) throw new IOException("Windows не подтвердила автозапуск. Проверьте параметры автозагрузки Windows.");
-        }
+        else key.DeleteValue(name, false);
+        if (ReadStartup(name) != enabled) throw new IOException("Windows не подтвердила автозапуск. Проверьте параметры автозагрузки Windows.");
     }
     public static void Open(string target) => Process.Start(new ProcessStartInfo(target) { UseShellExecute = true });
     public bool LegacyAvailable { get { using var key = Registry.LocalMachine.OpenSubKey(Mod); return key?.GetValue("Disabled") is int d && d == 0; } }
