@@ -107,8 +107,9 @@ Section "MagmPaper"
     ${If} $PreviousNative == 1
       ExecWait '"$PreviousDirectory\MagmPaper.exe" --quit'
     ${EndIf}
-    IfFileExists "$PreviousDirectory\Uninstall MagmPaper.exe" +3 0
+    ${IfNot} ${FileExists} "$PreviousDirectory\Uninstall MagmPaper.exe"
       !insertmacro AbortWithError "Не найден деинсталлятор прежней версии. Восстановите прежнюю установку перед обновлением."
+    ${EndIf}
     InitPluginsDir
     ClearErrors
     CopyFiles /SILENT "$PreviousDirectory\Uninstall MagmPaper.exe" "$PLUGINSDIR\PreviousUninstall.exe"
@@ -121,8 +122,9 @@ Section "MagmPaper"
     ${OrIf} $0 != 0
       !insertmacro AbortWithError "Не удалось закрыть или удалить прежнюю версию. Завершите MagmPaper через трей и повторите установку."
     ${EndIf}
-    IfFileExists "$PreviousDirectory\MagmPaper.exe" 0 +3
+    ${If} ${FileExists} "$PreviousDirectory\MagmPaper.exe"
       !insertmacro AbortWithError "Прежняя версия ещё запущена. Завершите MagmPaper через трей и повторите установку."
+    ${EndIf}
     Delete "$PreviousDirectory\Uninstall MagmPaper.exe"
     DeleteRegKey HKCU "${UNINSTALL}\$PreviousKey"
   ${EndIf}
