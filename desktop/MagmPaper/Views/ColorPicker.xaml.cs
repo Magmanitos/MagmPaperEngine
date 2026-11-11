@@ -42,7 +42,8 @@ public partial class ColorPicker : Window
         var color = FromHsv(Hue.Value % 360, saturation, brightness);
         SelectedColor = $"#{color.R:X2}{color.G:X2}{color.B:X2}";
         HueBackground.Background = new SolidColorBrush(FromHsv(Hue.Value % 360, 1, 1)); Swatch.Background = new SolidColorBrush(color);
-        Canvas.SetLeft(Marker, saturation * Spectrum.ActualWidth - 7); Canvas.SetTop(Marker, (1 - brightness) * Spectrum.ActualHeight - 7);
+        Canvas.SetLeft(Marker, Math.Clamp(saturation * Spectrum.ActualWidth - 7, 0, Math.Max(0, Spectrum.ActualWidth - 14)));
+        Canvas.SetTop(Marker, Math.Clamp((1 - brightness) * Spectrum.ActualHeight - 7, 0, Math.Max(0, Spectrum.ActualHeight - 14)));
         filling = true; Hex.Text = SelectedColor; filling = false; Accept.IsEnabled = true; Hint.Text = "Непрозрачность настраивается отдельно.";
     }
     private void Pick(MouseEventArgs args)

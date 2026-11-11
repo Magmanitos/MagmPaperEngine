@@ -110,6 +110,18 @@ int main() try {
         until([&]{return frame.Height()==48&&icon.Width()==28&&icon.Height()==28&&background.Fill()==original;},"normal helper exit did not restore latest shell sizes");
         std::cout<<"PASS: helper reconnection. Closing XAML source."<<std::endl;
     }
+    {
+        // Explorer's layout can update a child when its parent is restored.
+        // The module must not overwrite that final shell value afterwards.
+        auto layout=frame.RegisterPropertyChangedCallback(xaml::FrameworkElement::HeightProperty(),[&](auto const&,auto const&){
+            if(frame.Height()==48) {icon.Width(24);icon.Height(24);}
+        });
+        Host dependent;dependent.send("1 1 72 48 56 3355443 50 0 0\n");dependent.applied(1);
+        icon.Width(32);icon.Height(32);dependent.close();
+        until([&]{return frame.Height()==48&&icon.Width()==24&&icon.Height()==24;},"container restoration overwrote Explorer's recalculated icon size");
+        frame.UnregisterPropertyChangedCallback(xaml::FrameworkElement::HeightProperty(),layout);
+        std::cout<<"PASS: dependent icon layout restoration."<<std::endl;
+    }
     source.Close();DestroyWindow(window);manager.Close();
     std::cout<<"PASS: native XAML sizes, color, opacity, visibility, shell reset and restoration; DPI geometry; IPC validation."<<std::endl;
     return 0;

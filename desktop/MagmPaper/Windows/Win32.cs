@@ -46,7 +46,7 @@ internal static class Win32
         try { return CreateSurface(parent, true); }
         finally { SetThreadDpiAwarenessContext(previous); }
     }
-    public static nint CreateSurface(nint parent, bool desktop = false)
+    public static nint CreateSurface(nint parent, bool desktop = false, bool composed = false)
     {
         if (!registered)
         {
@@ -56,10 +56,11 @@ internal static class Win32
         // Opaque layered presentation keeps the wallpaper in DWM composition.
         // A fullscreen flip surface can engage windowed VRR on NVIDIA and pace
         // the whole desktop to the wallpaper's (deliberately lower) frame rate.
-        var hwnd = CreateWindowEx(desktop ? 0x080800a0u : 0u, SurfaceClass, "MagmPaper GLSL", parent != 0 ? Child | (desktop ? 0 : Visible) : Popup,
+        uint extended = (desktop ? 0x080000a0u : 0u) | (desktop || composed ? 0x00080000u : 0u);
+        var hwnd = CreateWindowEx(extended, SurfaceClass, "MagmPaper GLSL", parent != 0 ? Child | (desktop ? 0 : Visible) : Popup,
             0, 0, 16, 16, parent, 0, GetModuleHandle(null), 0);
         if (hwnd == 0) throw new Win32Exception();
-        if (desktop && !SetLayeredWindowAttributes(hwnd, 0, 255, 2)) { DestroyWindow(hwnd); throw new Win32Exception(); }
+        if ((desktop || composed) && !SetLayeredWindowAttributes(hwnd, 0, 255, 2)) { DestroyWindow(hwnd); throw new Win32Exception(); }
         return hwnd;
     }
     public static MonitorInfo PrimaryMonitor()
@@ -111,6 +112,11 @@ internal static class Win32
     [DllImport("gdi32.dll")] internal static extern int GetRgnBox(nint region, out Rect rect);
     [DllImport("gdi32.dll")] internal static extern nint CreateRectRgn(int left, int top, int right, int bottom);
     [DllImport("gdi32.dll")] internal static extern bool DeleteObject(nint value);
+    [DllImport("user32.dll")] internal static extern nint GetDC(nint hwnd);
+    [DllImport("user32.dll")] internal static extern int ReleaseDC(nint hwnd, nint dc);
+    [DllImport("gdi32.dll")] internal static extern uint GetPixel(nint dc, int x, int y);
+    [DllImport("user32.dll")] internal static extern nint OpenInputDesktop(uint flags, bool inherit, uint access);
+    [DllImport("user32.dll")] internal static extern bool CloseDesktop(nint desktop);
     [DllImport("dwmapi.dll", EntryPoint = "DwmGetWindowAttribute")] internal static extern int Cloaked(nint hwnd, uint key, out int value, uint size);
     [DllImport("dwmapi.dll", EntryPoint = "DwmGetWindowAttribute")] internal static extern int Bounds(nint hwnd, uint key, out Rect value, uint size);
     [DllImport("shell32.dll")] internal static extern nuint SHAppBarMessage(uint message, ref AppBarData value);

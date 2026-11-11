@@ -126,13 +126,24 @@ LONG resizeBars(Context& ctx,bool enabled) {
     }
     return errors;
 }
+LONG restoreElements(Context& ctx) {
+    LONG errors=0;
+    for(auto& [id,element]:ctx.elements) element->stopObserving();
+    // Restore leaf values before containers. Explorer may recalculate icon
+    // sizes as the frame returns to its original height; keep that final value.
+    for(bool containers:{false,true}) for(auto& [id,element]:ctx.elements) {
+        bool container=element->kind==Kind::Frame||element->kind==Kind::Content||element->kind==Kind::Tray;
+        if(container==containers&&!element->restore()) errors++;
+    }
+    return errors;
+}
 void update(Context& ctx) {
     Settings value{};if(!shared||!read(shared,value)) return;
     if(stopping) value.enabled=0;
     ctx.settings=value;
     LONG errors=0;
-    if(!value.enabled) for(auto& [id,element]:ctx.elements) element->stopObserving();
-    for(auto& [id,element]:ctx.elements) try {element->apply(value);} catch(...) {errors++;}
+    if(!value.enabled) errors+=restoreElements(ctx);
+    else for(auto& [id,element]:ctx.elements) try {element->apply(value);} catch(...) {errors++;}
     errors+=resizeBars(ctx,value.enabled!=0);
     InterlockedExchange(&ctx.slot->errors,errors);
     InterlockedExchange(&ctx.slot->applied,static_cast<LONG>(value.sequence));
@@ -206,8 +217,7 @@ LRESULT CALLBACK contextProcedure(HWND window,UINT message,WPARAM wp,LPARAM lp) 
         if(message==stopMessage) {
             stopping=true;
             ctx->settings.enabled=0;
-            for(auto& [id,element]:ctx->elements) element->stopObserving();
-            for(auto& [id,element]:ctx->elements) element->restore();
+            restoreElements(*ctx);
             resizeBars(*ctx,false);
             for(auto& bar:ctx->bars) RemoveWindowSubclass(bar.window,barProcedure,1);
             ctx->elements.clear();ctx->pending.clear();

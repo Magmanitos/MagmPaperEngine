@@ -59,7 +59,7 @@ public sealed class PreviewHost : HwndHost
     }
     protected override HandleRef BuildWindowCore(HandleRef parent)
     {
-        window = Win32.CreateSurface(parent.Handle);
+        window = Win32.CreateSurface(parent.Handle, composed: true);
         Surface = new RenderSurface(window); Ready?.Invoke();
         UpdatePresentation();
         return new HandleRef(this, window);

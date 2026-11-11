@@ -46,6 +46,7 @@ internal static class SmokeTests
         window.Navigate("wallpapers");
         await Until(() => !window.Busy && window.PreviewSurface is not null, "native preview did not initialize");
         var surface = window.PreviewSurface!;
+        Assert(Win32.GetLayeredWindowAttributes(window.Preview.NativeWindow, out _, out byte previewOpacity, out _) && previewOpacity == 255, "preview bypasses DWM composition");
         surface.Configure(new(Paused: true));
         await surface.LoadAsync(Red); var red = await surface.CaptureAsync();
         int center = (red.Width * (red.Height / 2) + red.Width / 2) * 4;
@@ -79,6 +80,7 @@ internal static class SmokeTests
         }
         finally { if (dpiChild != 0) Win32.DestroyWindow(dpiChild); Win32.DestroyWindow(dpiParent); }
         var host = Win32.CreateSurface(0); nint child = 0;
+        bool? composedPixels = null;
         try
         {
             Win32.SetWindowPos(host, 0, 37, 53, 800, 600, 0x14);
@@ -109,6 +111,22 @@ internal static class SmokeTests
             Assert(DesktopHost.Inspect(host, child, Win32.PrimaryMonitor().Work.Area) == 0, "click-through overlay incorrectly pauses wallpaper");
             DesktopHost.Fit(child, host);
             using var secondSurface = new RenderSurface(child, true); await secondSurface.LoadAsync(Red);
+            nint inputDesktop = Win32.OpenInputDesktop(0, false, 1);
+            if (inputDesktop != 0)
+            {
+                Win32.CloseDesktop(inputDesktop);
+                Win32.SetWindowPos(host, -1, monitor.Left, monitor.Top, monitor.Width, monitor.Height, 0x50);
+                secondSurface.Configure(new(Paused: false));
+                // Verify a presented pixel on the actual composed desktop, not
+                // just glReadPixels from the application's own framebuffer.
+                await Until(() =>
+                {
+                    nint dc = Win32.GetDC(0);
+                    try { return dc != 0 && Win32.GetPixel(dc, monitor.Left + monitor.Width / 2, monitor.Top + monitor.Height / 2) == 0x000000ff; }
+                    finally { if (dc != 0) Win32.ReleaseDC(0, dc); }
+                }, "opaque layered GLSL surface is not visible on the composed desktop");
+                composedPixels = true;
+            }
             await secondSurface.LoadAsync("precision mediump float; uniform vec2 mouse; void main(){gl_FragColor=vec4(mouse,0.0,1.0);}");
             Win32.GetCursorPos(out var oldCursor);
             try
@@ -189,11 +207,20 @@ internal static class SmokeTests
         await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
         if (window.TaskbarPage.ScrollableHeight > 80)
         {
-            Views.SmoothScroll.Animate(window.TaskbarPage, 80);
+            var wheelTarget = TextElements(window.TaskbarPage).First(text => text.Text == "Панель задач");
+            wheelTarget.RaiseEvent(new System.Windows.Input.MouseWheelEventArgs(System.Windows.Input.Mouse.PrimaryDevice, Environment.TickCount, -120)
+                { RoutedEvent = System.Windows.Input.Mouse.PreviewMouseWheelEvent });
             await Task.Delay(300);
-            Assert(Math.Abs(window.TaskbarPage.VerticalOffset - 80) < 1, "smooth scrolling did not reach its target");
+            double expected = Math.Min(window.TaskbarPage.ScrollableHeight, SystemParameters.WheelScrollLines < 0 ? window.TaskbarPage.ViewportHeight : SystemParameters.WheelScrollLines * 22);
+            Assert(Math.Abs(window.TaskbarPage.VerticalOffset - expected) < 1, "mouse wheel did not smoothly scroll the page");
             window.TaskbarPage.ScrollToTop();
         }
+        window.AlignmentInput.IsDropDownOpen = true;
+        await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+        var dropdown = (System.Windows.Controls.Primitives.Popup)window.AlignmentInput.Template.FindName("PART_Popup", window.AlignmentInput);
+        Assert(dropdown.IsOpen && dropdown.Child.IsVisible && dropdown.Child.RenderSize.Width >= window.AlignmentInput.ActualWidth - 1, "themed dropdown did not open at control width");
+        AssertReadable(window.AlignmentInput.Foreground, window.AlignmentInput.Background, "dropdown selection");
+        window.AlignmentInput.IsDropDownOpen = false;
         var picker = new Views.ColorPicker("#0F8CDB") { Owner = window };
         picker.Show(); await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
         Assert(picker.SelectedColor == "#0F8CDB", "HSV picker changed the initial RGB color");
@@ -215,7 +242,7 @@ internal static class SmokeTests
         Assert(surface.Frames == idleFrames, "hidden preview consumes frames");
         await Task.Delay(3000); // Let startup compilation, layout and deferred GPU release settle.
         var process = Process.GetCurrentProcess(); var startCpu = process.TotalProcessorTime; var clockIdle = Stopwatch.StartNew(); await Task.Delay(5000); process.Refresh();
-        var report = new { passed = true, nativeUi = "WPF", gpuTests = "ANGLE D3D11 WARP", workingSetBytes = process.WorkingSet64, idleCpuMilliseconds = (process.TotalProcessorTime - startCpu).TotalMilliseconds, idleSampleMilliseconds = clockIdle.Elapsed.TotalMilliseconds,
+        var report = new { passed = true, nativeUi = "WPF", gpuTests = "ANGLE D3D11 WARP", composedDesktopPixels = composedPixels, workingSetBytes = process.WorkingSet64, idleCpuMilliseconds = (process.TotalProcessorTime - startCpu).TotalMilliseconds, idleSampleMilliseconds = clockIdle.Elapsed.TotalMilliseconds,
             tests = new[] { "real GLSL pixels", "late GLSL extension compatibility", "compile error preserves program", "backbuffer", "quality fills window", "pause stops frames", "physical monitor geometry", "24H2 child layer order and opaque composition", "native window coverage/minimize/transparent overlay", "click-through and real cursor uniforms", "mouse toggle", "six GPU resets with active and paused second context", "Windows autostart and StartupApproved", "WPF editor/save/navigation", "native preview visibility and scroll clipping", "smooth scrolling", "HSV and HEX color picker", "settings", "WPF theme contrast", "hidden preview" } };
         File.WriteAllText(Path.Combine(output, "report.json"), JsonSerializer.Serialize(report, DataFiles.Json));
     }

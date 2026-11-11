@@ -110,7 +110,7 @@ public partial class App : Application
     {
         if (quitting || (confirm && manager?.ConfirmExit() == false)) return; quitting = true;
         wallpapers?.Dispose();
-        if (appearance is not null) try { await appearance.ShutdownAsync(); } catch { }
+        if (appearance is not null) try { await appearance.ShutdownAsync(final: true); } catch { }
         if (manager is not null) { manager.Quitting = true; manager.Close(); }
         AngleDevice.Shutdown(); tray?.Dispose();
         Shutdown(code);

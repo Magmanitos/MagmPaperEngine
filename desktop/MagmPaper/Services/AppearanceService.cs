@@ -15,6 +15,7 @@ internal sealed class AppearanceService : IAsyncDisposable
     private Process? process;
     private int sequence;
     private string? loadError;
+    private volatile bool terminating;
     public AppearanceSettings Settings { get; private set; } = new();
     public bool Active { get; private set; }
     public string? Error { get; private set; }
@@ -52,6 +53,7 @@ internal sealed class AppearanceService : IAsyncDisposable
     }
     private void Start()
     {
+        if (terminating) throw new ObjectDisposedException(nameof(AppearanceService));
         if (process is not null) return;
         if (!Available) throw new IOException("Нужна полная сборка MagmPaper для Windows 11 x64 с модулем панели.");
         foreach (var name in new[] { "taskbar-icon-size", "windows-11-taskbar-styler" })
@@ -117,15 +119,16 @@ internal sealed class AppearanceService : IAsyncDisposable
         }
         catch (Exception failure)
         {
-            if (wasRunning && process is not null) { try { await SendAsync(previous); } catch { await ShutdownAsync(); } }
+            if (!terminating && wasRunning && process is not null) { try { await SendAsync(previous); } catch { await ShutdownAsync(); } }
             else await ShutdownAsync();
             Error = failure.Message; Changed?.Invoke(); throw;
         }
         finally { serial.Release(); }
     }
     public async Task RestoreOnStartAsync() { if (Settings.Enabled && loadError is null) try { await ApplyAsync(Settings); } catch { } }
-    public async Task ShutdownAsync()
+    public async Task ShutdownAsync(bool final = false)
     {
+        if (final) terminating = true;
         var child = process; if (child is null) return;
         foreach (var entry in pending.ToArray()) if (pending.TryRemove(entry.Key, out var request)) request.TrySetCanceled();
         try
@@ -137,5 +140,5 @@ internal sealed class AppearanceService : IAsyncDisposable
         catch (InvalidOperationException) { }
         finally { if (ReferenceEquals(process, child)) process = null; Active = false; Changed?.Invoke(); }
     }
-    public async ValueTask DisposeAsync() { await ShutdownAsync(); }
+    public async ValueTask DisposeAsync() { await ShutdownAsync(final: true); }
 }
