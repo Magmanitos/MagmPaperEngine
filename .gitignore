@@ -4,3 +4,7 @@ dist/
 .DS_Store
 native/build/
 native/bin/
+
+**/bin/
+**/obj/
+artifacts/

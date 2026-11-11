@@ -1,0 +1,67 @@
+using System.Runtime.InteropServices;
+
+namespace MagmPaper.Graphics;
+
+internal static class Gpu
+{
+    internal const string Library = "av_libglesv2.dll";
+    [DllImport(Library, EntryPoint = "EGL_GetPlatformDisplayEXT")] internal static extern nint EglGetPlatformDisplayEXT(uint platform, nint nativeDisplay, int[] attributes);
+    [DllImport(Library, EntryPoint = "EGL_Initialize")] internal static extern int EglInitialize(nint display, out int major, out int minor);
+    [DllImport(Library, EntryPoint = "EGL_ChooseConfig")] internal static extern int EglChooseConfig(nint display, int[] attributes, out nint config, int count, out int found);
+    [DllImport(Library, EntryPoint = "EGL_BindAPI")] internal static extern int EglBindAPI(uint api);
+    [DllImport(Library, EntryPoint = "EGL_CreateWindowSurface")] internal static extern nint EglCreateWindowSurface(nint display, nint config, nint window, int[] attributes);
+    [DllImport(Library, EntryPoint = "EGL_CreateContext")] internal static extern nint EglCreateContext(nint display, nint config, nint shared, int[] attributes);
+    [DllImport(Library, EntryPoint = "EGL_MakeCurrent")] internal static extern int EglMakeCurrent(nint display, nint draw, nint read, nint context);
+    [DllImport(Library, EntryPoint = "EGL_DestroyContext")] internal static extern int EglDestroyContext(nint display, nint context);
+    [DllImport(Library, EntryPoint = "EGL_DestroySurface")] internal static extern int EglDestroySurface(nint display, nint surface);
+    [DllImport(Library, EntryPoint = "EGL_Terminate")] internal static extern int EglTerminate(nint display);
+    [DllImport(Library, EntryPoint = "EGL_SwapInterval")] internal static extern int EglSwapInterval(nint display, int interval);
+    [DllImport(Library, EntryPoint = "EGL_SwapBuffers")] internal static extern int EglSwapBuffers(nint display, nint surface);
+    [DllImport(Library, EntryPoint = "EGL_GetError")] internal static extern int EglGetError();
+    [DllImport(Library, EntryPoint = "EGL_ReleaseThread")] internal static extern int EglReleaseThread();
+    [DllImport(Library, EntryPoint = "glCreateShader", CharSet = CharSet.Ansi)] internal static extern uint CreateShader(uint type);
+    [DllImport(Library, EntryPoint = "glShaderSource", CharSet = CharSet.Ansi)] internal static extern void ShaderSource(uint shader, int count, nint strings, nint lengths);
+    [DllImport(Library, EntryPoint = "glCompileShader", CharSet = CharSet.Ansi)] internal static extern void CompileShader(uint shader);
+    [DllImport(Library, EntryPoint = "glGetShaderiv", CharSet = CharSet.Ansi)] internal static extern void GetShaderiv(uint shader, uint name, out int value);
+    [DllImport(Library, EntryPoint = "glGetShaderInfoLog", CharSet = CharSet.Ansi)] internal static extern void GetShaderInfoLog(uint shader, int size, out int length, System.Text.StringBuilder text);
+    [DllImport(Library, EntryPoint = "glDeleteShader", CharSet = CharSet.Ansi)] internal static extern void DeleteShader(uint shader);
+    [DllImport(Library, EntryPoint = "glCreateProgram", CharSet = CharSet.Ansi)] internal static extern uint CreateProgram();
+    [DllImport(Library, EntryPoint = "glAttachShader", CharSet = CharSet.Ansi)] internal static extern void AttachShader(uint program, uint shader);
+    [DllImport(Library, EntryPoint = "glLinkProgram", CharSet = CharSet.Ansi)] internal static extern void LinkProgram(uint program);
+    [DllImport(Library, EntryPoint = "glGetProgramiv", CharSet = CharSet.Ansi)] internal static extern void GetProgramiv(uint program, uint name, out int value);
+    [DllImport(Library, EntryPoint = "glGetProgramInfoLog", CharSet = CharSet.Ansi)] internal static extern void GetProgramInfoLog(uint program, int size, out int length, System.Text.StringBuilder text);
+    [DllImport(Library, EntryPoint = "glDeleteProgram", CharSet = CharSet.Ansi)] internal static extern void DeleteProgram(uint program);
+    [DllImport(Library, EntryPoint = "glUseProgram", CharSet = CharSet.Ansi)] internal static extern void UseProgram(uint program);
+    [DllImport(Library, EntryPoint = "glGetUniformLocation", CharSet = CharSet.Ansi)] internal static extern int GetUniformLocation(uint program, string name);
+    [DllImport(Library, EntryPoint = "glGetAttribLocation", CharSet = CharSet.Ansi)] internal static extern int GetAttribLocation(uint program, string name);
+    [DllImport(Library, EntryPoint = "glUniform1f", CharSet = CharSet.Ansi)] internal static extern void Uniform1f(int location, float value);
+    [DllImport(Library, EntryPoint = "glUniform2f", CharSet = CharSet.Ansi)] internal static extern void Uniform2f(int location, float x, float y);
+    [DllImport(Library, EntryPoint = "glUniform1i", CharSet = CharSet.Ansi)] internal static extern void Uniform1i(int location, int value);
+    [DllImport(Library, EntryPoint = "glGenBuffers", CharSet = CharSet.Ansi)] internal static extern void GenBuffers(int count, out uint buffer);
+    [DllImport(Library, EntryPoint = "glDeleteBuffers", CharSet = CharSet.Ansi)] internal static extern void DeleteBuffers(int count, ref uint buffer);
+    [DllImport(Library, EntryPoint = "glBindBuffer", CharSet = CharSet.Ansi)] internal static extern void BindBuffer(uint target, uint buffer);
+    [DllImport(Library, EntryPoint = "glBufferData", CharSet = CharSet.Ansi)] internal static extern void BufferData(uint target, nint bytes, float[] data, uint usage);
+    [DllImport(Library, EntryPoint = "glEnableVertexAttribArray", CharSet = CharSet.Ansi)] internal static extern void EnableVertexAttribArray(uint location);
+    [DllImport(Library, EntryPoint = "glDisableVertexAttribArray", CharSet = CharSet.Ansi)] internal static extern void DisableVertexAttribArray(uint location);
+    [DllImport(Library, EntryPoint = "glVertexAttribPointer", CharSet = CharSet.Ansi)] internal static extern void VertexAttribPointer(uint location, int size, uint type, byte normalized, int stride, nint pointer);
+    [DllImport(Library, EntryPoint = "glDrawArrays", CharSet = CharSet.Ansi)] internal static extern void DrawArrays(uint mode, int first, int count);
+    [DllImport(Library, EntryPoint = "glViewport", CharSet = CharSet.Ansi)] internal static extern void Viewport(int x, int y, int width, int height);
+    [DllImport(Library, EntryPoint = "glGenTextures", CharSet = CharSet.Ansi)] internal static extern void GenTextures(int count, out uint texture);
+    [DllImport(Library, EntryPoint = "glDeleteTextures", CharSet = CharSet.Ansi)] internal static extern void DeleteTextures(int count, ref uint texture);
+    [DllImport(Library, EntryPoint = "glBindTexture", CharSet = CharSet.Ansi)] internal static extern void BindTexture(uint target, uint texture);
+    [DllImport(Library, EntryPoint = "glTexParameteri", CharSet = CharSet.Ansi)] internal static extern void TexParameteri(uint target, uint name, int value);
+    [DllImport(Library, EntryPoint = "glTexImage2D", CharSet = CharSet.Ansi)] internal static extern void TexImage2D(uint target, int level, int format, int width, int height, int border, uint pixelFormat, uint type, nint data);
+    [DllImport(Library, EntryPoint = "glGenFramebuffers", CharSet = CharSet.Ansi)] internal static extern void GenFramebuffers(int count, out uint buffer);
+    [DllImport(Library, EntryPoint = "glDeleteFramebuffers", CharSet = CharSet.Ansi)] internal static extern void DeleteFramebuffers(int count, ref uint buffer);
+    [DllImport(Library, EntryPoint = "glBindFramebuffer", CharSet = CharSet.Ansi)] internal static extern void BindFramebuffer(uint target, uint buffer);
+    [DllImport(Library, EntryPoint = "glFramebufferTexture2D", CharSet = CharSet.Ansi)] internal static extern void FramebufferTexture2D(uint target, uint attachment, uint type, uint texture, int level);
+    [DllImport(Library, EntryPoint = "glCheckFramebufferStatus", CharSet = CharSet.Ansi)] internal static extern uint CheckFramebufferStatus(uint target);
+    [DllImport(Library, EntryPoint = "glClearColor", CharSet = CharSet.Ansi)] internal static extern void ClearColor(float r, float g, float b, float a);
+    [DllImport(Library, EntryPoint = "glClear", CharSet = CharSet.Ansi)] internal static extern void Clear(uint flags);
+    [DllImport(Library, EntryPoint = "glActiveTexture", CharSet = CharSet.Ansi)] internal static extern void ActiveTexture(uint texture);
+    [DllImport(Library, EntryPoint = "glGetIntegerv", CharSet = CharSet.Ansi)] internal static extern void GetIntegerv(uint name, out int value);
+    [DllImport(Library, EntryPoint = "glGetError", CharSet = CharSet.Ansi)] internal static extern uint GetError();
+    [DllImport(Library, EntryPoint = "glGetString", CharSet = CharSet.Ansi)] internal static extern nint GetString(uint name);
+    [DllImport(Library, EntryPoint = "glReadPixels", CharSet = CharSet.Ansi)] internal static extern void ReadPixels(int x, int y, int width, int height, uint format, uint type, byte[] pixels);
+    [DllImport(Library, EntryPoint = "glFinish", CharSet = CharSet.Ansi)] internal static extern void Finish();
+}

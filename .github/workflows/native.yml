@@ -1,0 +1,43 @@
+name: Native Windows checks
+on:
+  push:
+    branches: [native-desktop, main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Test native library and migration
+        run: dotnet run --project desktop/MagmPaper.Tests/MagmPaper.Tests.csproj -c Release
+      - name: Build and test taskbar module
+        run: ./scripts/build-taskbar.ps1
+      - name: Publish native WPF application
+        shell: pwsh
+        run: |
+          $output = & dotnet publish desktop/MagmPaper/MagmPaper.csproj -c Release -r win-x64 --self-contained true -o artifacts/native 2>&1
+          $code = $LASTEXITCODE
+          $output | Write-Output
+          if ($code -ne 0) {
+            $message = ($output -join "`n").Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+            Write-Output "::error::$message"
+            exit $code
+          }
+      - name: Test real WPF UI and GLSL rendering
+        run: ./scripts/smoke-native.ps1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-app-validation
+          path: artifacts/smoke

@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net10.0-windows7.0": {
+      "Avalonia.Angle.Windows.Natives": {
+        "type": "Direct",
+        "requested": "[2.1.27548.20260419, )",
+        "resolved": "2.1.27548.20260419",
+        "contentHash": "l17nI3XVDN3oMnpjf2pnmJg0YTwK4m6NLsn/itAjDMdObTFxN77D5F1M9sRMSfViSY3KKcse1ROczwgoWLJsnA=="
+      },
+      "magmpaper.core": {
+        "type": "Project"
+      }
+    },
+    "net10.0-windows7.0/win-x64": {
+      "Avalonia.Angle.Windows.Natives": {
+        "type": "Direct",
+        "requested": "[2.1.27548.20260419, )",
+        "resolved": "2.1.27548.20260419",
+        "contentHash": "l17nI3XVDN3oMnpjf2pnmJg0YTwK4m6NLsn/itAjDMdObTFxN77D5F1M9sRMSfViSY3KKcse1ROczwgoWLJsnA=="
+      }
+    }
+  }
+}

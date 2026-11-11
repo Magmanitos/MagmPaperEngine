@@ -1,0 +1,13 @@
+<Project>
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <Version>0.4.0</Version>
+    <Company>MagmPaper</Company>
+    <Copyright>MagmPaper contributors</Copyright>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+</Project>
