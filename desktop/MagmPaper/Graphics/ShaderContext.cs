@@ -40,6 +40,7 @@ internal sealed class ShaderContext : IDisposable
             Diagnostics.Trace("Compile copy shader");
             copy = Build(CopyShader);
             Diagnostics.Trace("Shader context ready");
+            Gpu.EglMakeCurrent(display, 0, 0, 0);
           }
         }
         catch { Dispose(); throw; }
@@ -74,7 +75,20 @@ internal sealed class ShaderContext : IDisposable
         catch { if (value != 0) Gpu.DeleteProgram(value); throw; }
         finally { if (vertex != 0) Gpu.DeleteShader(vertex); if (fragment != 0) Gpu.DeleteShader(fragment); }
     }
-    public void Load(string source) { lock (AngleDevice.GraphicsGate) LoadCore(source); }
+    private void Bind()
+    {
+        if (Gpu.EglMakeCurrent(display, surface, surface, context) == 0)
+            throw new DeviceLostException($"Не удалось активировать GPU-контекст (EGL 0x{Gpu.EglGetError():X}).");
+    }
+    public void Load(string source)
+    {
+        lock (AngleDevice.GraphicsGate)
+        {
+            Bind();
+            try { LoadCore(source); }
+            finally { Gpu.EglMakeCurrent(display, 0, 0, 0); }
+        }
+    }
     private void LoadCore(string source)
     {
         var next = Build(source); // Failed compilation preserves the previous program.
@@ -124,7 +138,14 @@ internal sealed class ShaderContext : IDisposable
     }
     public PixelFrame? Draw(int outputWidth, int outputHeight, double quality, double seconds, double x, double y, bool capture = false)
     {
-        lock (AngleDevice.GraphicsGate) return DrawCore(outputWidth, outputHeight, quality, seconds, x, y, capture);
+        lock (AngleDevice.GraphicsGate)
+        {
+            // Explicitly hand off the shared D3D11 device between EGL contexts.
+            // No context stays current after releasing the submission gate.
+            Bind();
+            try { return DrawCore(outputWidth, outputHeight, quality, seconds, x, y, capture); }
+            finally { Gpu.EglMakeCurrent(display, 0, 0, 0); }
+        }
     }
     private PixelFrame? DrawCore(int outputWidth, int outputHeight, double quality, double seconds, double x, double y, bool capture)
     {
