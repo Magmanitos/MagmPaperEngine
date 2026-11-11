@@ -4,7 +4,7 @@ try {
 $report = Join-Path (Split-Path $PSScriptRoot -Parent) 'artifacts/smoke'
 New-Item -ItemType Directory -Path $report -Force | Out-Null
 Remove-Item (Join-Path $report 'failure.txt'), (Join-Path $report 'report.json'), (Join-Path $report 'trace.txt') -ErrorAction SilentlyContinue
-$dumpKey = 'HKCU:\Software\Microsoft\Windows\Windows Error Reporting\LocalDumps\MagmPaper.exe'
+$dumpKey = 'HKLM:\Software\Microsoft\Windows\Windows Error Reporting\LocalDumps\MagmPaper.exe'
 if ($env:GITHUB_ACTIONS -eq 'true') {
   New-Item $dumpKey -Force | Out-Null
   New-ItemProperty $dumpKey -Name DumpFolder -Value $report -PropertyType ExpandString -Force | Out-Null
