@@ -14,11 +14,11 @@ inline constexpr wchar_t MainBarClass[]=L"Shell_TrayWnd";
 inline constexpr wchar_t SecondaryBarClass[]=L"Shell_SecondaryTrayWnd";
 inline constexpr wchar_t PluginName[]=L"MagmTaskbar.dll";
 #endif
-constexpr uint32_t Magic=0x4d475431, Version=1;
+constexpr uint32_t Magic=0x4d475431, Version=2;
 constexpr size_t MaxThreads=16;
-inline constexpr wchar_t AttachMessage[]=L"MagmPaper.Taskbar.Attach.1";
-inline constexpr wchar_t UpdateMessage[]=L"MagmPaper.Taskbar.Update.1";
-inline constexpr wchar_t StopMessage[]=L"MagmPaper.Taskbar.Stop.1";
+inline constexpr wchar_t AttachMessage[]=L"MagmPaper.Taskbar.Attach.2";
+inline constexpr wchar_t UpdateMessage[]=L"MagmPaper.Taskbar.Update.2";
+inline constexpr wchar_t StopMessage[]=L"MagmPaper.Taskbar.Stop.2";
 // No paths, executable code or arbitrary property names travel over this protocol.
 struct Settings {
     uint32_t sequence=0, enabled=0, height=48, icon=24, button=44;
@@ -26,6 +26,7 @@ struct Settings {
 };
 struct Slot {
     volatile LONG thread=0, applied=0, frames=0, icons=0, backgrounds=0, errors=0;
+    volatile LONG errorCode=0, failureStage=0; // 1: XAML, 2: HWND, 3: restoration
     uint64_t window=0;
 };
 struct Shared {
@@ -39,7 +40,7 @@ inline bool valid(const Settings& s) {
         s.icon>=16&&s.icon<=64&&s.icon+8<=s.height&&s.button>=28&&s.button<=100&&s.button>=s.icon&&
         s.color<=0xffffff&&s.opacity<=100&&s.hideWidgets<=1&&s.radius<=24;
 }
-inline std::wstring mappingName(DWORD pid,DWORD host) { return L"Local\\MagmPaper.Taskbar.1."+std::to_wstring(pid)+L"."+std::to_wstring(host); }
+inline std::wstring mappingName(DWORD pid,DWORD host) { return L"Local\\MagmPaper.Taskbar.2."+std::to_wstring(pid)+L"."+std::to_wstring(host); }
 inline void publish(Shared* shared,const Settings& settings) {
     InterlockedIncrement(&shared->generation);MemoryBarrier();shared->settings=settings;
     MemoryBarrier();InterlockedIncrement(&shared->generation);
@@ -58,6 +59,17 @@ inline bool read(Shared* shared,Settings& value) {
 }
 inline RECT barRect(RECT monitor,UINT dpi,UINT height) {
     monitor.top=monitor.bottom-MulDiv(static_cast<int>(height),static_cast<int>(dpi),96);return monitor;
+}
+inline void anchorBarPosition(WINDOWPOS& position,RECT current,RECT monitor,UINT dpi,UINT height,bool autoHide) {
+    // SWP_NOMOVE leaves x/y undefined. A size-only request must become a move
+    // too, otherwise increasing height grows the taskbar below the screen.
+    int x=(position.flags&SWP_NOMOVE)?current.left:position.x;
+    int y=(position.flags&SWP_NOMOVE)?current.top:position.y;
+    if(position.flags&SWP_NOSIZE) position.cx=current.right-current.left;
+    position.cy=MulDiv(static_cast<int>(height),static_cast<int>(dpi),96);
+    position.x=x;
+    position.y=autoHide&&y>=monitor.bottom-4?y:monitor.bottom-position.cy;
+    position.flags&=~(SWP_NOMOVE|SWP_NOSIZE);
 }
 inline RECT restoredWorkArea(RECT current,RECT monitor,UINT dpi,LONG originalHeight,UINT originalDpi,bool autoHide) {
     // A saved absolute rectangle is invalid after a game changes resolution/DPI.

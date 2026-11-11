@@ -28,13 +28,25 @@ internal sealed class AppearanceService : IAsyncDisposable
         try { if (File.Exists(file)) Settings = DataFiles.Read<AppearanceSettings>(file).Validate(); }
         catch { Error = loadError = "Не удалось прочитать taskbar-appearance.json. Исходный файл сохранён."; }
     }
-    private static string NativeError(int code) => code switch
+    private static string NativeError(JsonElement result)
     {
-        50 or unchecked((int)0x80004002) => "На этой сборке Windows не найдена совместимая XAML-панель задач.",
-        5 or unchecked((int)0x80070005) => "Windows запретила подключение модуля оформления к панели задач.",
-        258 => "Панель задач не подтвердила изменение вовремя.",
-        _ => $"Модуль панели не подтвердил изменение (код {code})."
-    };
+        int code = result.GetProperty("code").GetInt32();
+        int stage = result.TryGetProperty("failureStage", out var value) ? value.GetInt32() : 0;
+        string detail = code < 0 ? $"0x{unchecked((uint)code):X8}" : code.ToString();
+        return code switch
+        {
+            50 or unchecked((int)0x80004002) => "На этой сборке Windows не найдена совместимая XAML-панель задач.",
+            5 or unchecked((int)0x80070005) => "Windows запретила подключение модуля оформления к панели задач.",
+            258 => "Панель задач не подтвердила изменение вовремя.",
+            _ => stage switch
+            {
+                1 => $"Windows отклонила оформление элементов панели (код {detail}).",
+                2 => $"Windows не подтвердила размер или положение панели (код {detail}).",
+                3 => $"Не удалось полностью восстановить оформление Windows (код {detail}).",
+                _ => $"Модуль панели не подтвердил изменение (код {detail})."
+            }
+        };
+    }
     private string Cache()
     {
         string[] names = ["MagmTaskbarHost.exe", "MagmTaskbar.dll"];
@@ -80,10 +92,10 @@ internal sealed class AppearanceService : IAsyncDisposable
                 {
                     if (pending.TryRemove(id, out var request))
                     {
-                        if (kind == "error") request.TrySetException(new IOException(NativeError(root.GetProperty("code").GetInt32())));
+                        if (kind == "error") request.TrySetException(new IOException(NativeError(root)));
                         else request.TrySetResult(root.Clone());
                     }
-                    else if (kind == "error") { Error = NativeError(root.GetProperty("code").GetInt32()); _ = ShutdownAsync(); Changed?.Invoke(); }
+                    else if (kind == "error") { Error = NativeError(root); _ = ShutdownAsync(); Changed?.Invoke(); }
                 }
             }
         }

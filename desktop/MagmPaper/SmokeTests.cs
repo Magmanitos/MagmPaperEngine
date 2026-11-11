@@ -39,6 +39,22 @@ internal static class SmokeTests
         var clock = Stopwatch.StartNew();
         while (!condition()) { if (clock.Elapsed > TimeSpan.FromSeconds(20)) throw new TimeoutException(message); await Task.Delay(30); }
     }
+    private static void AssertDarkSurface(Window window, FrameworkElement control, string label)
+    {
+        var bitmap = WindowBitmap(window);
+        foreach (var local in new[] { new Point(2, 2), new Point(control.ActualWidth / 2, control.ActualHeight - 2) })
+        {
+            var point = control.TranslatePoint(local, window); var pixel = new byte[4];
+            bitmap.CopyPixels(new Int32Rect((int)point.X, (int)point.Y, 1, 1), pixel, 4, 0);
+            Assert(pixel[0] < 120 && pixel[1] < 120 && pixel[2] < 120, $"{label}: disabled/inactive control turned light");
+        }
+    }
+    private static bool Wheel(UIElement source, int delta)
+    {
+        var args = new System.Windows.Input.MouseWheelEventArgs(System.Windows.Input.Mouse.PrimaryDevice, Environment.TickCount, delta)
+            { RoutedEvent = System.Windows.Input.Mouse.PreviewMouseWheelEvent };
+        source.RaiseEvent(args); return args.Handled;
+    }
     public static async Task RunAsync(MainWindow window, string output)
     {
         Directory.CreateDirectory(output);
@@ -201,19 +217,54 @@ internal static class SmokeTests
         Assert(window.Library.State.Items.Any(x => x.Name == "Нативный UI тест" && x.Code == Red), "WPF save did not persist GLSL");
         var added = window.Library.State.Items.First(x => x.Name == "Нативный UI тест");
         window.Library.Remove(added.Id);
+        window.Navigate("wallpapers"); await Until(() => !window.Busy, "library refresh did not complete");
+        var collectionBeforeActivation = window.WallpaperList.ItemsSource;
+        var selectionBeforeActivation = window.WallpaperList.SelectedItem;
+        var other = new Window { Owner = window, Title = "Activation test", Width = 200, Height = 120, ShowInTaskbar = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner, Background = (Brush)window.FindResource("PanelBrush") };
+        other.Show(); other.Activate();
+        await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+        window.PageContainer.IsEnabled = false;
+        AssertDarkSurface(window, window.WallpaperList, "wallpaper collection after deactivation");
+        CaptureWindow(window, Path.Combine(output, "inactive-interface.png"));
+        window.Navigate("taskbar");
+        await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+        AssertDarkSurface(window, window.HeightInput, "taskbar input while applying");
+        window.PageContainer.IsEnabled = true; other.Close(); window.Activate();
+        window.Navigate("wallpapers"); await Until(() => !window.Busy, "activation refresh did not complete");
+        Assert(ReferenceEquals(collectionBeforeActivation, window.WallpaperList.ItemsSource) && ReferenceEquals(selectionBeforeActivation, window.WallpaperList.SelectedItem),
+            "activation/navigation unnecessarily rebuilt the unchanged collection");
         window.Navigate("settings"); window.FpsInput.SelectedIndex = 1;
         await Until(() => !window.Busy, "settings did not save"); Assert(window.Library.State.Settings.Fps == 30, "native performance preference lost");
         window.Navigate("taskbar");
         await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
-        if (window.TaskbarPage.ScrollableHeight > 80)
+        if (window.TaskbarPage.ScrollableHeight > 80 && SystemParameters.WheelScrollLines != 0)
         {
             var wheelTarget = TextElements(window.TaskbarPage).First(text => text.Text == "Панель задач");
-            wheelTarget.RaiseEvent(new System.Windows.Input.MouseWheelEventArgs(System.Windows.Input.Mouse.PrimaryDevice, Environment.TickCount, -120)
-                { RoutedEvent = System.Windows.Input.Mouse.PreviewMouseWheelEvent });
-            await Task.Delay(300);
+            Assert(Wheel(wheelTarget, -120), "page did not own the wheel event");
+            await Until(() => !Views.SmoothScroll.IsAnimating(window.TaskbarPage), "page scroll animation did not settle");
+            await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
             double expected = Math.Min(window.TaskbarPage.ScrollableHeight, SystemParameters.WheelScrollLines < 0 ? window.TaskbarPage.ViewportHeight : SystemParameters.WheelScrollLines * 22);
             Assert(Math.Abs(window.TaskbarPage.VerticalOffset - expected) < 1, "mouse wheel did not smoothly scroll the page");
             window.TaskbarPage.ScrollToTop();
+            await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+            int alignment = window.AlignmentInput.SelectedIndex;
+            var inputHost = (ScrollViewer)window.HeightInput.Template.FindName("PART_ContentHost", window.HeightInput);
+            foreach (var target in new UIElement[] { inputHost, window.ColorInput, window.AlignmentInput })
+            {
+                Assert(Wheel(target, -120), "taskbar field bypassed smooth page scrolling"); await Task.Delay(20);
+            }
+            await Until(() => !Views.SmoothScroll.IsAnimating(window.TaskbarPage), "repeated wheel input did not settle");
+            await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+            Assert(Math.Abs(window.TaskbarPage.VerticalOffset - Math.Min(window.TaskbarPage.ScrollableHeight, expected * 3)) < 1,
+                "wheel bursts over input controls lost distance or interrupted the animation");
+            Assert(window.AlignmentInput.SelectedIndex == alignment, "scrolling the page changed a closed dropdown value");
+            window.TaskbarPage.ScrollToTop();
+            await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+            Wheel(wheelTarget, -120); window.Navigate("settings");
+            Assert(!Views.SmoothScroll.IsAnimating(window.TaskbarPage), "hidden page kept its rendering callback");
+            window.Navigate("taskbar"); window.TaskbarPage.ScrollToTop();
+            await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
         }
         window.AlignmentInput.IsDropDownOpen = true;
         await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
@@ -242,14 +293,19 @@ internal static class SmokeTests
         Assert(surface.Frames == idleFrames, "hidden preview consumes frames");
         await Task.Delay(3000); // Let startup compilation, layout and deferred GPU release settle.
         var process = Process.GetCurrentProcess(); var startCpu = process.TotalProcessorTime; var clockIdle = Stopwatch.StartNew(); await Task.Delay(5000); process.Refresh();
-        var report = new { passed = true, nativeUi = "WPF", gpuTests = "ANGLE D3D11 WARP", composedDesktopPixels = composedPixels, workingSetBytes = process.WorkingSet64, idleCpuMilliseconds = (process.TotalProcessorTime - startCpu).TotalMilliseconds, idleSampleMilliseconds = clockIdle.Elapsed.TotalMilliseconds,
-            tests = new[] { "real GLSL pixels", "late GLSL extension compatibility", "compile error preserves program", "backbuffer", "quality fills window", "pause stops frames", "physical monitor geometry", "24H2 child layer order and opaque composition", "native window coverage/minimize/transparent overlay", "click-through and real cursor uniforms", "mouse toggle", "six GPU resets with active and paused second context", "Windows autostart and StartupApproved", "WPF editor/save/navigation", "native preview visibility and scroll clipping", "smooth scrolling", "HSV and HEX color picker", "settings", "WPF theme contrast", "hidden preview" } };
+        var report = new { passed = true, version = typeof(App).Assembly.GetName().Version?.ToString(), nativeUi = "WPF", gpuTests = "ANGLE D3D11 WARP", composedDesktopPixels = composedPixels, workingSetBytes = process.WorkingSet64, idleCpuMilliseconds = (process.TotalProcessorTime - startCpu).TotalMilliseconds, idleSampleMilliseconds = clockIdle.Elapsed.TotalMilliseconds,
+            tests = new[] { "real GLSL pixels", "late GLSL extension compatibility", "compile error preserves program", "backbuffer", "quality fills window", "pause stops frames", "physical monitor geometry", "24H2 child layer order and opaque composition", "native window coverage/minimize/transparent overlay", "click-through and real cursor uniforms", "mouse toggle", "six GPU resets with active and paused second context", "Windows autostart and StartupApproved", "WPF editor/save/navigation", "native preview visibility and scroll clipping", "smooth scrolling over inputs and repeated wheel events", "inactive and disabled control colors", "stable collection after activation/navigation", "HSV and HEX color picker", "settings", "WPF theme contrast", "hidden preview" } };
         File.WriteAllText(Path.Combine(output, "report.json"), JsonSerializer.Serialize(report, DataFiles.Json));
     }
-    private static void CaptureWindow(Window window, string path)
+    private static RenderTargetBitmap WindowBitmap(Window window)
     {
         window.UpdateLayout();
         var bitmap = new RenderTargetBitmap((int)window.ActualWidth, (int)window.ActualHeight, 96, 96, PixelFormats.Pbgra32); bitmap.Render(window);
+        return bitmap;
+    }
+    private static void CaptureWindow(Window window, string path)
+    {
+        var bitmap = WindowBitmap(window);
         var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
         using var image = File.Create(path); encoder.Save(image);
     }

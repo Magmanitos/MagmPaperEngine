@@ -1,5 +1,6 @@
 #include "styles.h"
 #include <cmath>
+#include <limits>
 namespace magm {
 using namespace winrt;
 static bool sameLocalValue(xaml::DependencyProperty const& key,Windows::Foundation::IInspectable const& first,Windows::Foundation::IInspectable const& second) {
@@ -42,8 +43,8 @@ StyledElement::StyledElement(xaml::FrameworkElement const& element,Kind type):ki
     if(auto found=values.find(identity);found!=values.end()) state=found->second.lock();
     if(!state||!state->target.get()) {state=std::make_shared<State>(element);values[identity]=state;}
 }
-void StyledElement::set(xaml::DependencyProperty const& key,Windows::Foundation::IInspectable const& value) {
-    auto element=state->target.get();if(!element) return;
+std::shared_ptr<StyledElement::Property> StyledElement::capture(xaml::DependencyProperty const& key) {
+    auto element=state->target.get();if(!element) return {};
     std::shared_ptr<Property> property;
     for(auto& p:state->properties) if(p->key==key) {property=p;break;}
     if(!property) {
@@ -75,27 +76,41 @@ void StyledElement::set(xaml::DependencyProperty const& key,Windows::Foundation:
         });
         property->observing=true;
     }
+    return property;
+}
+void StyledElement::set(xaml::DependencyProperty const& key,Windows::Foundation::IInspectable const& value) {
+    auto element=state->target.get();if(!element) return;
+    auto property=capture(key);if(!property) return;
     property->desired=value;*state->writing=true;
     try { element.SetValue(key,value); } catch(...) {*state->writing=false;throw;}
     *state->writing=false;
+}
+void StyledElement::dimension(xaml::DependencyProperty const& minimum,xaml::DependencyProperty const& maximum,xaml::DependencyProperty const& size,double value) {
+    // Snapshot the complete native range before any layout write. Relax the
+    // old range first so increasing/decreasing an already-styled element never
+    // temporarily crosses its previous Min/Max constraint.
+    auto low=capture(minimum),high=capture(maximum),extent=capture(size);
+    auto element=state->target.get();if(!element) return;
+    auto desired=box_value(value);
+    if(low&&high&&extent&&sameLocalValue(minimum,low->desired,desired)&&sameLocalValue(maximum,high->desired,desired)&&sameLocalValue(size,extent->desired,desired)&&
+        sameLocalValue(minimum,element.ReadLocalValue(minimum),desired)&&sameLocalValue(maximum,element.ReadLocalValue(maximum),desired)&&sameLocalValue(size,element.ReadLocalValue(size),desired)) return;
+    set(maximum,box_value(std::numeric_limits<double>::infinity()));
+    set(minimum,box_value(0.0));
+    set(size,box_value(value));
+    set(maximum,box_value(value));
+    set(minimum,box_value(value));
 }
 void StyledElement::apply(const Settings& settings) {
     if(!settings.enabled) {if(!restore()) throw hresult_error(E_FAIL);return;}
     const double height=static_cast<double>(settings.height);
     switch(kind) {
     case Kind::Frame:case Kind::Content:case Kind::Tray:
-        set(xaml::FrameworkElement::MinHeightProperty(),box_value(height));
-        set(xaml::FrameworkElement::MaxHeightProperty(),box_value(height));
-        set(xaml::FrameworkElement::HeightProperty(),box_value(height));break;
+        dimension(xaml::FrameworkElement::MinHeightProperty(),xaml::FrameworkElement::MaxHeightProperty(),xaml::FrameworkElement::HeightProperty(),height);break;
     case Kind::Icon:
         // Width/Height alone lose to minimum sizes and animated layout values.
         // Constrain the actual arranged size as well, retaining all originals.
-        set(xaml::FrameworkElement::MinWidthProperty(),box_value(static_cast<double>(settings.icon)));
-        set(xaml::FrameworkElement::MaxWidthProperty(),box_value(static_cast<double>(settings.icon)));
-        set(xaml::FrameworkElement::MinHeightProperty(),box_value(static_cast<double>(settings.icon)));
-        set(xaml::FrameworkElement::MaxHeightProperty(),box_value(static_cast<double>(settings.icon)));
-        set(xaml::FrameworkElement::WidthProperty(),box_value(static_cast<double>(settings.icon)));
-        set(xaml::FrameworkElement::HeightProperty(),box_value(static_cast<double>(settings.icon)));break;
+        dimension(xaml::FrameworkElement::MinWidthProperty(),xaml::FrameworkElement::MaxWidthProperty(),xaml::FrameworkElement::WidthProperty(),static_cast<double>(settings.icon));
+        dimension(xaml::FrameworkElement::MinHeightProperty(),xaml::FrameworkElement::MaxHeightProperty(),xaml::FrameworkElement::HeightProperty(),static_cast<double>(settings.icon));break;
     case Kind::Button:
         set(xaml::FrameworkElement::MinWidthProperty(),box_value(static_cast<double>(settings.button)));
         set(xaml::FrameworkElement::WidthProperty(),box_value(static_cast<double>(settings.button)));break;
@@ -122,12 +137,22 @@ void StyledElement::stopObserving() noexcept {
 bool StyledElement::restore() noexcept {
     bool restored=true;
     stopObserving();
-    if(auto element=state->target.get()) for(auto& p:state->properties) {
+    if(auto element=state->target.get()) {
+      auto minimum=[](auto const& key){return key==xaml::FrameworkElement::MinWidthProperty()||key==xaml::FrameworkElement::MinHeightProperty();};
+      auto maximum=[](auto const& key){return key==xaml::FrameworkElement::MaxWidthProperty()||key==xaml::FrameworkElement::MaxHeightProperty();};
+      // Drop only the constraints we own, then restore sizes, maxima and minima.
+      for(auto& p:state->properties) try {
+          if(minimum(p->key)) element.SetValue(p->key,box_value(0.0));
+          else if(maximum(p->key)) element.SetValue(p->key,box_value(std::numeric_limits<double>::infinity()));
+      } catch(...) {restored=false;}
+      for(int phase=0;phase<3;phase++) for(auto& p:state->properties) {
+        int order=minimum(p->key)?2:maximum(p->key)?1:0;if(order!=phase) continue;
         try {
             if(p->binding) xaml::Data::BindingOperations::SetBinding(element,p->key,p->binding);
             else if(p->original==xaml::DependencyProperty::UnsetValue()) element.ClearValue(p->key);
             else element.SetValue(p->key,p->original);
         } catch(...) {restored=false;}
+      }
     }
     state->properties.clear();*state->writing=false;return restored;
 }

@@ -102,27 +102,38 @@ void workArea(Bar& bar,const RECT& desired) {
     }
 #endif
 }
-LONG resizeBars(Context& ctx,bool enabled) {
+bool autoHiding(HWND window) {
+#ifdef MAGM_HARNESS
+    (void)window;return false;
+#else
+    APPBARDATA data{sizeof(data)};data.hWnd=window;
+    return (SHAppBarMessage(ABM_GETSTATE,&data)&ABS_AUTOHIDE)!=0;
+#endif
+}
+LONG resizeBars(Context& ctx,bool enabled,LONG* failure=nullptr) {
     LONG errors=0;
+    auto fail=[&](LONG code){errors++;if(failure&&!*failure) *failure=code?code:ERROR_GEN_FAILURE;};
     for(auto& bar:ctx.bars) {
         if(!IsWindow(bar.window)) continue;
         if(enabled) {
             MONITORINFO info{sizeof(info)};
-            if(!GetMonitorInfoW(MonitorFromWindow(bar.window,MONITOR_DEFAULTTONEAREST),&info)) continue;
+            if(!GetMonitorInfoW(MonitorFromWindow(bar.window,MONITOR_DEFAULTTONEAREST),&info)) {fail(GetLastError());continue;}
             RECT target=barRect(info.rcMonitor,GetDpiForWindow(bar.window),ctx.settings.height);
-            RECT actual{};GetWindowRect(bar.window,&actual);
-            int y=actual.top>=info.rcMonitor.bottom-4?actual.top:target.top;
-            if(!SetWindowPos(bar.window,nullptr,actual.left,y,actual.right-actual.left,target.bottom-target.top,SWP_NOZORDER|SWP_NOACTIVATE)) errors++;
+            RECT actual{};if(!GetWindowRect(bar.window,&actual)) {fail(GetLastError());continue;}
+            bool hidden=autoHiding(bar.window)&&actual.top>=info.rcMonitor.bottom-4;
+            int y=hidden?actual.top:target.top;
+            if(!SetWindowPos(bar.window,nullptr,actual.left,y,actual.right-actual.left,target.bottom-target.top,SWP_NOZORDER|SWP_NOACTIVATE)) fail(GetLastError());
             RECT confirmed{};
-            if(!GetWindowRect(bar.window,&confirmed)||confirmed.bottom-confirmed.top!=target.bottom-target.top) errors++;
+            if(!GetWindowRect(bar.window,&confirmed)) fail(GetLastError());
+            else if(confirmed.bottom-confirmed.top!=target.bottom-target.top||(!hidden&&confirmed.bottom!=info.rcMonitor.bottom)) fail(ERROR_RETRY);
             bar.resized=true;workArea(bar,target);
         } else if(bar.resized) {
             MONITORINFO info{sizeof(info)};GetMonitorInfoW(MonitorFromWindow(bar.window,MONITOR_DEFAULTTONEAREST),&info);
             restoreWorkArea(bar);
             RECT actual{};GetWindowRect(bar.window,&actual);
             int height=MulDiv(bar.original.bottom-bar.original.top,GetDpiForWindow(bar.window),bar.originalDpi);
-            int y=actual.top>=info.rcMonitor.bottom-4?actual.top:info.rcMonitor.bottom-height;
-            if(!SetWindowPos(bar.window,nullptr,info.rcMonitor.left,y,info.rcMonitor.right-info.rcMonitor.left,height,SWP_NOZORDER|SWP_NOACTIVATE)) errors++;
+            int y=autoHiding(bar.window)&&actual.top>=info.rcMonitor.bottom-4?actual.top:info.rcMonitor.bottom-height;
+            if(!SetWindowPos(bar.window,nullptr,info.rcMonitor.left,y,info.rcMonitor.right-info.rcMonitor.left,height,SWP_NOZORDER|SWP_NOACTIVATE)) fail(GetLastError());
             bar.resized=false;
         }
     }
@@ -143,11 +154,16 @@ void update(Context& ctx) {
     Settings value{};if(!shared||!read(shared,value)) return;
     if(stopping) value.enabled=0;
     ctx.settings=value;
-    LONG errors=0;
-    if(!value.enabled) errors+=restoreElements(ctx);
-    else for(auto& [id,element]:ctx.elements) try {element->apply(value);} catch(...) {errors++;}
-    errors+=resizeBars(ctx,value.enabled!=0);
+    LONG errors=0,code=0,stage=0;
+    if(!value.enabled) {errors+=restoreElements(ctx);if(errors) {code=E_FAIL;stage=3;}}
+    else for(auto& [id,element]:ctx.elements) try {element->apply(value);} catch(...) {
+        errors++;if(!code) {code=to_hresult();stage=1;}
+    }
+    LONG geometryError=0;errors+=resizeBars(ctx,value.enabled!=0,&geometryError);
+    if(!code&&geometryError) {code=geometryError;stage=2;}
     InterlockedExchange(&ctx.slot->errors,errors);
+    InterlockedExchange(&ctx.slot->errorCode,code);
+    InterlockedExchange(&ctx.slot->failureStage,stage);
     InterlockedExchange(&ctx.slot->applied,static_cast<LONG>(value.sequence));
 }
 LRESULT CALLBACK barProcedure(HWND window,UINT message,WPARAM wp,LPARAM lp,UINT_PTR,DWORD_PTR data) {
@@ -158,9 +174,8 @@ LRESULT CALLBACK barProcedure(HWND window,UINT message,WPARAM wp,LPARAM lp,UINT_
         if(!(pos->flags&SWP_NOSIZE)||!(pos->flags&SWP_NOMOVE)) {
             MONITORINFO info{sizeof(info)};
             if(GetMonitorInfoW(MonitorFromWindow(window,MONITOR_DEFAULTTONEAREST),&info)) {
-                RECT target=barRect(info.rcMonitor,GetDpiForWindow(window),ctx.settings.height);
-                pos->cy=target.bottom-target.top;pos->flags&=~SWP_NOSIZE;
-                if(!(pos->flags&SWP_NOMOVE)&&pos->y<info.rcMonitor.bottom-4) pos->y=target.top;
+                RECT current{};
+                if(GetWindowRect(window,&current)) anchorBarPosition(*pos,current,info.rcMonitor,GetDpiForWindow(window),ctx.settings.height,autoHiding(window));
             }
         }
         return result;

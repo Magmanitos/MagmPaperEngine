@@ -91,6 +91,23 @@ tests.Add(("appearance wire protocol and motion are compatible", () =>
     Check(new Area(-1920, 0, 0, 1080).Covers(new(-1920, 0, 0, 1032)), "coverage geometry");
 }));
 
+tests.Add(("scroll motion preserves velocity and trajectory across display rates", () =>
+{
+    var sixty = new ScrollMotion(0); var fast = new ScrollMotion(0);
+    sixty.MoveTo(600); fast.MoveTo(600);
+    for (int i = 0; i < 15; i++) sixty.Advance(1.0 / 60);
+    for (int i = 0; i < 36; i++) fast.Advance(1.0 / 144);
+    Check(Math.Abs(sixty.Position - fast.Position) < 1e-8 && Math.Abs(sixty.Velocity - fast.Velocity) < 1e-8, "scroll trajectory depends on refresh rate");
+    double position = fast.Position, velocity = fast.Velocity;
+    fast.MoveTo(900);
+    Check(fast.Position == position && fast.Velocity == velocity, "another wheel event restarts the animation");
+    for (int i = 0; i < 144; i++) { fast.Advance(1.0 / 144); Check(fast.Position >= position && fast.Position <= 900, "scroll jumps backwards or overshoots"); position = fast.Position; }
+    Check(fast.Settled, "scroll never stops at rest");
+    fast.MoveTo(0); for (int i = 0; i < 144; i++) fast.Advance(1.0 / 144);
+    Check(fast.Settled && Math.Abs(fast.Position) < .1, "reverse scrolling does not settle");
+    fast.Reset(120); fast.Advance(1); Check(fast.Position == 120 && fast.Velocity == 0, "cancelled motion keeps moving");
+}));
+
 tests.Add(("GLSL extension compatibility preserves conditional semantics and source lines", () =>
 {
     string source = "#version 100\nprecision mediump float;\n#extension GL_OES_standard_derivatives : enable /* notes\ncontinued */\nvoid main(){gl_FragColor=vec4(1.0);}";

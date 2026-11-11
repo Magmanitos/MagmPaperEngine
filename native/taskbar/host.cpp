@@ -24,10 +24,14 @@ std::wstring pluginPath;
 std::mutex outputLock;
 void event(const char* name,uint32_t sequence=0,LONG code=0) {
     std::lock_guard lock(outputLock);
-    LONG frames=0,icons=0,backgrounds=0,errors=0;
-    if(shared) for(auto& slot:shared->slots) {frames+=slot.frames;icons+=slot.icons;backgrounds+=slot.backgrounds;errors+=slot.errors;}
+    LONG frames=0,icons=0,backgrounds=0,errors=0,nativeError=0,failureStage=0;
+    if(shared) for(auto& slot:shared->slots) {
+        frames+=slot.frames;icons+=slot.icons;backgrounds+=slot.backgrounds;errors+=slot.errors;
+        if(slot.errorCode&&!nativeError) {nativeError=slot.errorCode;failureStage=slot.failureStage;}
+    }
     std::cout<<"{\"event\":\""<<name<<"\",\"sequence\":"<<sequence<<",\"code\":"<<code
-        <<",\"frames\":"<<frames<<",\"icons\":"<<icons<<",\"backgrounds\":"<<backgrounds<<",\"errors\":"<<errors<<",\"diagnosticError\":"<<(shared?shared->error:0)<<"}"<<std::endl;
+        <<",\"frames\":"<<frames<<",\"icons\":"<<icons<<",\"backgrounds\":"<<backgrounds<<",\"errors\":"<<errors
+        <<",\"nativeError\":"<<nativeError<<",\"failureStage\":"<<failureStage<<",\"diagnosticError\":"<<(shared?shared->error:0)<<"}"<<std::endl;
 }
 void signal(UINT message) {
     if(shared) for(auto& slot:shared->slots) if(slot.window) PostMessageW(reinterpret_cast<HWND>(slot.window),message,0,0);
@@ -125,9 +129,12 @@ LRESULT CALLBACK procedure(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp) {
             else if(GetTickCount64()>deadline) {KillTimer(hwnd,2);event("error",desired.sequence,ERROR_NOT_SUPPORTED);stop();}
         }
         if(wp==3) {
-            bool done=true;LONG errors=0;
-            for(auto& slot:shared->slots) if(slot.thread) {done&=slot.applied>=static_cast<LONG>(desired.sequence);errors+=slot.errors;}
-            if(done) {KillTimer(hwnd,3);event(errors?"error":"applied",desired.sequence,errors?ERROR_INVALID_DATA:0);}
+            bool done=true;LONG errors=0,code=0;
+            for(auto& slot:shared->slots) if(slot.thread) {
+                done&=slot.applied>=static_cast<LONG>(desired.sequence);errors+=slot.errors;
+                if(slot.errorCode&&!code) code=slot.errorCode;
+            }
+            if(done) {KillTimer(hwnd,3);event(errors?"error":"applied",desired.sequence,errors?(code?code:ERROR_INVALID_DATA):0);}
             else if(GetTickCount64()>deadline) {KillTimer(hwnd,3);event("error",desired.sequence,WAIT_TIMEOUT);}
         }
         if(wp==4) {

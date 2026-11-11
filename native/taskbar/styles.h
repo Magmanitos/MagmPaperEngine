@@ -37,7 +37,9 @@ class StyledElement {
     static Registry& registry();
     uintptr_t identity;
     std::shared_ptr<State> state;
+    std::shared_ptr<Property> capture(xaml::DependencyProperty const&);
     void set(xaml::DependencyProperty const&,winrt::Windows::Foundation::IInspectable const&);
+    void dimension(xaml::DependencyProperty const& minimum,xaml::DependencyProperty const& maximum,xaml::DependencyProperty const& size,double value);
 public:
     Kind kind;
     StyledElement(xaml::FrameworkElement const& element,Kind type);

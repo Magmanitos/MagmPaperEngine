@@ -52,6 +52,13 @@ int main() try {
     settings.icon=64;require(!valid(settings),"reject oversized icon");settings.icon=24;
     RECT monitor{-1920,0,0,1080};auto rect=barRect(monitor,144,64);
     require(rect.top==984&&rect.left==-1920&&rect.right==0,"physical geometry and negative monitor origin");
+    WINDOWPOS proposed{};proposed.flags=SWP_NOMOVE;proposed.x=123;proposed.y=456;proposed.cx=1920;proposed.cy=48;
+    anchorBarPosition(proposed,RECT{-1920,1008,0,1080},monitor,144,64,false);
+    require(!(proposed.flags&SWP_NOMOVE)&&proposed.x==-1920&&proposed.y==984&&proposed.cy==96,
+        "size-only requests must grow up from the monitor bottom, ignoring undefined x/y");
+    proposed.flags=SWP_NOSIZE;proposed.x=-1920;proposed.y=1078;
+    anchorBarPosition(proposed,RECT{-1920,984,0,1080},monitor,144,80,true);
+    require(proposed.y==1078&&proposed.cy==120&&proposed.cx==1920,"keep auto-hidden taskbar at its reveal strip");
     RECT changedMonitor{-2560,0,0,1440},changedWork{-2500,32,0,1344};
     auto restored=restoredWorkArea(changedWork,changedMonitor,144,48,96,false);
     require(restored.bottom==1368&&restored.left==-2500&&restored.top==32,"restore after resolution and DPI change while preserving other appbars");
@@ -78,6 +85,19 @@ int main() try {
     settings.enabled=1;settings.height=64;settings.icon=40;settings.button=52;settings.opacity=25;settings.color=0x123456;settings.hideWidgets=1;settings.radius=8;
     styledFrame.apply(settings);styledIcon.apply(settings);styledBackground.apply(settings);styledWidgets.apply(settings);root.UpdateLayout();
     require(frame.Height()==64&&frame.MaxHeight()==64&&icon.Width()==40,"native XAML dimensions");
+    bool invalidRange=false;
+    auto checkRange=[&](auto const&,auto const&){invalidRange|=frame.MinHeight()>frame.MaxHeight();};
+    auto minToken=frame.RegisterPropertyChangedCallback(xaml::FrameworkElement::MinHeightProperty(),checkRange);
+    auto maxToken=frame.RegisterPropertyChangedCallback(xaml::FrameworkElement::MaxHeightProperty(),checkRange);
+    for(int height:{80,40,96,32,64}) {
+        settings.height=height;settings.icon=std::min(40,height-8);
+        styledFrame.apply(settings);styledIcon.apply(settings);root.UpdateLayout();
+        require(frame.Height()==height&&frame.MinHeight()==height&&frame.MaxHeight()==height&&icon.ActualWidth()==settings.icon,
+            "repeated live size changes must apply in both directions");
+    }
+    frame.UnregisterPropertyChangedCallback(xaml::FrameworkElement::MinHeightProperty(),minToken);
+    frame.UnregisterPropertyChangedCallback(xaml::FrameworkElement::MaxHeightProperty(),maxToken);
+    require(!invalidRange,"live resizing temporarily crossed the previous XAML Min/Max range");
     auto color=background.Fill().as<xaml::Media::SolidColorBrush>().Color();
     require(color.A==64&&color.R==0x12&&color.G==0x34&&color.B==0x56,"background color and opacity");
     require(widgets.Visibility()==xaml::Visibility::Collapsed,"hide visual without registry");
@@ -148,9 +168,22 @@ int main() try {
         require(frame.Height()==64&&icon.Width()==40,"external module changed real XAML elements");
         require(background.Fill().as<xaml::Media::SolidColorBrush>().Color().A==64,"external module background alpha");
         RECT actual{};GetWindowRect(window,&actual);require(actual.bottom-actual.top==MulDiv(64,GetDpiForWindow(window),96),"native taskbar window resized");
-        host.send("2 0 64 40 52 1193046 25 1 8\n");host.applied(2);
+        int sequence=1;
+        for(auto sizes:std::vector<std::pair<int,int>>{{80,48},{40,24},{96,64},{64,40}}) {
+            sequence++;
+            auto command=std::to_string(sequence)+" 1 "+std::to_string(sizes.first)+" "+std::to_string(sizes.second)+" "+std::to_string(std::max(52,sizes.second))+" 1193046 25 1 8\n";
+            host.send(command.c_str());host.applied(sequence);
+            MONITORINFO screen{sizeof(screen)};GetMonitorInfoW(MonitorFromWindow(window,MONITOR_DEFAULTTONEAREST),&screen);GetWindowRect(window,&actual);
+            require(frame.Height()==sizes.first&&icon.Width()==sizes.second&&actual.bottom==screen.rcMonitor.bottom&&actual.bottom-actual.top==MulDiv(sizes.first,GetDpiForWindow(window),96),
+                "live helper resize failed or moved the bottom edge off-screen");
+            WINDOWPOS sizeOnly{window,nullptr,123,456,actual.right-actual.left,48,SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE};
+            SendMessageW(window,WM_WINDOWPOSCHANGING,0,reinterpret_cast<LPARAM>(&sizeOnly));
+            require(!(sizeOnly.flags&SWP_NOMOVE)&&sizeOnly.y+sizeOnly.cy==screen.rcMonitor.bottom,
+                "hook failed to anchor a native size-only request at the screen bottom");
+        }
+        host.send("6 0 64 40 52 1193046 25 1 8\n");host.applied(6);
         require(frame.Height()==48&&icon.Width()==24&&widgets.Visibility()==xaml::Visibility::Visible,"disable restores native XAML");
-        host.send("3 1 64 40 52 1193046 25 1 8\n");host.applied(3);host.crash();
+        host.send("7 1 64 40 52 1193046 25 1 8\n");host.applied(7);host.crash();
         until([&]{return frame.Height()==48&&icon.Width()==24;},"host crash did not restore XAML");
         std::cout<<"PASS: helper attachment and crash restoration."<<std::endl;
     }

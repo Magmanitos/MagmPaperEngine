@@ -26,6 +26,8 @@ public partial class MainWindow : Window
     private string? editingId;
     private bool editing, dirty, filling, selecting, busy, ready;
     private Wallpaper? selected;
+    private RenderSurface? loadedPreview;
+    private string? loadedPreviewCode;
     internal bool Quitting { get; set; }
     internal bool Busy => busy;
     internal Library Library => library;
@@ -99,7 +101,9 @@ public partial class MainWindow : Window
     {
         selecting = true;
         var rows = library.State.Items.Select(x => new WallpaperRow(x, wallpapers.RunningId == x.Id)).ToArray();
-        WallpaperList.ItemsSource = rows; WallpaperList.SelectedItem = rows.FirstOrDefault(x => x.Item.Id == id) ?? rows.FirstOrDefault();
+        if (WallpaperList.ItemsSource is WallpaperRow[] previous && previous.SequenceEqual(rows)) rows = previous;
+        else WallpaperList.ItemsSource = rows;
+        WallpaperList.SelectedItem = rows.FirstOrDefault(x => x.Item.Id == id) ?? rows.FirstOrDefault();
         selected = (WallpaperList.SelectedItem as WallpaperRow)?.Item;
         WallpaperTitle.Text = selected?.Name ?? "Выберите обои"; CollectionCount.Text = $"{rows.Length} в коллекции";
         selecting = false; Buttons();
@@ -109,10 +113,14 @@ public partial class MainWindow : Window
         library.Refresh(); wallpapers.Refresh(); RenderList(id ?? selected?.Id); ShowPlayback();
         if (selected is not null && route == "wallpapers") await LoadPreviewAsync(selected.Code);
     }
-    private async Task LoadPreviewAsync(string code)
+    private async Task LoadPreviewAsync(string code, bool force = false)
     {
         if (Preview.Surface is not { } surface) return;
-        await surface.LoadAsync(code); SyncPreview();
+        if (force || !ReferenceEquals(loadedPreview, surface) || loadedPreviewCode != code)
+        {
+            await surface.LoadAsync(code); loadedPreview = surface; loadedPreviewCode = code;
+        }
+        SyncPreview();
     }
     private async void SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -137,7 +145,7 @@ public partial class MainWindow : Window
     private void EditWallpaperClick(object sender, RoutedEventArgs e) { if (selected is not null) OpenEditor(selected); }
     private void EditorChanged(object sender, TextChangedEventArgs e) { if (!filling && editing) dirty = true; }
     private async void CancelEditorClick(object sender, RoutedEventArgs e) { if (LeaveEditor() && selected is not null) await RunAsync(() => LoadPreviewAsync(selected.Code)); }
-    private async void PreviewCodeClick(object sender, RoutedEventArgs e) => await RunAsync(async () => { await LoadPreviewAsync(CodeInput.Text); Status("Шейдер скомпилирован. Проверьте изображение в предпросмотре."); });
+    private async void PreviewCodeClick(object sender, RoutedEventArgs e) => await RunAsync(async () => { await LoadPreviewAsync(CodeInput.Text, force: true); Status("Шейдер скомпилирован. Проверьте изображение в предпросмотре."); });
     private async void SaveWallpaperClick(object sender, RoutedEventArgs e) => await RunAsync(async () =>
     {
         Library.Validate(NameInput.Text, CodeInput.Text);
