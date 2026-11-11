@@ -5,6 +5,10 @@ namespace MagmPaper.Graphics;
 internal static class AngleDevice
 {
     private static readonly object Gate = new();
+    // The two EGL contexts share a D3D11 device. Serialize native submissions
+    // and resource destruction; their frame timers and pause waits remain independent.
+    // Acquire's reference-count wait must stay outside this gate.
+    internal static readonly object GraphicsGate = new();
     private static nint display, config;
     private static int references, generation;
     private static bool resetting;

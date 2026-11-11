@@ -23,6 +23,8 @@ internal sealed class ShaderContext : IDisposable
         var device = AngleDevice.Acquire(); display = device.Display; Generation = device.Generation;
         try
         {
+          lock (AngleDevice.GraphicsGate)
+          {
             Diagnostics.Trace("EGL create surface and context");
             Gpu.EglBindAPI(0x30a0);
             surface = Gpu.EglCreateWindowSurface(display, device.Config, window, [0x3038]);
@@ -38,6 +40,7 @@ internal sealed class ShaderContext : IDisposable
             Diagnostics.Trace("Compile copy shader");
             copy = Build(CopyShader);
             Diagnostics.Trace("Shader context ready");
+          }
         }
         catch { Dispose(); throw; }
     }
@@ -71,7 +74,8 @@ internal sealed class ShaderContext : IDisposable
         catch { if (value != 0) Gpu.DeleteProgram(value); throw; }
         finally { if (vertex != 0) Gpu.DeleteShader(vertex); if (fragment != 0) Gpu.DeleteShader(fragment); }
     }
-    public void Load(string source)
+    public void Load(string source) { lock (AngleDevice.GraphicsGate) LoadCore(source); }
+    private void LoadCore(string source)
     {
         var next = Build(source); // Failed compilation preserves the previous program.
         if (program != 0) Gpu.DeleteProgram(program); program = next;
@@ -111,19 +115,18 @@ internal sealed class ShaderContext : IDisposable
     }
     private void Quad(uint value)
     {
-        Diagnostics.Trace("Quad bind");
         Gpu.UseProgram(value); Gpu.BindBuffer(0x8892, quad);
-        Diagnostics.Trace("Quad attribute");
         var location = Gpu.GetAttribLocation(value, "position");
         if (location < 0) throw new InvalidDataException("Вершинный атрибут position отсутствует.");
-        Diagnostics.Trace("Quad pointer");
         Gpu.EnableVertexAttribArray((uint)location); Gpu.VertexAttribPointer((uint)location, 2, 0x1406, 0, 0, 0);
-        Diagnostics.Trace("Quad draw");
         Gpu.DrawArrays(4, 0, 6);
-        Diagnostics.Trace("Quad disable");
         Gpu.DisableVertexAttribArray((uint)location);
     }
     public PixelFrame? Draw(int outputWidth, int outputHeight, double quality, double seconds, double x, double y, bool capture = false)
+    {
+        lock (AngleDevice.GraphicsGate) return DrawCore(outputWidth, outputHeight, quality, seconds, x, y, capture);
+    }
+    private PixelFrame? DrawCore(int outputWidth, int outputHeight, double quality, double seconds, double x, double y, bool capture)
     {
         if (program == 0) return null;
         Resize(Math.Max(1, outputWidth), Math.Max(1, outputHeight), quality);
@@ -147,7 +150,8 @@ internal sealed class ShaderContext : IDisposable
         if (Gpu.EglSwapBuffers(display, surface) == 0) throw new DeviceLostException($"Поверхность обоев требует восстановления (EGL 0x{Gpu.EglGetError():X}).");
         return pixels;
     }
-    public void Dispose()
+    public void Dispose() { lock (AngleDevice.GraphicsGate) DisposeCore(); }
+    private void DisposeCore()
     {
         if (display == 0) return;
         Diagnostics.Trace("Dispose shader context start");

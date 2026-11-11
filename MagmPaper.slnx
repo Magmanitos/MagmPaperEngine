@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="desktop/MagmPaper.Core/MagmPaper.Core.csproj" />
+  <Project Path="desktop/MagmPaper/MagmPaper.csproj" />
+  <Project Path="desktop/MagmPaper.Tests/MagmPaper.Tests.csproj" />
+</Solution>

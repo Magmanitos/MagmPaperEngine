@@ -84,8 +84,17 @@ internal static class SmokeTests
                 secondSurface.Configure(new(Paused: true));
             }
             finally { Win32.SetCursorPos(oldCursor.X, oldCursor.Y); }
-            surface.Configure(new(Paused: false)); long before = surface.Frames; AngleDevice.Reset(AngleDevice.Generation);
-            await Until(() => surface.Frames > before + 3, "GPU contexts did not recreate after device reset");
+            for (int attempt = 0; attempt < 6; attempt++)
+            {
+                bool otherPaused = attempt % 2 == 0;
+                secondSurface.Configure(new(Paused: otherPaused, Quality: .5));
+                surface.Configure(new(Paused: false));
+                await Task.Delay(15 + attempt * 7);
+                long before = surface.Frames; AngleDevice.Reset(AngleDevice.Generation);
+                await Until(() => surface.Frames > before + 3, "GPU contexts did not recreate after device reset");
+                Assert((await surface.CaptureAsync()).Rgba[0] > 240, "preview pixels were lost after reset");
+            }
+            secondSurface.Configure(new(Paused: true));
             surface.Configure(new(Paused: true));
         }
         finally { if (child != 0) Win32.DestroyWindow(child); Win32.DestroyWindow(host); }
@@ -111,7 +120,7 @@ internal static class SmokeTests
         Assert(surface.Frames == idleFrames, "hidden preview consumes frames");
         var process = Process.GetCurrentProcess(); var startCpu = process.TotalProcessorTime; var clockIdle = Stopwatch.StartNew(); await Task.Delay(2000); process.Refresh();
         var report = new { passed = true, nativeUi = "WPF", gpuTests = "ANGLE D3D11 WARP", workingSetBytes = process.WorkingSet64, idleCpuMilliseconds = (process.TotalProcessorTime - startCpu).TotalMilliseconds, idleSampleMilliseconds = clockIdle.Elapsed.TotalMilliseconds,
-            tests = new[] { "real GLSL pixels", "compile error preserves program", "backbuffer", "quality fills window", "pause stops frames", "physical monitor geometry", "native window coverage/minimize/transparent overlay", "click-through and real cursor uniforms", "mouse toggle", "GPU reset with paused second context", "WPF editor/save/navigation", "settings", "hidden preview" } };
+            tests = new[] { "real GLSL pixels", "compile error preserves program", "backbuffer", "quality fills window", "pause stops frames", "physical monitor geometry", "native window coverage/minimize/transparent overlay", "click-through and real cursor uniforms", "mouse toggle", "six GPU resets with active and paused second context", "WPF editor/save/navigation", "settings", "hidden preview" } };
         File.WriteAllText(Path.Combine(output, "report.json"), JsonSerializer.Serialize(report, DataFiles.Json));
     }
 }
