@@ -98,7 +98,7 @@ void apply() {
 void stop() {
     if(closing) return;closing=true;
     KillTimer(window,1);KillTimer(window,2);KillTimer(window,3);
-    if(shared) {auto off=desired;off.enabled=0;off.sequence++;publish(shared,off);signal(updateMessage);}
+    if(shared) {auto off=desired;off.enabled=0;off.sequence++;publish(shared,off);signal(stopMessage);}
     // Wait asynchronously for UI threads to restore before the host exits.
     deadline=GetTickCount64()+4000;SetTimer(window,4,50,nullptr);
 }
@@ -132,7 +132,7 @@ LRESULT CALLBACK procedure(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp) {
         }
         if(wp==4) {
             bool done=true;
-            if(shared) for(auto& slot:shared->slots) if(slot.thread) done&=slot.applied>static_cast<LONG>(desired.sequence);
+            if(shared) for(auto& slot:shared->slots) done&=slot.thread==0;
             if(done||GetTickCount64()>deadline) {KillTimer(hwnd,4);event("stopped");DestroyWindow(hwnd);PostQuitMessage(0);}
         }
         return 0;

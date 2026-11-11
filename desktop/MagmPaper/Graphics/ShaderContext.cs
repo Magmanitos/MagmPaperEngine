@@ -91,7 +91,7 @@ internal sealed class ShaderContext : IDisposable
     }
     private void LoadCore(string source)
     {
-        var next = Build(source); // Failed compilation preserves the previous program.
+        var next = Build(ShaderSource.Prepare(source)); // Failed compilation preserves the previous program.
         if (program != 0) Gpu.DeleteProgram(program); program = next;
         time = Gpu.GetUniformLocation(program, "time"); resolution = Gpu.GetUniformLocation(program, "resolution");
         mouse = Gpu.GetUniformLocation(program, "mouse"); backbuffer = Gpu.GetUniformLocation(program, "backbuffer");

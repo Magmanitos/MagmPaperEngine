@@ -81,6 +81,15 @@ int main() try {
     require(frame.Height()==48&&icon.Width()==24&&background.Fill()==original&&widgets.Visibility()==xaml::Visibility::Visible,"restore original values");
     icon.Width(28);require(icon.Width()==28,"remove callbacks on disable");
     icon.Width(24);
+    // Explorer may set the natural icon size only after a recycled element is
+    // discovered. UnsetValue is not a valid restoration baseline in that case.
+    {
+        xaml::Controls::Image late;StyledElement styled(late,Kind::Icon);
+        settings.enabled=1;styled.apply(settings);late.Width(28);late.Height(28);
+        require(late.Width()==40,"late shell update must remain styled");
+        settings.enabled=0;styled.apply(settings);
+        require(late.Width()==28&&late.Height()==28,"restore late Explorer dimensions instead of natural bitmap size");
+    }
     std::cout<<"PASS: direct XAML styling and restoration. Starting helper attachment."<<std::endl;
     {
         Host host;host.send("1 1 64 40 52 1193046 25 1 8\n");host.applied(1);
@@ -96,8 +105,9 @@ int main() try {
     {
         Host restarted;restarted.send("1 1 60 32 48 3355443 50 0 0\n");restarted.applied(1);
         require(frame.Height()==60&&icon.Width()==32,"reconnect after host termination");
+        icon.Width(28);icon.Height(28);
         restarted.close();
-        until([&]{return frame.Height()==48&&icon.Width()==24&&background.Fill()==original;},"normal helper exit did not restore settings");
+        until([&]{return frame.Height()==48&&icon.Width()==28&&icon.Height()==28&&background.Fill()==original;},"normal helper exit did not restore latest shell sizes");
         std::cout<<"PASS: helper reconnection. Closing XAML source."<<std::endl;
     }
     source.Close();DestroyWindow(window);manager.Close();

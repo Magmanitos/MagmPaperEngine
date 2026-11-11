@@ -21,6 +21,7 @@ internal sealed class RenderSurface : IDisposable
     private double mouseX = .5, mouseY = .5;
     private long frames;
     public long Frames => Interlocked.Read(ref frames);
+    public string Renderer { get; private set; } = "Не создан";
     public event Action<string>? Error;
     public event Action<string>? Recovered;
     public RenderSurface(nint hwnd, bool desktop = false)
@@ -63,6 +64,7 @@ internal sealed class RenderSurface : IDisposable
         if (timer == 0) timer = Win32.CreateWaitableTimer(0, null, 0, 0x1f0003);
         nint[] waits = [wake.SafeWaitHandle.DangerousGetHandle(), timer];
         int failures = 0, successful = 0; bool faulted = false;
+        RenderOptions? lastOptions = null; int frameRate = 60;
         try
         {
             while (!stopping)
@@ -70,10 +72,11 @@ internal sealed class RenderSurface : IDisposable
                 if (context is not null && context.Generation != AngleDevice.Generation) { context.Dispose(); context = null; }
                 while (commands.TryDequeue(out var command))
                 {
-                    try { context ??= new ShaderContext(window); command.Run(context); faulted = false; failures = 0; }
+                    try { context ??= new ShaderContext(window); Renderer = context.Renderer; command.Run(context); faulted = false; failures = 0; }
                     catch (Exception error) { command.Fail(error); faulted = true; Error?.Invoke(error.Message); }
                 }
                 var current = Volatile.Read(ref options);
+                if (!ReferenceEquals(current, lastOptions)) { frameRate = current.Fps == 0 ? Win32.RefreshRate() : current.Fps; lastOptions = current; }
                 if (current.Paused || source is null || faulted)
                 {
                     if (timer != 0) Win32.CancelWaitableTimer(timer);
@@ -84,6 +87,7 @@ internal sealed class RenderSurface : IDisposable
                     if (context is null)
                     {
                         context = new ShaderContext(window); context.Load(source); seconds = 0;
+                        Renderer = context.Renderer;
                         previous = deadline = clock.Elapsed.TotalMilliseconds;
                         Recovered?.Invoke("GPU-рендерер восстановлен.");
                     }
@@ -99,8 +103,8 @@ internal sealed class RenderSurface : IDisposable
                     context.Draw(bounds.Width, bounds.Height, current.Quality, seconds, motion.X, motion.Y);
                     Interlocked.Increment(ref frames);
                     if (++successful >= 60) { failures = 0; successful = 0; }
-                    deadline += 1000.0 / current.Fps;
-                    if (deadline < clock.Elapsed.TotalMilliseconds) deadline = clock.Elapsed.TotalMilliseconds + 1000.0 / current.Fps;
+                    deadline += 1000.0 / frameRate;
+                    if (deadline < clock.Elapsed.TotalMilliseconds) deadline = clock.Elapsed.TotalMilliseconds + 1000.0 / frameRate;
                     double delay = Math.Max(0, deadline - clock.Elapsed.TotalMilliseconds);
                     if (timer != 0)
                     {

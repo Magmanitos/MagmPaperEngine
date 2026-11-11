@@ -21,6 +21,17 @@ internal sealed class WallpaperService : IDisposable
     public string? PauseReason { get; private set; }
     public event Action<string, bool>? Status;
     public event Action? Changed;
+    internal string DiagnosticReport()
+    {
+        var monitor = Win32.PrimaryMonitor().Monitor;
+        return $"MagmPaper {typeof(WallpaperService).Assembly.GetName().Version}\n{System.Runtime.InteropServices.RuntimeInformation.OSDescription}\n" +
+            $"Display: {monitor.Width}x{monitor.Height}, {Win32.RefreshRate()} Hz\n" +
+            $"Wallpaper: {(RunningId is null ? "stopped" : "loaded")}; pause: {PauseReason ?? "none"}; frames: {surface?.Frames ?? 0}\n" +
+            $"GPU: {surface?.Renderer ?? "not initialized"}\n" +
+            $"Host: {Win32.ClassName(worker)}, visible: {Win32.IsWindowVisible(worker)}, extended style: 0x{Win32.GetWindowLongPtr(worker, Win32.ExtendedStyle):X}\n" +
+            $"Surface visible: {Win32.IsWindowVisible(window)}, attached: {window != 0 && Win32.GetParent(window) == worker}\n" +
+            $"Rendering: {library.State.Settings.Fps} FPS (0 = monitor), {library.State.Settings.RenderScale:P0}";
+    }
     public WallpaperService(Library library, Dispatcher dispatcher)
     {
         this.library = library; this.dispatcher = dispatcher;
@@ -79,6 +90,7 @@ internal sealed class WallpaperService : IDisposable
             var monitor = Win32.PrimaryMonitor().Monitor.Area;
             if (monitor != previousMonitor) { previousMonitor = monitor; ScheduleRecovery(); return; }
             if (!Win32.IsWindowVisible(window) || Win32.IsIconic(window)) Win32.ShowWindow(window, 4);
+            DesktopHost.EnsureOrder(window, worker);
             bool battery = System.Windows.Forms.SystemInformation.PowerStatus.PowerLineStatus == System.Windows.Forms.PowerLineStatus.Offline;
             var settings = library.State.Settings;
             var reason = PlaybackPolicy.PauseReason(settings, locked, battery, settings.PauseWhenCovered && DesktopHost.Covered(window));

@@ -131,6 +131,7 @@ void update(Context& ctx) {
     if(stopping) value.enabled=0;
     ctx.settings=value;
     LONG errors=0;
+    if(!value.enabled) for(auto& [id,element]:ctx.elements) element->stopObserving();
     for(auto& [id,element]:ctx.elements) try {element->apply(value);} catch(...) {errors++;}
     errors+=resizeBars(ctx,value.enabled!=0);
     InterlockedExchange(&ctx.slot->errors,errors);
@@ -203,7 +204,9 @@ LRESULT CALLBACK contextProcedure(HWND window,UINT message,WPARAM wp,LPARAM lp) 
         }
         if(message==updateMessage) {update(*ctx);return 0;}
         if(message==stopMessage) {
+            stopping=true;
             ctx->settings.enabled=0;
+            for(auto& [id,element]:ctx->elements) element->stopObserving();
             for(auto& [id,element]:ctx->elements) element->restore();
             resizeBars(*ctx,false);
             for(auto& bar:ctx->bars) RemoveWindowSubclass(bar.window,barProcedure,1);

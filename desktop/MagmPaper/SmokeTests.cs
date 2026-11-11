@@ -54,6 +54,8 @@ internal static class SmokeTests
         try { await surface.LoadAsync("bad shader"); } catch (InvalidDataException) { rejected = true; }
         Assert(rejected, "invalid GLSL was accepted");
         Assert((await surface.CaptureAsync()).Rgba[center] > 240, "invalid GLSL replaced the previous program");
+        await surface.LoadAsync("#version 100\nprecision mediump float;\n#extension GL_OES_standard_derivatives : enable\nvoid main(){gl_FragColor=vec4(dFdx(gl_FragCoord.x),0.0,0.0,1.0);}");
+        Assert((await surface.CaptureAsync()).Rgba[center] > 240, "legacy late extension did not compile/render");
         await surface.LoadAsync("precision mediump float; uniform vec2 resolution; uniform sampler2D backbuffer; void main(){gl_FragColor=vec4(texture2D(backbuffer,gl_FragCoord.xy/resolution).r+0.1,0.0,0.0,1.0);}");
         byte first = (await surface.CaptureAsync()).Rgba[center], second = (await surface.CaptureAsync()).Rgba[center];
         Assert(second > first + 15, "GLSL backbuffer accumulation failed");
@@ -74,6 +76,14 @@ internal static class SmokeTests
             var origin = new Win32.Point(0, 0); Win32.MapWindowPoints(child, 0, ref origin, 1);
             Assert(origin.X == monitor.Left && origin.Y == monitor.Top, "wallpaper origin does not match monitor");
             Assert(((uint)Win32.GetWindowLongPtr(child, -20) & 0x20) != 0, "wallpaper is not click-through");
+            Assert(Win32.GetLayeredWindowAttributes(child, out _, out byte opacity, out uint layerFlags) && opacity == 255 && (layerFlags & 2) != 0, "wallpaper is not using opaque DWM composition");
+            nint icons = Win32.CreateSurface(host), staticBackground = Win32.CreateSurface(host);
+            try
+            {
+                DesktopHost.Fit(child, host, icons, staticBackground);
+                Assert(Win32.GetParent(child) == host && Win32.GetWindow(child, 3) == icons && Win32.GetWindow(staticBackground, 2) == 0, "24H2 wallpaper must sit between icons and static background");
+            }
+            finally { Win32.DestroyWindow(icons); Win32.DestroyWindow(staticBackground); }
             Win32.ShowWindow(host, 4);
             Win32.SetWindowPos(host, 0, monitor.Left, monitor.Top, monitor.Width, monitor.Height, 0x14);
             await Task.Delay(100);
@@ -142,6 +152,19 @@ internal static class SmokeTests
         // Exercise real WPF controls and their async handlers, not a renderer mock.
         window.AddWallpaperButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         window.NameInput.Text = "Нативный UI тест"; window.CodeInput.Text = Red;
+        window.WallpaperScroll.ScrollToVerticalOffset(140);
+        await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+        nint region = Win32.CreateRectRgn(0, 0, 0, 0);
+        try
+        {
+            Assert(!Win32.IsWindowVisible(window.Preview.NativeWindow) ||
+                (Win32.GetWindowRgn(window.Preview.NativeWindow, region) != 0 && Win32.GetRgnBox(region, out var clipping) != 0 && clipping.Top > 0), "scrolled native preview overlaps WPF controls");
+        }
+        finally { Win32.DeleteObject(region); }
+        window.WallpaperScroll.ScrollToTop();
+        window.Navigate("settings");
+        await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+        Assert(!Win32.IsWindowVisible(window.Preview.NativeWindow), "native preview is still visible over settings");
         window.Navigate("settings"); window.Navigate("wallpapers");
         Assert(window.NameInput.Text == "Нативный UI тест" && window.EditorPanel.Visibility == Visibility.Visible, "navigation lost editor draft");
         window.SaveWallpaperButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
@@ -153,6 +176,21 @@ internal static class SmokeTests
         await Until(() => !window.Busy, "settings did not save"); Assert(window.Library.State.Settings.Fps == 30, "native performance preference lost");
         window.Navigate("taskbar");
         await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+        if (window.TaskbarPage.ScrollableHeight > 80)
+        {
+            Views.SmoothScroll.Animate(window.TaskbarPage, 80);
+            await Task.Delay(300);
+            Assert(Math.Abs(window.TaskbarPage.VerticalOffset - 80) < 1, "smooth scrolling did not reach its target");
+            window.TaskbarPage.ScrollToTop();
+        }
+        var picker = new Views.ColorPicker("#0F8CDB") { Owner = window };
+        picker.Show(); await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+        Assert(picker.SelectedColor == "#0F8CDB", "HSV picker changed the initial RGB color");
+        picker.Hex.Text = "#123456"; Assert(picker.SelectedColor == "#123456" && picker.Accept.IsEnabled, "HEX entry did not update color");
+        picker.Hex.Text = "#12"; Assert(!picker.Accept.IsEnabled, "invalid color can be accepted");
+        picker.SetColor("#BCA6FF");
+        CaptureWindow(picker, Path.Combine(output, "color-picker.png"));
+        picker.Close();
         // Check rendered control text as well as the window. Implicit Window
         // styles do not automatically apply to a derived MainWindow class.
         Assert(window.Background is SolidColorBrush background && Luminance(background.Color) < .05, "native window lost its dark background");
@@ -161,15 +199,20 @@ internal static class SmokeTests
         AssertReadable(heading.Foreground, (Brush)window.FindResource("PanelBrush"), "card heading");
         var buttonText = TextElements(window.AddWallpaperButton).First(text => !string.IsNullOrEmpty(text.Text));
         AssertReadable(buttonText.Foreground, window.AddWallpaperButton.Background, "primary button");
-        var bitmap = new RenderTargetBitmap((int)window.ActualWidth, (int)window.ActualHeight, 96, 96, PixelFormats.Pbgra32); bitmap.Render(window);
-        var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
-        using (var image = File.Create(Path.Combine(output, "native-interface.png"))) encoder.Save(image);
+        CaptureWindow(window, Path.Combine(output, "native-interface.png"));
         long idleFrames = surface.Frames; await Task.Delay(150); idleFrames = surface.Frames; await Task.Delay(400);
         Assert(surface.Frames == idleFrames, "hidden preview consumes frames");
         await Task.Delay(3000); // Let startup compilation, layout and deferred GPU release settle.
         var process = Process.GetCurrentProcess(); var startCpu = process.TotalProcessorTime; var clockIdle = Stopwatch.StartNew(); await Task.Delay(5000); process.Refresh();
         var report = new { passed = true, nativeUi = "WPF", gpuTests = "ANGLE D3D11 WARP", workingSetBytes = process.WorkingSet64, idleCpuMilliseconds = (process.TotalProcessorTime - startCpu).TotalMilliseconds, idleSampleMilliseconds = clockIdle.Elapsed.TotalMilliseconds,
-            tests = new[] { "real GLSL pixels", "compile error preserves program", "backbuffer", "quality fills window", "pause stops frames", "physical monitor geometry", "native window coverage/minimize/transparent overlay", "click-through and real cursor uniforms", "mouse toggle", "six GPU resets with active and paused second context", "Windows autostart and StartupApproved", "WPF editor/save/navigation", "settings", "WPF theme contrast", "hidden preview" } };
+            tests = new[] { "real GLSL pixels", "late GLSL extension compatibility", "compile error preserves program", "backbuffer", "quality fills window", "pause stops frames", "physical monitor geometry", "24H2 child layer order and opaque composition", "native window coverage/minimize/transparent overlay", "click-through and real cursor uniforms", "mouse toggle", "six GPU resets with active and paused second context", "Windows autostart and StartupApproved", "WPF editor/save/navigation", "native preview visibility and scroll clipping", "smooth scrolling", "HSV and HEX color picker", "settings", "WPF theme contrast", "hidden preview" } };
         File.WriteAllText(Path.Combine(output, "report.json"), JsonSerializer.Serialize(report, DataFiles.Json));
+    }
+    private static void CaptureWindow(Window window, string path)
+    {
+        window.UpdateLayout();
+        var bitmap = new RenderTargetBitmap((int)window.ActualWidth, (int)window.ActualHeight, 96, 96, PixelFormats.Pbgra32); bitmap.Render(window);
+        var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        using var image = File.Create(path); encoder.Save(image);
     }
 }

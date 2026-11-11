@@ -20,6 +20,17 @@ internal static class Win32
     }
     [StructLayout(LayoutKind.Sequential)] internal struct MonitorInfo { public uint Size; public Rect Monitor, Work; public uint Flags; }
     [StructLayout(LayoutKind.Sequential)] internal struct AppBarData { public uint Size; public nint Window; public uint Callback, Edge; public Rect Rect; public nint Param; }
+    [StructLayout(LayoutKind.Explicit, Size = 220)] private struct DeviceMode
+    {
+        [FieldOffset(68)] public ushort Size;
+        [FieldOffset(184)] public uint Frequency;
+    }
+    internal static int RefreshRate()
+    {
+        var mode = new DeviceMode { Size = 220 };
+        return EnumDisplaySettings(null, -1, ref mode) && mode.Frequency > 1 ? Math.Clamp((int)mode.Frequency, 15, 360) : 60;
+    }
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "EnumDisplaySettingsW")] private static extern bool EnumDisplaySettings(string? name, int mode, ref DeviceMode settings);
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)] private struct WindowClass
     {
         public uint Style; public WindowProc Procedure; public int ClassExtra, WindowExtra; public nint Instance, Icon, Cursor, Background;
@@ -35,9 +46,14 @@ internal static class Win32
             var value = new WindowClass { Instance = GetModuleHandle(null), Name = SurfaceClass, Procedure = SurfaceProcedure };
             if (RegisterClass(ref value) == 0) throw new Win32Exception(); registered = true;
         }
-        var hwnd = CreateWindowEx(desktop ? 0x080000a0u : 0u, SurfaceClass, "MagmPaper GLSL", parent != 0 ? Child | Visible : Popup,
+        // Opaque layered presentation keeps the wallpaper in DWM composition.
+        // A fullscreen flip surface can engage windowed VRR on NVIDIA and pace
+        // the whole desktop to the wallpaper's (deliberately lower) frame rate.
+        var hwnd = CreateWindowEx(desktop ? 0x080800a0u : 0u, SurfaceClass, "MagmPaper GLSL", parent != 0 ? Child | Visible : Popup,
             0, 0, 16, 16, parent, 0, GetModuleHandle(null), 0);
-        if (hwnd == 0) throw new Win32Exception(); return hwnd;
+        if (hwnd == 0) throw new Win32Exception();
+        if (desktop && !SetLayeredWindowAttributes(hwnd, 0, 255, 2)) { DestroyWindow(hwnd); throw new Win32Exception(); }
+        return hwnd;
     }
     public static MonitorInfo PrimaryMonitor()
     {
@@ -64,6 +80,7 @@ internal static class Win32
     [DllImport("user32.dll")] internal static extern int MapWindowPoints(nint from, nint to, ref Point point, uint count);
     [DllImport("user32.dll")] internal static extern nint SetParent(nint child, nint parent);
     [DllImport("user32.dll")] internal static extern nint GetParent(nint child);
+    [DllImport("user32.dll")] internal static extern nint GetWindow(nint hwnd, uint command);
     [DllImport("user32.dll")] internal static extern nint GetForegroundWindow();
     [DllImport("user32.dll")] internal static extern nint GetAncestor(nint hwnd, uint flags);
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] internal static extern nint GetWindowLongPtr(nint hwnd, int index);
@@ -77,6 +94,12 @@ internal static class Win32
     [DllImport("user32.dll")] internal static extern nint MonitorFromWindow(nint window, uint flags);
     [DllImport("user32.dll", EntryPoint = "GetMonitorInfoW")] internal static extern bool GetMonitorInfo(nint monitor, ref MonitorInfo info);
     [DllImport("user32.dll")] internal static extern bool GetLayeredWindowAttributes(nint hwnd, out uint key, out byte alpha, out uint flags);
+    [DllImport("user32.dll", SetLastError = true)] internal static extern bool SetLayeredWindowAttributes(nint hwnd, uint key, byte alpha, uint flags);
+    [DllImport("user32.dll")] internal static extern int SetWindowRgn(nint hwnd, nint region, bool redraw);
+    [DllImport("user32.dll")] internal static extern int GetWindowRgn(nint hwnd, nint region);
+    [DllImport("gdi32.dll")] internal static extern int GetRgnBox(nint region, out Rect rect);
+    [DllImport("gdi32.dll")] internal static extern nint CreateRectRgn(int left, int top, int right, int bottom);
+    [DllImport("gdi32.dll")] internal static extern bool DeleteObject(nint value);
     [DllImport("dwmapi.dll", EntryPoint = "DwmGetWindowAttribute")] internal static extern int Cloaked(nint hwnd, uint key, out int value, uint size);
     [DllImport("dwmapi.dll", EntryPoint = "DwmGetWindowAttribute")] internal static extern int Bounds(nint hwnd, uint key, out Rect value, uint size);
     [DllImport("shell32.dll")] internal static extern nuint SHAppBarMessage(uint message, ref AppBarData value);

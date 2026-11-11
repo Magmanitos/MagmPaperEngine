@@ -7,7 +7,7 @@
   <Grid Grid.Row="1"><Grid.ColumnDefinitions><ColumnDefinition Width="212"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
    <Border Background="#14151B" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,1,0"><DockPanel>
     <StackPanel DockPanel.Dock="Top" Margin="22,32,20,26"><TextBlock Text="MagmPaper" FontSize="24" FontWeight="Bold"/><TextBlock Text="ВАШ WINDOWS" FontSize="10" Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0"/></StackPanel>
-    <StackPanel DockPanel.Dock="Bottom" Margin="20,20,20,24"><TextBlock Text="●  MagmPaper 0.4.2" FontSize="11" Foreground="{StaticResource SuccessBrush}"/><TextBlock Text="Закрытие окна оставляет обои и оформление в трее." Style="{StaticResource Muted}" FontSize="12" Margin="0,12,0,0"/></StackPanel>
+    <StackPanel DockPanel.Dock="Bottom" Margin="20,20,20,24"><TextBlock Text="●  MagmPaper 0.4.3" FontSize="11" Foreground="{StaticResource SuccessBrush}"/><TextBlock Text="Закрытие окна оставляет обои и оформление в трее." Style="{StaticResource Muted}" FontSize="12" Margin="0,12,0,0"/></StackPanel>
     <StackPanel><TextBlock Text="ПЕРСОНАЛИЗАЦИЯ" FontSize="10" Foreground="{StaticResource MutedBrush}" Margin="26,6,0,12"/>
      <RadioButton x:Name="NavOverview" Content="◫     Обзор" Style="{StaticResource Nav}" GroupName="Navigation" Tag="overview" Click="NavigateClick"/>
      <RadioButton x:Name="NavWallpapers" Content="◈     Обои" Style="{StaticResource Nav}" GroupName="Navigation" Tag="wallpapers" Click="NavigateClick"/>
@@ -30,7 +30,7 @@
        <StackPanel DockPanel.Dock="Bottom" Margin="0,12,0,0"><Button Content="📁  Папка обоев" Click="OpenFolderClick" ToolTip="Открыть GLSL-файлы в Проводнике"/><Button Content="↻  Обновить коллекцию" Click="RefreshClick" Margin="0,8,0,0"/></StackPanel>
        <ListBox x:Name="WallpaperList" SelectionChanged="SelectionChanged"><ListBox.ItemTemplate><DataTemplate><StackPanel><TextBlock Text="{Binding Name}" FontWeight="SemiBold"/><TextBlock Text="{Binding Subtitle}" FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="0,5,0,0"/></StackPanel></DataTemplate></ListBox.ItemTemplate></ListBox>
       </DockPanel></Border>
-      <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto"><StackPanel>
+      <ScrollViewer x:Name="WallpaperScroll" Grid.Column="2" VerticalScrollBarVisibility="Auto"><StackPanel>
        <TextBlock x:Name="WallpaperTitle" Text="Выберите обои" FontSize="22" FontWeight="SemiBold" Margin="0,0,0,12"/>
        <Border BorderThickness="1" BorderBrush="{StaticResource LineBrush}" Background="#08090E" Height="235"><graphics:PreviewHost x:Name="Preview"/></Border>
        <TextBlock x:Name="PauseText" Foreground="{StaticResource AccentBrush}" Margin="0,9,0,8"/>
@@ -78,11 +78,12 @@
      <TextBlock Text="Параметры приложения" Style="{StaticResource Title}"/><TextBlock Text="Удобный запуск и контроль нагрузки на компьютер." Style="{StaticResource Muted}" Margin="0,0,0,24"/>
      <Border Style="{StaticResource Card}"><StackPanel><TextBlock Text="Запуск и взаимодействие" FontSize="21" Margin="0,0,0,12"/><CheckBox x:Name="StartupInput" Content="Запускать с Windows" Click="StartupClick"/><TextBlock Text="При входе в Windows восстановятся последние обои и сохранённое оформление панели." Style="{StaticResource Muted}" FontSize="12"/><CheckBox x:Name="MouseInput" Content="Реакция обоев на мышь" Click="PlaybackChanged" Margin="0,20,0,9"/></StackPanel></Border>
      <Border Style="{StaticResource Card}" Margin="0,20,0,0"><StackPanel><TextBlock Text="Производительность" FontSize="21" Margin="0,0,0,12"/><CheckBox x:Name="CoveredInput" Content="Пауза, когда рабочий стол закрыт окном" Click="PlaybackChanged"/><CheckBox x:Name="BatteryInput" Content="Пауза при работе от батареи" Click="PlaybackChanged"/>
-      <TextBlock Text="Частота кадров обоев" Margin="0,16,0,0"/><ComboBox x:Name="FpsInput" SelectionChanged="PlaybackChanged"><ComboBoxItem Content="15 FPS" Tag="15"/><ComboBoxItem Content="30 FPS" Tag="30"/><ComboBoxItem Content="60 FPS" Tag="60"/></ComboBox>
+      <TextBlock Text="Частота кадров обоев" Margin="0,16,0,0"/><ComboBox x:Name="FpsInput" SelectionChanged="PlaybackChanged"><ComboBoxItem Content="15 FPS" Tag="15"/><ComboBoxItem Content="30 FPS" Tag="30"/><ComboBoxItem Content="60 FPS" Tag="60"/><ComboBoxItem Content="120 FPS" Tag="120"/><ComboBoxItem Content="144 FPS" Tag="144"/><ComboBoxItem Content="165 FPS" Tag="165"/><ComboBoxItem Content="240 FPS" Tag="240"/><ComboBoxItem x:Name="MonitorFpsOption" Content="По частоте монитора" Tag="0"/></ComboBox>
       <TextBlock Text="Качество рендера"/><ComboBox x:Name="QualityInput" SelectionChanged="PlaybackChanged"><ComboBoxItem Content="50% · меньше нагрузка" Tag="0.5"/><ComboBoxItem Content="75% · баланс" Tag="0.75"/><ComboBoxItem Content="100% · максимальная чёткость" Tag="1"/></ComboBox>
-      <TextBlock Text="На паузе кадры не рисуются и мышь не опрашивается. Скрытый предпросмотр также приостанавливается. Снижение качества сохраняет заполнение всего экрана." Style="{StaticResource Muted}" FontSize="12"/>
+      <TextBlock Text="Частота обоев не меняет частоту дисплея Windows. Для экономии оставьте 30–60 FPS; для более плавной анимации выберите частоту монитора. На паузе кадры не рисуются и мышь не опрашивается. Скрытый предпросмотр также приостанавливается. Снижение качества сохраняет заполнение всего экрана." Style="{StaticResource Muted}" FontSize="12"/>
      </StackPanel></Border>
      <TextBlock Text="Настройки сохраняются сразу. Коллекция и резервные копии находятся в папке MagmPaper в AppData." Style="{StaticResource Muted}" Margin="0,24,0,0"/>
+     <Button Content="Скопировать диагностику" Click="CopyDiagnosticsClick" HorizontalAlignment="Left" Margin="0,18,0,0" ToolTip="Состояние рабочего стола и рендерера для разбора проблем"/>
     </StackPanel></ScrollViewer>
    </Grid>
   </Grid>

@@ -31,9 +31,19 @@ void StyledElement::set(xaml::DependencyProperty const& key,Windows::Foundation:
             auto current=saved.lock();auto locked=guard.lock();
             if(!current||!locked||*locked||!current->desired) return;
             *locked=true;
-            try { sender.SetValue(changed,current->desired); } catch(...) {}
+            try {
+                // Explorer initializes/rebinds recycled icons AFTER discovery.
+                // Save its latest value before overriding it; restoring the
+                // initial UnsetValue can otherwise expose a 256px bitmap.
+                current->original=sender.ReadLocalValue(changed);
+                current->binding=nullptr;
+                if(auto control=sender.template try_as<xaml::FrameworkElement>())
+                    if(auto expression=control.GetBindingExpression(changed)) current->binding=expression.ParentBinding();
+                sender.SetValue(changed,current->desired);
+            } catch(...) {}
             *locked=false;
         });
+        property->observing=true;
     }
     property->desired=value;*writing=true;
     try { element.SetValue(key,value); } catch(...) {*writing=false;throw;}
@@ -67,11 +77,16 @@ void StyledElement::apply(const Settings& settings) {
     default:break;
     }
 }
-bool StyledElement::restore() noexcept {
-    bool restored=true;
+void StyledElement::stopObserving() noexcept {
     *writing=true;
     if(auto element=target.get()) for(auto& p:properties) {
-        try { element.UnregisterPropertyChangedCallback(p->key,p->token); } catch(...) {}
+        if(p->observing) try { element.UnregisterPropertyChangedCallback(p->key,p->token);p->observing=false; } catch(...) {}
+    }
+}
+bool StyledElement::restore() noexcept {
+    bool restored=true;
+    stopObserving();
+    if(auto element=target.get()) for(auto& p:properties) {
         try {
             if(p->binding) xaml::Data::BindingOperations::SetBinding(element,p->key,p->binding);
             else if(p->original==xaml::DependencyProperty::UnsetValue()) element.ClearValue(p->key);

@@ -37,7 +37,7 @@ Test("safe filenames, collisions, path traversal and size bounds", (library, pat
     Check(library.Save(null, "A/B:C?", Code).File == "A_B_C_.glsl", "invalid characters");
     Throws(() => Library.ReadCode(library.ShaderDirectory, "../outside.glsl"));
     Throws(() => library.Save(null, "empty", " ")); Throws(() => library.Save(null, "long", new string('a', 100001)));
-    Throws(() => library.Configure(new() { Fps = 144 })); Check(library.State.Settings.Fps == 60, "invalid preferences persisted");
+    Throws(() => library.Configure(new() { Fps = 999 })); Check(library.State.Settings.Fps == 60, "invalid preferences persisted");
 });
 Test("external editing, adding, renaming and deleting files", (library, _) =>
 {
@@ -89,6 +89,22 @@ tests.Add(("appearance wire protocol and motion are compatible", () =>
     Check(PlaybackPolicy.PauseReason(new(), false, false, false) is null, "visible desktop paused");
     Check(PlaybackPolicy.PauseReason(new(), true, false, false) is not null, "locked desktop running");
     Check(new Area(-1920, 0, 0, 1080).Covers(new(-1920, 0, 0, 1032)), "coverage geometry");
+}));
+
+tests.Add(("GLSL extension compatibility preserves conditional semantics and source lines", () =>
+{
+    string source = "#version 100\nprecision mediump float;\n#extension GL_OES_standard_derivatives : enable /* notes\ncontinued */\nvoid main(){gl_FragColor=vec4(1.0);}";
+    string prepared = ShaderSource.Prepare(source);
+    Check(prepared.StartsWith("#version 100\n#extension GL_OES_standard_derivatives : enable\n"), "late extension was not moved into the preamble");
+    Check(prepared.Contains("#line 1\n") && prepared.Contains("/* notes\ncontinued */"), "source line map or multiline comment lost");
+    var guarded = ShaderSource.Prepare("precision mediump float;\n#ifdef GL_OES_standard_derivatives\n#extension GL_OES_standard_derivatives : enable\n#endif\nvoid main(){}");
+    Check(guarded.StartsWith("#ifdef GL_OES_standard_derivatives\n#extension"), "built-in extension guard was lost");
+    string custom = "#define CUSTOM 1\n#if CUSTOM\n#extension GL_OES_standard_derivatives : enable\n#endif\nvoid main(){}";
+    Check(ShaderSource.Prepare(custom) == custom, "user-defined preprocessor state was reordered");
+    string commented = "/*\n#extension GL_fake : require\n*/\n" + Code;
+    Check(ShaderSource.Prepare(commented) == commented, "comment was treated as an extension");
+    foreach (int rate in new[] { 0, 15, 30, 60, 120, 144, 165, 240 }) new PlaybackSettings { Fps = rate }.Validate();
+    Throws(() => new PlaybackSettings { Fps = -1 }.Validate());
 }));
 
 int failed = 0;

@@ -24,6 +24,7 @@ class StyledElement {
         winrt::Windows::Foundation::IInspectable original{nullptr},desired{nullptr};
         xaml::Data::BindingBase binding{nullptr};
         int64_t token=0;
+        bool observing=false;
     };
     winrt::weak_ref<xaml::FrameworkElement> target;
     std::vector<std::shared_ptr<Property>> properties;
@@ -34,6 +35,7 @@ public:
     StyledElement(xaml::FrameworkElement const& element,Kind type):target(element),kind(type){}
     ~StyledElement();
     void apply(const Settings&);
+    void stopObserving() noexcept;
     bool restore() noexcept;
 };
 }

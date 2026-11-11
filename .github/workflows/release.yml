@@ -31,10 +31,13 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           $version = ([xml](Get-Content desktop/Directory.Build.props -Raw)).Project.PropertyGroup.Version
-          if ($env:GITHUB_REF_NAME -ne "v$version") { throw 'Tag and application version differ' }
+          $preview = $env:GITHUB_REF_NAME -match ('^v' + [regex]::Escape($version) + '-rc\d+$')
+          if ($env:GITHUB_REF_NAME -ne "v$version" -and -not $preview) { throw 'Tag and application version differ' }
           $installer = Get-Item "dist/MagmPaper-Setup-$version.exe"
           $archive = Get-Item "dist/MagmPaper-$version-win.zip"
           $checksums = @($installer, $archive) | ForEach-Object { "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $_.Name }
           Set-Content dist/SHA256SUMS.txt $checksums -Encoding utf8NoBOM
-          gh release create $env:GITHUB_REF_NAME $installer.FullName $archive.FullName dist/SHA256SUMS.txt validation/native-interface.png validation/report.json --verify-tag --title "MagmPaper $env:GITHUB_REF_NAME — Native Desktop" --notes-file RELEASE_NOTES.md
+          $flags = @()
+          if ($preview) { $flags += '--prerelease' }
+          gh release create $env:GITHUB_REF_NAME $installer.FullName $archive.FullName dist/SHA256SUMS.txt validation/native-interface.png validation/color-picker.png validation/report.json --verify-tag --title "MagmPaper $env:GITHUB_REF_NAME — Native Desktop" --notes-file RELEASE_NOTES.md @flags
           if ($LASTEXITCODE -ne 0) { throw 'Release publication failed' }

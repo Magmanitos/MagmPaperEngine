@@ -93,7 +93,7 @@ public partial class MainWindow : Window
         if (route == "wallpapers" && !editing && !busy) _ = RunAsync(() => RefreshLibraryAsync(selected?.Id));
     }
     private void NavigateClick(object sender, RoutedEventArgs e) { if ((sender as FrameworkElement)?.Tag is string page) Navigate(page); }
-    private void SyncPreview() => Preview.Surface?.Configure(new(route != "wallpapers" || !IsVisible || WindowState == WindowState.Minimized));
+    private void SyncPreview() => Preview.SetActive(route == "wallpapers" && IsVisible && WindowState != WindowState.Minimized);
     private void ShowPlayback() => PauseText.Text = wallpapers.PauseReason is { } reason ? "Обои на паузе: " + reason : "";
     private void RenderList(string? id)
     {
@@ -164,8 +164,9 @@ public partial class MainWindow : Window
     private void FillPreferences()
     {
         filling = true; var settings = library.State.Settings;
+        MonitorFpsOption.Content = $"По частоте монитора · {Win32.RefreshRate()} Гц";
         MouseInput.IsChecked = settings.MouseEnabled; CoveredInput.IsChecked = settings.PauseWhenCovered; BatteryInput.IsChecked = settings.PauseOnBattery;
-        FpsInput.SelectedIndex = Array.IndexOf(new[] { 15, 30, 60 }, settings.Fps); QualityInput.SelectedIndex = Array.IndexOf(new[] { .5, .75, 1 }, settings.RenderScale);
+        FpsInput.SelectedIndex = Array.IndexOf(new[] { 15, 30, 60, 120, 144, 165, 240, 0 }, settings.Fps); QualityInput.SelectedIndex = Array.IndexOf(new[] { .5, .75, 1 }, settings.RenderScale);
         try { StartupInput.IsChecked = SystemSettings.StartupEnabled; } catch (Exception error) { Status(error.Message, true); }
         filling = false;
     }
@@ -177,7 +178,7 @@ public partial class MainWindow : Window
             try
             {
                 library.Configure(new PlaybackSettings { MouseEnabled = MouseInput.IsChecked == true, PauseWhenCovered = CoveredInput.IsChecked == true, PauseOnBattery = BatteryInput.IsChecked == true,
-                    Fps = new[] { 15, 30, 60 }[Math.Max(0, FpsInput.SelectedIndex)], RenderScale = new[] { .5, .75, 1 }[Math.Max(0, QualityInput.SelectedIndex)] });
+                    Fps = new[] { 15, 30, 60, 120, 144, 165, 240, 0 }[Math.Max(0, FpsInput.SelectedIndex)], RenderScale = new[] { .5, .75, 1 }[Math.Max(0, QualityInput.SelectedIndex)] });
                 wallpapers.Refresh(); Status("Параметры сохранены."); return Task.CompletedTask;
             }
             finally { FillPreferences(); }
@@ -248,9 +249,8 @@ public partial class MainWindow : Window
     }
     private void ColorClick(object sender, RoutedEventArgs e)
     {
-        using var dialog = new System.Windows.Forms.ColorDialog { FullOpen = true };
-        try { dialog.Color = global::System.Drawing.ColorTranslator.FromHtml(ColorInput.Text); } catch { }
-        if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK) ColorInput.Text = "#" + (dialog.Color.ToArgb() & 0xffffff).ToString("X6");
+        var dialog = new Views.ColorPicker(ColorInput.Text) { Owner = this };
+        if (dialog.ShowDialog() == true) ColorInput.Text = dialog.SelectedColor;
     }
     private async void ApplyLegacyClick(object sender, RoutedEventArgs e) => await RunAsync(async () =>
     {
@@ -260,6 +260,11 @@ public partial class MainWindow : Window
     private void RefreshTaskbarClick(object sender, RoutedEventArgs e) { FillBehavior(); FillAppearance(); }
     private void LegacyHelpClick(object sender, RoutedEventArgs e) => OpenTarget("https://windhawk.net/mods/taskbar-icon-size");
     private void OpenWindowsClick(object sender, RoutedEventArgs e) => OpenTarget("ms-settings:taskbar");
+    private void CopyDiagnosticsClick(object sender, RoutedEventArgs e)
+    {
+        try { Clipboard.SetText(wallpapers.DiagnosticReport()); Status("Диагностика скопирована. Код и названия ваших обоев в неё не входят."); }
+        catch (Exception error) { Status(error.Message, true); }
+    }
     private void MinimizeClick(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
     private void MaximizeClick(object sender, RoutedEventArgs e) => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
     private void HideClick(object sender, RoutedEventArgs e) => Hide();

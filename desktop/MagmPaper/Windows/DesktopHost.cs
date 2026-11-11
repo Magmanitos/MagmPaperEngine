@@ -8,7 +8,17 @@ internal static class DesktopHost
     {
         var progman = Win32.FindWindow("Progman", null);
         if (progman == 0) throw new IOException("Рабочий стол Explorer ещё не готов.");
-        Win32.SendMessageTimeout(progman, 0x052c, 0, 0, 2, 2000, out _);
+        Win32.SendMessageTimeout(progman, 0x052c, 0xd, 1, 2, 2000, out _);
+        // Windows 11 24H2/HDR desktops place DefView and WorkerW under a
+        // non-redirected Progman. Our layered child belongs BETWEEN them,
+        // not inside the opaque WorkerW which renders the static wallpaper.
+        if (IsRaised(progman))
+        {
+            if (Win32.FindWindowEx(progman, 0, "SHELLDLL_DefView", null) == 0 ||
+                Win32.FindWindowEx(progman, 0, "WorkerW", null) == 0)
+                throw new IOException("Windows ещё создаёт слои рабочего стола. Повторите установку обоев.");
+            Fit(window, progman); return progman;
+        }
         nint worker = 0;
         Win32.EnumWindows((hwnd, _) =>
         {
@@ -22,14 +32,31 @@ internal static class DesktopHost
     }
     public static void Fit(nint window, nint worker)
     {
+        bool raised = IsRaised(worker);
+        Fit(window, worker, raised ? Win32.FindWindowEx(worker, 0, "SHELLDLL_DefView", null) : 0,
+            raised ? Win32.FindWindowEx(worker, 0, "WorkerW", null) : 0);
+    }
+    internal static void Fit(nint window, nint worker, nint icons, nint background)
+    {
         var rect = Win32.PrimaryMonitor().Monitor;
         var style = (uint)Win32.GetWindowLongPtr(window, Win32.Style);
         Win32.SetWindowLongPtr(window, Win32.Style, (nint)((style & ~(Win32.Popup | 0x00c40000)) | Win32.Child));
         Win32.SetParent(window, worker);
         if (Win32.GetParent(window) != worker) throw new IOException("Не удалось прикрепить обои за значками рабочего стола.");
         var point = new Win32.Point(rect.Left, rect.Top); Win32.MapWindowPoints(0, worker, ref point, 1);
-        if (!Win32.SetWindowPos(window, 0, point.X, point.Y, rect.Width, rect.Height, 0x0034)) throw new Win32Exception();
+        if (!Win32.SetWindowPos(window, icons, point.X, point.Y, rect.Width, rect.Height, icons != 0 ? 0x0030u : 0x0034u)) throw new Win32Exception();
+        if (icons != 0)
+        {
+            if (background != 0) Win32.SetWindowPos(background, 1, 0, 0, 0, 0, 0x13);
+        }
         Win32.ShowWindow(window, 4);
+    }
+    private static bool IsRaised(nint parent) => ((uint)Win32.GetWindowLongPtr(parent, Win32.ExtendedStyle) & 0x00200000) != 0;
+    internal static void EnsureOrder(nint window, nint parent)
+    {
+        if (!IsRaised(parent)) return;
+        var icons = Win32.FindWindowEx(parent, 0, "SHELLDLL_DefView", null);
+        if (icons != 0 && Win32.GetWindow(window, 3) != icons) Fit(window, parent);
     }
     public static bool Covered(nint wallpaper)
     {

@@ -14,7 +14,7 @@ public sealed record PlaybackSettings
     public double RenderScale { get; init; } = 1;
     public PlaybackSettings Validate()
     {
-        if (Fps is not (15 or 30 or 60) || RenderScale is not (0.5 or 0.75 or 1))
+        if (Fps is not (0 or 15 or 30 or 60 or 120 or 144 or 165 or 240) || RenderScale is not (0.5 or 0.75 or 1))
             throw new InvalidDataException("Некорректные параметры производительности.");
         return this;
     }
