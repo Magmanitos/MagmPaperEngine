@@ -73,6 +73,7 @@ int main() try {
     xaml::Shapes::Rectangle background;background.Name(L"BackgroundFill");auto original=xaml::Media::SolidColorBrush(Windows::UI::Color{255,20,30,40});background.Fill(original);frame.Children().Append(background);
     xaml::Controls::Button widgets;widgets.Name(L"MagmPaper.Test.Widgets");frame.Children().Append(widgets);
     source.Content(root);
+    until([&]{return root.IsLoaded();},"test XAML content did not load");
     StyledElement styledFrame(frame,Kind::Frame),styledIcon(icon,Kind::Icon),styledBackground(background,Kind::Background),styledWidgets(widgets,Kind::Widgets);
     settings.enabled=1;settings.height=64;settings.icon=40;settings.button=52;settings.opacity=25;settings.color=0x123456;settings.hideWidgets=1;settings.radius=8;
     styledFrame.apply(settings);styledIcon.apply(settings);styledBackground.apply(settings);styledWidgets.apply(settings);root.UpdateLayout();
