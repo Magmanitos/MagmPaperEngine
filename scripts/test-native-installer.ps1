@@ -27,7 +27,13 @@ function Stop-App {
   Wait-Until { @(Get-Process MagmPaper -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe }).Count -eq 0 } 'Application did not stop'
 }
 function Install-App($setup = $installer[0].FullName) {
-  $process = Start-Process -FilePath $setup -ArgumentList '/S', '/currentuser' -Wait -PassThru
+  Write-Output "::notice::Installing $setup"
+  $process = Start-Process -FilePath $setup -ArgumentList '/S', '/currentuser' -PassThru
+  if (-not $process.WaitForExit(180000)) {
+    $windows = Get-Process | Where-Object { $_.ProcessName -like '*MagmPaper*' } | Select-Object ProcessName, Id, MainWindowTitle | Out-String
+    $process.Kill($true)
+    throw "Installer timed out: $setup`n$windows"
+  }
   Assert ($process.ExitCode -eq 0) "Installer failed: $($process.ExitCode)"
 }
 Assert (-not (Test-Path $installDir)) 'Runner already has an installation'
@@ -56,6 +62,7 @@ try {
   Assert (-not (Get-ItemProperty -Path $runKey -Name $startupName -ErrorAction SilentlyContinue)) 'Installation enabled autostart without user preference'
   # Launch by the real shortcut, without Node.js or the source checkout.
   $null = $shell.Run(('"{0}"' -f $desktopLink), 1, $false)
+  Write-Output '::notice::Checking published Electron launch and migration'
   Wait-Until { Test-Path $library } 'Installed app did not migrate the existing collection'
   Start-Sleep -Seconds 2
   Assert (@(Get-Process MagmPaper -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe }).Count -gt 0) 'Installed application exited unexpectedly'
@@ -72,6 +79,7 @@ try {
   New-Item -Path $runKey -Force | Out-Null
   Set-ItemProperty -Path $runKey -Name $startupName -Value '"C:\Old source\electron.exe" "C:\Old source\MagmPaper" --autostart'
   Install-App
+  Write-Output '::notice::Checking native upgrade files, metadata and preserved data'
   Assert ((Get-Content $library -Raw) -eq $saved) 'Reinstallation modified user data'
   Assert ((Get-Content $taskbarBackup -Raw) -eq $savedTaskbar) 'Upgrade changed taskbar recovery settings'
   Assert ((Get-ItemPropertyValue -Path $runKey -Name $startupName) -eq ('"{0}" --autostart' -f $exe)) 'Installer did not relocate autostart'
@@ -84,6 +92,7 @@ try {
   $entries = @(Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' | Where-Object { $_.DisplayName -eq 'MagmPaper' })
   Assert ($entries.Count -eq 1 -and $entries[0].DisplayVersion -eq '0.4.0') 'Upgrade did not replace the old installed-apps registration'
   $null = $shell.Run(('"{0}"' -f $desktopLink), 1, $false)
+  Write-Output '::notice::Checking native installed launch'
   Wait-Until { (Get-Content $library -Raw | ConvertFrom-Json).version -eq 2 } 'Installed upgrade did not migrate to GLSL files'
   Start-Sleep -Seconds 2
   Assert (@(Get-Process MagmPaper -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe }).Count -gt 0) 'Upgraded application exited'
@@ -110,7 +119,9 @@ try {
   Start-Sleep -Seconds 2
   $uninstaller = Join-Path $installDir 'Uninstall MagmPaper.exe'
   Assert (Test-Path $uninstaller) 'Uninstaller missing'
-  $process = Start-Process -FilePath $uninstaller -ArgumentList '/S', '/currentuser' -Wait -PassThru
+  Write-Output '::notice::Checking graceful native uninstall'
+  $process = Start-Process -FilePath $uninstaller -ArgumentList '/S', '/currentuser' -PassThru
+  if (-not $process.WaitForExit(120000)) { $process.Kill($true); throw 'Uninstaller timed out' }
   Assert ($process.ExitCode -eq 0) 'Uninstaller failed'
   Wait-Until { -not (Test-Path $exe) -and -not (Test-Path $desktopLink) -and -not (Test-Path $menuLink) } 'Uninstall did not remove application and shortcuts'
   Assert (Test-Path $unrelated) 'Uninstaller removed unrelated files'

@@ -126,9 +126,18 @@ Section "Uninstall"
   ExecWait '"$INSTDIR\MagmPaper.exe" --quit'
   ; Only delete files shipped by this build. Never traverse AppData or remove
   ; unrelated files someone placed in the installation directory.
-  ClearErrors
-  Delete "$INSTDIR\MagmPaper.exe"
-  ${If} ${Errors}
+  StrCpy $0 0
+  ${Do}
+    ClearErrors
+    Delete "$INSTDIR\MagmPaper.exe"
+    ${IfNot} ${Errors}
+      ${ExitDo}
+    ${EndIf}
+    ; CLR shutdown can briefly retain the image after the instance mutex exits.
+    Sleep 100
+    IntOp $0 $0 + 1
+  ${LoopWhile} $0 < 50
+  ${If} ${FileExists} "$INSTDIR\MagmPaper.exe"
     MessageBox MB_ICONSTOP "Завершите MagmPaper через трей (сохраните изменения в редакторе), затем повторите удаление."
     SetErrorLevel 1
     Abort
