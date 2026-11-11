@@ -87,7 +87,7 @@ public partial class MainWindow : Window
         TaskbarPage.Visibility = route == "taskbar" ? Visibility.Visible : Visibility.Collapsed;
         SettingsPage.Visibility = route == "settings" ? Visibility.Visible : Visibility.Collapsed;
         NavOverview.IsChecked = route == "overview"; NavWallpapers.IsChecked = route == "wallpapers"; NavTaskbar.IsChecked = route == "taskbar"; NavSettings.IsChecked = route == "settings";
-        try { DataFiles.Write(uiFile, new { route }); } catch (IOException error) { Status(error.Message, true); }
+        try { DataFiles.Write(uiFile, new { route }); } catch (Exception error) when (error is IOException or UnauthorizedAccessException) { Status(error.Message, true); }
         if (route == "taskbar") { FillBehavior(); UpdateAppearanceStatus(); }
         if (route == "settings") FillPreferences();
         if (route == "wallpapers" && !editing && !busy) _ = RunAsync(() => RefreshLibraryAsync(selected?.Id));
@@ -153,7 +153,9 @@ public partial class MainWindow : Window
         if (selected is null || MessageBox.Show(this, $"Удалить обои «{selected.Name}» и их GLSL-файл?", "Удаление обоев", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
         await RunAsync(async () => { var id = selected.Id; if (library.State.ActiveId == id) wallpapers.Stop(); library.Remove(id); await RefreshLibraryAsync(); Status("Обои удалены."); });
     }
-    private void OpenFolderClick(object sender, RoutedEventArgs e) { try { SystemSettings.Open(library.ShaderDirectory); } catch (Exception error) { Status(error.Message, true); } }
+    private void OpenTarget(string target) { try { SystemSettings.Open(target); } catch (Exception error) { Status(error.Message, true); } }
+    internal void OpenCollectionFolder() => OpenTarget(library.ShaderDirectory);
+    private void OpenFolderClick(object sender, RoutedEventArgs e) => OpenCollectionFolder();
     private async void RefreshClick(object sender, RoutedEventArgs e)
     {
         if (editing) { Status("Сначала сохраните или отмените изменения в редакторе."); return; }
@@ -256,8 +258,8 @@ public partial class MainWindow : Window
     });
     private async void RestoreLegacyClick(object sender, RoutedEventArgs e) => await RunAsync(async () => { try { await PlatformSettings.ApplyLegacyAsync(new(), true); Status("Прежние размеры возвращены."); } finally { FillBehavior(); } });
     private void RefreshTaskbarClick(object sender, RoutedEventArgs e) { FillBehavior(); FillAppearance(); }
-    private void LegacyHelpClick(object sender, RoutedEventArgs e) => SystemSettings.Open("https://windhawk.net/mods/taskbar-icon-size");
-    private void OpenWindowsClick(object sender, RoutedEventArgs e) => SystemSettings.Open("ms-settings:taskbar");
+    private void LegacyHelpClick(object sender, RoutedEventArgs e) => OpenTarget("https://windhawk.net/mods/taskbar-icon-size");
+    private void OpenWindowsClick(object sender, RoutedEventArgs e) => OpenTarget("ms-settings:taskbar");
     private void MinimizeClick(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
     private void MaximizeClick(object sender, RoutedEventArgs e) => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
     private void HideClick(object sender, RoutedEventArgs e) => Hide();

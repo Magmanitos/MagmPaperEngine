@@ -85,7 +85,7 @@ public partial class App : Application
             tray = new System.Windows.Forms.NotifyIcon { Icon = new System.Drawing.Icon(iconStream), Text = "MagmPaper", Visible = true };
             var menu = new System.Windows.Forms.ContextMenuStrip();
             menu.Items.Add("Открыть MagmPaper", null, (_, _) => Dispatcher.Invoke(OpenManager));
-            menu.Items.Add("Папка обоев", null, (_, _) => SystemSettings.Open(library.ShaderDirectory));
+            menu.Items.Add("Папка обоев", null, (_, _) => Dispatcher.Invoke(manager.OpenCollectionFolder));
             menu.Items.Add("Параметры", null, (_, _) => Dispatcher.Invoke(() => { OpenManager(); manager.Navigate("settings"); }));
             menu.Items.Add("Остановить обои", null, (_, _) => Dispatcher.Invoke(() => { try { wallpapers.Stop(); } catch (Exception error) { manager.Status(error.Message, true); } }));
             menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
