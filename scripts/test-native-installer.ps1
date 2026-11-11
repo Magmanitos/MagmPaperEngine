@@ -1,5 +1,6 @@
 # Exercise the actual packaged installer on the disposable Windows CI runner.
 $ErrorActionPreference = 'Stop'
+$version = ([xml](Get-Content "$PSScriptRoot/../desktop/Directory.Build.props" -Raw)).Project.PropertyGroup.Version
 if ($env:GITHUB_ACTIONS -ne 'true') { throw 'Run this installation test only on a disposable GitHub Actions runner.' }
 $installer = @(Get-ChildItem "$PSScriptRoot/../dist/MagmPaper-Setup-*.exe")
 if ($installer.Count -ne 1) { throw 'Expected exactly one installer' }
@@ -92,9 +93,9 @@ try {
   }
   Assert (@(Get-ChildItem (Join-Path $installDir 'taskbar')).Count -eq 2) 'Test harness must not ship in installer'
   Assert ((Get-Content $appearance -Raw) -eq $savedAppearance) 'Upgrade changed appearance preferences'
-  Assert ((Get-Item $exe).VersionInfo.ProductVersion -like '0.4.0*') 'Upgrade left the old executable'
+  Assert ((Get-Item $exe).VersionInfo.ProductVersion -like "$version*") 'Upgrade left the old executable'
   $entries = @(Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' | Where-Object { $_.DisplayName -eq 'MagmPaper' })
-  Assert ($entries.Count -eq 1 -and $entries[0].DisplayVersion -eq '0.4.0') 'Upgrade did not replace the old installed-apps registration'
+  Assert ($entries.Count -eq 1 -and $entries[0].DisplayVersion -eq $version) 'Upgrade did not replace the old installed-apps registration'
   $null = $shell.Run(('"{0}"' -f $desktopLink), 1, $false)
   Write-Output '::notice::Checking native installed launch'
   Wait-Until { (Get-Content $library -Raw | ConvertFrom-Json).version -eq 2 } 'Installed upgrade did not migrate to GLSL files'
