@@ -136,8 +136,10 @@ int main() try {
             "last alias restores native dimensions, never an earlier alias's override");
         StyledElement primary(recycled,Kind::Icon),secondary(recycled,Kind::Icon);
         primary.apply(settings);secondary.apply(settings);recycled.Width(28);
+        primary.stopObserving();secondary.stopObserving();
         require(secondary.restore()&&primary.restore()&&recycled.Width()==28,"restore aliased snapshot exactly once in either order");
         primary.apply(settings);secondary.apply(settings);
+        primary.stopObserving();secondary.stopObserving();
         require(primary.restore()&&secondary.restore()&&recycled.Width()==28,"shared snapshot can be reapplied after disable");
     }
     std::cout<<"PASS: direct XAML styling and restoration. Starting helper attachment."<<std::endl;
