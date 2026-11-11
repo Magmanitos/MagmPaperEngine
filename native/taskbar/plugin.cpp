@@ -20,6 +20,7 @@ const UINT attachMessage=RegisterWindowMessageW(AttachMessage);
 const UINT updateMessage=RegisterWindowMessageW(UpdateMessage);
 const UINT stopMessage=RegisterWindowMessageW(StopMessage);
 constexpr UINT Revisit=WM_APP+44;
+constexpr UINT_PTR RevisitTimer=0x4d47;
 const CLSID TapClass={0x0476aa92,0x2461,0x4c27,{0xb2,0xe2,0x86,0x6f,0x66,0x92,0x42,0x09}};
 // XAML's diagnostics lifetime interface: release each diagnostic handle once
 // discovery finishes. Keeping these handles would retain removed shell elements.
@@ -28,12 +29,13 @@ struct __declspec(uuid("735941a2-3ee3-495a-8da9-972627003075")) DiagnosticsLifet
     virtual HRESULT STDMETHODCALLTYPE TryGetDispatcherQueueForObject(InstanceHandle,void**)=0;
 };
 struct Bar { HWND window; RECT original; UINT originalDpi=96; bool resized=false; RECT writtenWork{}; bool changedWork=false; };
+struct PendingElement { weak_ref<xaml::FrameworkElement> element; ULONGLONG deadline; };
 struct Context {
     HWND window=nullptr;
     Slot* slot=nullptr;
     std::vector<Bar> bars;
     std::unordered_map<InstanceHandle,std::unique_ptr<StyledElement>> elements;
-    std::unordered_map<InstanceHandle,weak_ref<xaml::FrameworkElement>> pending;
+    std::unordered_map<InstanceHandle,PendingElement> pending;
     Settings settings{};
     bool revisitQueued=false;
     com_ptr<DiagnosticsLifetime> lifetime;
@@ -182,45 +184,62 @@ bool underTaskbar(xaml::FrameworkElement element) {
     }
     return false;
 }
-void remember(Context& ctx,InstanceHandle id,xaml::FrameworkElement element,const std::wstring& type) {
+bool remember(Context& ctx,InstanceHandle id,xaml::FrameworkElement element,const std::wstring& type) {
     auto kind=classify(type,std::wstring(element.Name()),underTaskbar(element));
-    if(kind==Kind::None) return;
-    if(ctx.elements.contains(id)) return;
-    ctx.elements.emplace(id,std::make_unique<StyledElement>(element,kind));
+    if(kind==Kind::None) return false;
+    bool added=!ctx.elements.contains(id),complete=true;
+    if(added) ctx.elements.emplace(id,std::make_unique<StyledElement>(element,kind));
     if(kind==Kind::Frame) {
-        InterlockedIncrement(&ctx.slot->frames);
+        if(added) InterlockedIncrement(&ctx.slot->frames);
         // The outer XAML island content grid also constrains the frame's height.
         auto parent=xaml::Media::VisualTreeHelper::GetParent(element).try_as<xaml::FrameworkElement>();
         if(parent) {
             auto parentId=reinterpret_cast<InstanceHandle>(get_abi(parent));
-            if(!ctx.elements.contains(parentId)) ctx.elements.emplace(parentId,std::make_unique<StyledElement>(parent,Kind::Content));
+            if(!ctx.elements.contains(parentId)) {
+                auto styled=std::make_unique<StyledElement>(parent,Kind::Content);
+                if(ctx.settings.enabled) styled->apply(ctx.settings);
+                ctx.elements.emplace(parentId,std::move(styled));
+            }
         }
+        else complete=false;
     }
-    if(kind==Kind::Icon) InterlockedIncrement(&ctx.slot->icons);
-    if(kind==Kind::Background) InterlockedIncrement(&ctx.slot->backgrounds);
-    if(ctx.settings.enabled) ctx.elements.at(id)->apply(ctx.settings);
+    if(added&&kind==Kind::Icon) InterlockedIncrement(&ctx.slot->icons);
+    if(added&&kind==Kind::Background) InterlockedIncrement(&ctx.slot->backgrounds);
+    if(added&&ctx.settings.enabled) ctx.elements.at(id)->apply(ctx.settings);
+    return complete;
 }
 LRESULT CALLBACK contextProcedure(HWND window,UINT message,WPARAM wp,LPARAM lp) {
     auto ctx=reinterpret_cast<Context*>(GetWindowLongPtrW(window,GWLP_USERDATA));
     if(message==WM_NCCREATE) {ctx=static_cast<Context*>(reinterpret_cast<CREATESTRUCT*>(lp)->lpCreateParams);SetWindowLongPtrW(window,GWLP_USERDATA,reinterpret_cast<LONG_PTR>(ctx));}
     if(!ctx) return DefWindowProcW(window,message,wp,lp);
     try {
-        if(message==Revisit) {
-            ctx->revisitQueued=false;
+        if(message==Revisit||(message==WM_TIMER&&wp==RevisitTimer)) {
+            bool refresh=message==Revisit;
+            if(refresh) ctx->revisitQueued=false;
             auto pending=std::move(ctx->pending);ctx->pending.clear();
-            for(auto& [id,weak]:pending) if(auto element=weak.get()) remember(*ctx,id,element,std::wstring(get_class_name(element)));
+            for(auto& [id,entry]:pending) if(auto element=entry.element.get()) {
+                if(remember(*ctx,id,element,std::wstring(get_class_name(element)))) refresh=true;
+                else if(GetTickCount64()<entry.deadline) ctx->pending.emplace(id,std::move(entry));
+            }
+            // Retry only the short template/parent initialization burst. There
+            // is no polling timer once all candidates settle or expire.
+            if(ctx->pending.empty()) KillTimer(window,RevisitTimer);
+            else SetTimer(window,RevisitTimer,100,nullptr);
             if(ctx->lifetime) for(auto id:ctx->releases) ctx->lifetime->UnregisterInstance(id);
             ctx->releases.clear();
-            update(*ctx);return 0;
+            if(refresh) update(*ctx);return 0;
         }
         if(message==updateMessage) {update(*ctx);return 0;}
         if(message==stopMessage) {
             stopping=true;
+            KillTimer(window,RevisitTimer);
             ctx->settings.enabled=0;
             restoreElements(*ctx);
             resizeBars(*ctx,false);
             for(auto& bar:ctx->bars) RemoveWindowSubclass(bar.window,barProcedure,1);
             ctx->elements.clear();ctx->pending.clear();
+            if(ctx->lifetime) for(auto id:ctx->releases) ctx->lifetime->UnregisterInstance(id);
+            ctx->releases.clear();
             ctx->slot->window=0;InterlockedExchange(&ctx->slot->thread,0);
             DestroyWindow(window);context=nullptr;delete ctx;return 0;
         }
@@ -261,10 +280,13 @@ struct Watcher:implements<Watcher,IVisualTreeServiceCallback2> {
                 check_hresult(diagnostics->GetIInspectableFromHandle(element.Handle,reinterpret_cast<::IInspectable**>(put_abi(object))));
                 if(auto value=object.try_as<xaml::FrameworkElement>()) {
                     auto type=std::wstring(get_class_name(value));
-                    if(classify(type,std::wstring(value.Name()),true)!=Kind::None) {
-                        remember(*ctx,element.Handle,value,type);
-                        // Parent links can become available only after Add returns.
-                        ctx->pending.insert_or_assign(element.Handle,make_weak(value));
+                    bool deferredIcon=(ctx->slot->frames>0||!ctx->bars.empty())&&
+                        (type==L"Windows.UI.Xaml.Controls.Image"||type==L"Windows.UI.Xaml.Controls.ImageIcon"||type==L"Microsoft.UI.Xaml.Controls.AnimatedVisualPlayer");
+                    if(classify(type,std::wstring(value.Name()),true)!=Kind::None||deferredIcon) {
+                        // Names and parent links can appear after the diagnostic
+                        // Add callback, including when a taskbar icon is recycled.
+                        if(!remember(*ctx,element.Handle,value,type))
+                            ctx->pending.insert_or_assign(element.Handle,PendingElement{make_weak(value),GetTickCount64()+1000});
                     }
                 }
             } else if(mutation==Remove) {

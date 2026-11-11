@@ -1,9 +1,13 @@
 #include "styles.h"
 #include <winrt/Windows.UI.Xaml.Hosting.h>
+#include <winrt/Windows.UI.Xaml.Media.Animation.h>
+#include <winrt/Windows.UI.Xaml.Media.Imaging.h>
 #include <windows.ui.xaml.hosting.desktopwindowxamlsource.h>
 #include <iostream>
 #include <stdexcept>
 #include <functional>
+#include <chrono>
+#include <cmath>
 
 using namespace magm;
 using namespace winrt;
@@ -90,6 +94,51 @@ int main() try {
         settings.enabled=0;styled.apply(settings);
         require(late.Width()==28&&late.Height()==28,"restore late Explorer dimensions instead of natural bitmap size");
     }
+    {
+        // Visual-state animations report effective-value changes while the
+        // local value is still our override. It must never become the baseline.
+        xaml::Controls::Image animated;animated.Width(24);animated.Height(24);
+        animated.Source(xaml::Media::Imaging::WriteableBitmap(256,256));
+        animated.MinWidth(64);animated.MinHeight(64);frame.Children().Append(animated);
+        StyledElement styled(animated,Kind::Icon);settings.enabled=1;styled.apply(settings);
+        root.UpdateLayout();
+        require(animated.ActualWidth()==40&&animated.ActualHeight()==40,"constrain arranged bitmap size despite native minimums");
+        int ownValueNotifications=0;
+        auto observation=animated.RegisterPropertyChangedCallback(xaml::FrameworkElement::WidthProperty(),[&](auto const& sender,auto const& key){
+            if(unbox_value<double>(sender.ReadLocalValue(key))==40) ownValueNotifications++;
+        });
+        xaml::Media::Animation::DoubleAnimation animation;
+        animation.To(96);animation.EnableDependentAnimation(true);
+        animation.Duration(xaml::DurationHelper::FromTimeSpan(std::chrono::milliseconds(50)));
+        xaml::Media::Animation::Storyboard::SetTarget(animation,animated);
+        xaml::Media::Animation::Storyboard::SetTargetProperty(animation,L"Width");
+        xaml::Media::Animation::Storyboard storyboard;storyboard.Children().Append(animation);storyboard.Begin();
+        until([&]{return animated.Width()==96;},"icon storyboard did not animate its effective width");
+        root.UpdateLayout();
+        require(ownValueNotifications>0,"exercise notification with our unchanged local override");
+        require(animated.ActualWidth()==40&&animated.ActualHeight()==40,"animated icon stays inside configured layout size");
+        storyboard.Stop();animated.UnregisterPropertyChangedCallback(xaml::FrameworkElement::WidthProperty(),observation);
+        require(styled.restore(),"restore animated icon");
+        require(animated.Width()==24&&animated.Height()==24&&animated.MinWidth()==64&&animated.MinHeight()==64,
+            "animation must not replace native restoration values with our own overrides");
+        uint32_t index=0;require(frame.Children().IndexOf(animated,index),"find animated test icon");frame.Children().RemoveAt(index);
+    }
+    {
+        // Repeated diagnostic handles for the same object share one snapshot.
+        xaml::Controls::Image recycled;recycled.Width(24);recycled.Height(24);
+        auto first=std::make_unique<StyledElement>(recycled,Kind::Icon);settings.enabled=1;first->apply(settings);
+        auto alias=std::make_unique<StyledElement>(recycled,Kind::Icon);alias->apply(settings);
+        first.reset();
+        require(recycled.Width()==40,"removing one diagnostic alias must not restore a still-owned icon");
+        alias.reset();
+        require(recycled.Width()==24&&recycled.Height()==24&&recycled.MinWidth()==0,
+            "last alias restores native dimensions, never an earlier alias's override");
+        StyledElement primary(recycled,Kind::Icon),secondary(recycled,Kind::Icon);
+        primary.apply(settings);secondary.apply(settings);recycled.Width(28);
+        require(secondary.restore()&&primary.restore()&&recycled.Width()==28,"restore aliased snapshot exactly once in either order");
+        primary.apply(settings);secondary.apply(settings);
+        require(primary.restore()&&secondary.restore()&&recycled.Width()==28,"shared snapshot can be reapplied after disable");
+    }
     std::cout<<"PASS: direct XAML styling and restoration. Starting helper attachment."<<std::endl;
     {
         Host host;host.send("1 1 64 40 52 1193046 25 1 8\n");host.applied(1);
@@ -105,9 +154,23 @@ int main() try {
     {
         Host restarted;restarted.send("1 1 60 32 48 3355443 50 0 0\n");restarted.applied(1);
         require(frame.Height()==60&&icon.Width()==32,"reconnect after host termination");
+        // A running application can recreate its icon before the template has
+        // assigned its name. Discover it after that first diagnostic callback.
+        xaml::Controls::Image delayed;delayed.Width(24);delayed.Height(24);
+        delayed.Source(xaml::Media::Imaging::WriteableBitmap(256,256));frame.Children().Append(delayed);
+        auto delay=GetTickCount64()+250;until([&]{return GetTickCount64()>=delay;},"wait for deferred icon initialization");
+        delayed.Name(L"Icon");
+        until([&]{return delayed.Width()==32;},"module missed a late-named running application icon");
+        root.UpdateLayout();require(delayed.ActualWidth()==32&&delayed.ActualHeight()==32,"late icon bitmap has the configured visible size");
         icon.Width(28);icon.Height(28);
         restarted.close();
         until([&]{return frame.Height()==48&&icon.Width()==28&&icon.Height()==28&&background.Fill()==original;},"normal helper exit did not restore latest shell sizes");
+        root.UpdateLayout();
+        require(delayed.Width()==24&&delayed.Height()==24&&delayed.ActualWidth()==24&&delayed.ActualHeight()==24,
+            "normal exit restores the visible size of a late running application icon");
+        require(delayed.MinWidth()==0&&std::isinf(delayed.MaxWidth()),"exit removes custom icon constraints");
+        delayed.Width(20);require(delayed.Width()==20,"normal exit removes callbacks from late icons");
+        uint32_t index=0;require(frame.Children().IndexOf(delayed,index),"find delayed test icon");frame.Children().RemoveAt(index);
         std::cout<<"PASS: helper reconnection. Closing XAML source."<<std::endl;
     }
     {

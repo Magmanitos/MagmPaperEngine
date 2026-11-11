@@ -14,6 +14,7 @@
 #include <winrt/Windows.UI.Xaml.Shapes.h>
 #include <vector>
 #include <memory>
+#include <unordered_map>
 namespace magm {
 namespace xaml=winrt::Windows::UI::Xaml;
 enum class Kind { None, Frame, Content, Tray, Background, Stroke, Icon, Button, Widgets };
@@ -26,13 +27,20 @@ class StyledElement {
         int64_t token=0;
         bool observing=false;
     };
-    winrt::weak_ref<xaml::FrameworkElement> target;
-    std::vector<std::shared_ptr<Property>> properties;
-    std::shared_ptr<bool> writing=std::make_shared<bool>(false);
+    struct State {
+        winrt::weak_ref<xaml::FrameworkElement> target;
+        std::vector<std::shared_ptr<Property>> properties;
+        std::shared_ptr<bool> writing=std::make_shared<bool>(false);
+        explicit State(xaml::FrameworkElement const& element):target(element){}
+    };
+    using Registry=std::unordered_map<uintptr_t,std::weak_ptr<State>>;
+    static Registry& registry();
+    uintptr_t identity;
+    std::shared_ptr<State> state;
     void set(xaml::DependencyProperty const&,winrt::Windows::Foundation::IInspectable const&);
 public:
     Kind kind;
-    StyledElement(xaml::FrameworkElement const& element,Kind type):target(element),kind(type){}
+    StyledElement(xaml::FrameworkElement const& element,Kind type);
     ~StyledElement();
     void apply(const Settings&);
     void stopObserving() noexcept;
