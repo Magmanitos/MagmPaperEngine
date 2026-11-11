@@ -86,6 +86,6 @@
     </StackPanel></ScrollViewer>
    </Grid>
   </Grid>
-  <Border Grid.Row="2" Background="#14151D" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0" Padding="18,10"><DockPanel><ProgressBar x:Name="BusyIndicator" DockPanel.Dock="Right" Width="80" Height="3" IsIndeterminate="True" Visibility="Collapsed" Margin="14,0,0,0"/><TextBlock x:Name="StatusText" Text="Готово" FontSize="12" Foreground="{StaticResource MutedBrush}" MaxHeight="80"/></DockPanel></Border>
+  <Border Grid.Row="2" Background="#14151D" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0" Padding="18,10"><DockPanel><ProgressBar x:Name="BusyIndicator" DockPanel.Dock="Right" Width="80" Height="3" IsIndeterminate="False" Visibility="Collapsed" Margin="14,0,0,0"/><TextBlock x:Name="StatusText" Text="Готово" FontSize="12" Foreground="{StaticResource MutedBrush}" MaxHeight="80"/></DockPanel></Border>
  </Grid></Border>
 </Window>

@@ -69,10 +69,10 @@ public partial class MainWindow : Window
     }
     private async Task RunAsync(Func<Task> task)
     {
-        if (busy) return; busy = true; BusyIndicator.Visibility = Visibility.Visible; PageContainer.IsEnabled = false;
+        if (busy) return; busy = true; BusyIndicator.IsIndeterminate = true; BusyIndicator.Visibility = Visibility.Visible; PageContainer.IsEnabled = false;
         try { await task(); }
         catch (Exception error) { Status(error.Message, true); }
-        finally { busy = false; PageContainer.IsEnabled = true; BusyIndicator.Visibility = Visibility.Collapsed; Buttons(); }
+        finally { busy = false; BusyIndicator.IsIndeterminate = false; PageContainer.IsEnabled = true; BusyIndicator.Visibility = Visibility.Collapsed; Buttons(); }
     }
     private void Buttons()
     {

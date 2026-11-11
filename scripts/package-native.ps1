@@ -16,10 +16,14 @@ try {
   $files = @(Get-ChildItem $Payload -Recurse -File)
   $cleanup = @($files | ForEach-Object { 'Delete "$INSTDIR\' + [IO.Path]::GetRelativePath($Payload, $_.FullName).Replace('$','$$') + '"' })
   $cleanup += @(Get-ChildItem $Payload -Recurse -Directory | Sort-Object { $_.FullName.Length } -Descending | ForEach-Object { 'RMDir "$INSTDIR\' + [IO.Path]::GetRelativePath($Payload, $_.FullName).Replace('$','$$') + '"' })
-  $deleteFile = "$root/artifacts/native-uninstall.nsh"
+  $deleteFile = [IO.Path]::GetFullPath((Join-Path $root 'artifacts/native-uninstall.nsh'))
   Set-Content $deleteFile -Value ($cleanup -join "`r`n") -Encoding utf8NoBOM
   $size = [int][Math]::Ceiling(($files | Measure-Object Length -Sum).Sum / 1024)
-  $compilerOutput = & $nsis /V2 "/DVERSION=$version" "/DPAYLOAD=$Payload" "/DOUTPUT=$($dist.FullName)/MagmPaper-Setup-$version.exe" "/DICON=$root/build/icon.ico" "/DDELETE_FILES=$deleteFile" "/DSIZE=$size" "$root/build/native-installer.nsi" 2>&1
+  $installerPath = Join-Path $dist.FullName "MagmPaper-Setup-$version.exe"
+  $iconPath = [IO.Path]::GetFullPath((Join-Path $root 'build/icon.ico'))
+  $scriptPath = [IO.Path]::GetFullPath((Join-Path $root 'build/native-installer.nsi'))
+  if (-not (Test-Path -LiteralPath $deleteFile -PathType Leaf)) { throw 'Uninstall file list was not written' }
+  $compilerOutput = & $nsis /V2 "/DVERSION=$version" "/DPAYLOAD=$Payload" "/DOUTPUT=$installerPath" "/DICON=$iconPath" "/DDELETE_FILES=$deleteFile" "/DSIZE=$size" "$scriptPath" 2>&1
   $compilerExit = $LASTEXITCODE
   $compilerOutput | Write-Output
   if ($compilerExit -ne 0) { throw ("NSIS failed: $compilerExit`n" + ($compilerOutput -join "`n")) }

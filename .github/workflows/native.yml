@@ -22,7 +22,7 @@ jobs:
           dotnet-version: '10.0.x'
       - name: Test native library and migration
         run: dotnet run --project desktop/MagmPaper.Tests/MagmPaper.Tests.csproj -c Release
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
         id: taskbar-cache
         with:
           path: |
@@ -35,6 +35,13 @@ jobs:
       - name: Verify cached taskbar module
         if: steps.taskbar-cache.outputs.cache-hit == 'true'
         run: ctest --test-dir native/build -C Release --output-on-failure
+      - uses: actions/cache/save@v4
+        if: steps.taskbar-cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            native/build
+            native/bin
+          key: ${{ steps.taskbar-cache.outputs.cache-primary-key }}
       - name: Publish native WPF application
         id: publish
         shell: pwsh

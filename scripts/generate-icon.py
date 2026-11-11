@@ -20,5 +20,5 @@ for i in range(501):
 d.polygon(upper+lower[::-1], fill='#8d6bff')
 d.line([(255, 675),(255, 300),(512, 550),(769, 300),(769, 675)], fill='#eae9ff', width=78, joint='curve')
 for x,y in [(255,675),(255,300),(512,550),(769,300),(769,675)]: d.ellipse((x-39,y-39,x+39,y+39),fill='#eae9ff')
-im.resize((256,256),Image.Resampling.LANCZOS).save(root/'src/assets/icon.png')
+im.resize((256,256),Image.Resampling.LANCZOS).save(root/'build/icon.png')
 im.save(root/'build/icon.ico', sizes=[(n,n) for n in [16,24,32,48,64,128,256]])
