@@ -24,6 +24,12 @@ public partial class App : Application
     {
         base.OnStartup(e);
         bool testing = e.Args.Contains("--smoke-test");
+        if (testing)
+        {
+            int testIndex = Array.IndexOf(e.Args, "--smoke-test");
+            Diagnostics.Output = e.Args.Length > testIndex + 1 ? e.Args[testIndex + 1] : Path.GetTempPath();
+        }
+        Diagnostics.Trace("OnStartup");
         try
         {
             SetCurrentProcessExplicitAppUserModelID(SystemSettings.StartupName);
@@ -32,8 +38,20 @@ public partial class App : Application
                 mutex = new Mutex(true, Instance, out ownsMutex);
                 if (!ownsMutex)
                 {
-                    try { using var signal = EventWaitHandle.OpenExisting(Instance + (e.Args.Contains("--quit") ? ".Exit" : ".Activate")); if (!e.Args.Contains("--autostart")) signal.Set(); } catch (WaitHandleCannotBeOpenedException) { }
-                    Shutdown(); return;
+                    bool close = e.Args.Contains("--quit"), finished = !close;
+                    try
+                    {
+                        using var signal = EventWaitHandle.OpenExisting(Instance + (close ? ".Exit" : ".Activate"));
+                        if (!e.Args.Contains("--autostart")) signal.Set();
+                        if (close)
+                        {
+                            try { finished = mutex.WaitOne(TimeSpan.FromSeconds(45)); }
+                            catch (AbandonedMutexException) { finished = true; }
+                            if (finished) mutex.ReleaseMutex();
+                        }
+                    }
+                    catch (WaitHandleCannotBeOpenedException) { }
+                    Shutdown(finished ? 0 : 1); return;
                 }
                 if (e.Args.Contains("--quit")) { Shutdown(); return; }
                 if (Process.GetProcessesByName("MagmPaper").Any(p => p.Id != Environment.ProcessId))
@@ -44,6 +62,7 @@ public partial class App : Application
                 exitWait = ThreadPool.RegisterWaitForSingleObject(exit, (_, _) => Dispatcher.BeginInvoke(async () => await QuitAsync()), null, -1, false);
             }
             string directory = testing ? Path.Combine(Path.GetTempPath(), "MagmPaper-native-smoke-" + Guid.NewGuid()) : Library.MigrateDataDirectory(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData));
+            Diagnostics.Trace("Load library");
             var library = new Library(directory);
             if (library.IsNew)
             {
@@ -51,10 +70,12 @@ public partial class App : Application
                 using var reader = new StreamReader(input); library.Save(null, "Северное сияние", reader.ReadToEnd());
             }
             wallpapers = new WallpaperService(library, Dispatcher); appearance = new AppearanceService(directory);
+            Diagnostics.Trace("Create WPF window");
             manager = new MainWindow(library, wallpapers, appearance); MainWindow = manager;
             if (testing)
             {
-                AngleDevice.SoftwareForTests = true; manager.Show();
+                AngleDevice.SoftwareForTests = true; Diagnostics.Trace("Show WPF window"); manager.Show();
+                Diagnostics.Trace("Start smoke assertions");
                 var index = Array.IndexOf(e.Args, "--smoke-test"); var report = index + 1 < e.Args.Length ? e.Args[index + 1] : Path.Combine(Path.GetTempPath(), "MagmPaper-smoke");
                 try { await SmokeTests.RunAsync(manager, report); await QuitAsync(false); }
                 catch (Exception error) { Directory.CreateDirectory(report); File.WriteAllText(Path.Combine(report, "failure.txt"), error.ToString()); await QuitAsync(false, 1); }

@@ -23,17 +23,21 @@ internal sealed class ShaderContext : IDisposable
         var device = AngleDevice.Acquire(); display = device.Display; Generation = device.Generation;
         try
         {
+            Diagnostics.Trace("EGL create surface and context");
             Gpu.EglBindAPI(0x30a0);
             surface = Gpu.EglCreateWindowSurface(display, device.Config, window, [0x3038]);
             context = Gpu.EglCreateContext(display, device.Config, 0, [0x3098, 2, 0x3038]);
             if (surface == 0 || context == 0 || Gpu.EglMakeCurrent(display, surface, surface, context) == 0) throw new DeviceLostException($"GPU-поверхность недоступна (EGL 0x{Gpu.EglGetError():X}).");
             Gpu.EglSwapInterval(display, 0);
+            Diagnostics.Trace("GLES initialized");
             Renderer = Marshal.PtrToStringAnsi(Gpu.GetString(0x1f01)) ?? "ANGLE";
             Gpu.GetIntegerv(0x0d33, out maxTexture); maxTexture = Math.Min(maxTexture, 3840);
             Gpu.GenBuffers(1, out quad); Gpu.BindBuffer(0x8892, quad);
             float[] vertices = [-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1];
             Gpu.BufferData(0x8892, vertices.Length * sizeof(float), vertices, 0x88e4);
+            Diagnostics.Trace("Compile copy shader");
             copy = Build(CopyShader);
+            Diagnostics.Trace("Shader context ready");
         }
         catch { Dispose(); throw; }
     }

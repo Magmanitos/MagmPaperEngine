@@ -38,6 +38,9 @@ public partial class MainWindow : Window
         this.library = library; this.wallpapers = wallpapers; this.appearance = appearance;
         uiFile = Path.Combine(library.DirectoryPath, "ui.json");
         InitializeComponent();
+        foreach (var field in new[] { HeightInput, IconInput, ButtonInput, ColorInput, OpacityInput, RadiusInput })
+            field.TextChanged += (_, _) => UpdateTaskbarPreview();
+        HideWidgetsInput.Click += (_, _) => UpdateTaskbarPreview();
         try { system = new SystemSettings(library.DirectoryPath); } catch (Exception error) { Status(error.Message, true); }
         Preview.Ready += () =>
         {
@@ -205,7 +208,24 @@ public partial class MainWindow : Window
     private void FillAppearance()
     {
         var value = appearance.Settings; AppearanceEnabled.IsChecked = value.Enabled; HeightInput.Text = value.Height.ToString(); IconInput.Text = value.Icon.ToString(); ButtonInput.Text = value.Button.ToString();
-        ColorInput.Text = value.Color; OpacityInput.Text = value.Opacity.ToString(); RadiusInput.Text = value.Radius.ToString(); HideWidgetsInput.IsChecked = value.HideWidgets; UpdateAppearanceStatus();
+        ColorInput.Text = value.Color; OpacityInput.Text = value.Opacity.ToString(); RadiusInput.Text = value.Radius.ToString(); HideWidgetsInput.IsChecked = value.HideWidgets; UpdateAppearanceStatus(); UpdateTaskbarPreview();
+    }
+    private void UpdateTaskbarPreview()
+    {
+        try
+        {
+            var value = ReadAppearance();
+            var color = (Color)ColorConverter.ConvertFromString(value.Color);
+            color.A = (byte)Math.Round(value.Opacity * 2.55);
+            TaskbarSample.Background = new SolidColorBrush(color); TaskbarSample.Height = value.Height;
+            TaskbarSample.CornerRadius = new CornerRadius(value.Radius);
+            WidgetsSample.Visibility = value.HideWidgets ? Visibility.Collapsed : Visibility.Visible;
+            TaskbarSampleIcons.Children.Clear();
+            foreach (string tint in new[] { "#53A6FF", "#EABB58", "#6CC9B0", "#C295EB" })
+                TaskbarSampleIcons.Children.Add(new Border { Width = value.Button, Height = value.Height, Child = new Border
+                { Width = value.Icon, Height = value.Icon, CornerRadius = new CornerRadius(4), Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(tint)) } });
+        }
+        catch (Exception error) when (error is InvalidDataException or FormatException) { /* Keep the last valid draft while typing. */ }
     }
     private static int Number(TextBox input) => int.TryParse(input.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int number) ? number : throw new InvalidDataException("Введите целое число в поле размера или прозрачности.");
     private AppearanceSettings ReadAppearance() => new AppearanceSettings { Enabled = AppearanceEnabled.IsChecked == true, Height = Number(HeightInput), Icon = Number(IconInput), Button = Number(ButtonInput),

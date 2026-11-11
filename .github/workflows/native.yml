@@ -36,6 +36,12 @@ jobs:
           }
       - name: Test real WPF UI and GLSL rendering
         run: ./scripts/smoke-native.ps1
+      - name: Install NSIS
+        run: choco install nsis --yes --no-progress --limit-output
+      - name: Package standalone native installer and ZIP
+        run: ./scripts/package-native.ps1
+      - name: Verify Electron upgrade and native installer
+        run: ./scripts/test-native-installer.ps1
       - uses: actions/upload-artifact@v4
         if: always()
         with:

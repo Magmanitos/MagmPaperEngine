@@ -79,7 +79,7 @@ internal static class SmokeTests
         long idleFrames = surface.Frames; await Task.Delay(150); idleFrames = surface.Frames; await Task.Delay(400);
         Assert(surface.Frames == idleFrames, "hidden preview consumes frames");
         var process = Process.GetCurrentProcess(); var startCpu = process.TotalProcessorTime; var clockIdle = Stopwatch.StartNew(); await Task.Delay(2000); process.Refresh();
-        var report = new { passed = true, nativeUi = "WPF", gpuTests = "ANGLE D3D11 WARP", chromiumProcesses = Process.GetProcessesByName("MagmPaper").Count(p => p.Id != Environment.ProcessId), workingSetBytes = process.WorkingSet64, idleCpuMilliseconds = (process.TotalProcessorTime - startCpu).TotalMilliseconds, idleSampleMilliseconds = clockIdle.Elapsed.TotalMilliseconds,
+        var report = new { passed = true, nativeUi = "WPF", gpuTests = "ANGLE D3D11 WARP", workingSetBytes = process.WorkingSet64, idleCpuMilliseconds = (process.TotalProcessorTime - startCpu).TotalMilliseconds, idleSampleMilliseconds = clockIdle.Elapsed.TotalMilliseconds,
             tests = new[] { "real GLSL pixels", "compile error preserves program", "backbuffer", "quality fills window", "pause stops frames", "physical monitor geometry", "click-through", "GPU reset with paused second context", "WPF editor/save/navigation", "settings", "hidden preview" } };
         File.WriteAllText(Path.Combine(output, "report.json"), JsonSerializer.Serialize(report, DataFiles.Json));
     }

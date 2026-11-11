@@ -19,9 +19,12 @@ internal static class AngleDevice
             if (resetting && display != 0) { Gpu.EglTerminate(display); display = 0; }
             if (display == 0)
             {
+                Diagnostics.Trace("EGL get display");
                 var candidate = Gpu.EglGetPlatformDisplayEXT(0x3202, 0, [0x3203, 0x3208, 0x3209, SoftwareForTests ? 0x320b : 0x320a, 0x3038]);
+                Diagnostics.Trace("EGL initialize");
                 if (candidate == 0 || Gpu.EglInitialize(candidate, out _, out _) == 0)
                     throw new IOException($"Не удалось запустить Direct3D 11 для обоев (EGL 0x{Gpu.EglGetError():X}). Обновите драйвер видеокарты.");
+                Diagnostics.Trace("EGL choose config");
                 int[] attributes = [0x3024, 8, 0x3023, 8, 0x3022, 8, 0x3021, 0, 0x3033, 4, 0x3040, 4, 0x3038];
                 if (Gpu.EglChooseConfig(candidate, attributes, out config, 1, out var count) == 0 || count != 1)
                 { Gpu.EglTerminate(candidate); throw new IOException("Не найден подходящий формат GPU-поверхности."); }
