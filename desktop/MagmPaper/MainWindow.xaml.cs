@@ -1,8 +1,10 @@
 using System.ComponentModel;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
 using MagmPaper.Graphics;
 using MagmPaper.Services;
 using MagmPaper.Windows;
@@ -21,9 +23,12 @@ public partial class MainWindow : Window
     private readonly AppearanceService appearance;
     private readonly SystemSettings? system;
     private readonly string uiFile;
+    private readonly Views.WindowFrameBlur windowFrames = new();
+    private Views.WindowBlurOptions windowBlur = new();
+    private bool fillingWindowBlur;
+    private readonly DispatcherTimer windowBlurSaveTimer = new(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(180) };
     private readonly bool allowStartupChangelog;
     private bool showUpdateNotesOnStartup = true;
-    private bool startupChangelogHandled;
     private Views.UpdateNotes? updateNotes;
     private string route = "overview";
     private string? editingId;
@@ -48,6 +53,8 @@ public partial class MainWindow : Window
         this.allowStartupChangelog = allowStartupChangelog;
         uiFile = Path.Combine(library.DirectoryPath, "ui.json");
         InitializeComponent();
+        TrackWindowFrame(this);
+        windowBlurSaveTimer.Tick += (_, _) => SaveWindowPreferences();
         CursorsPage.Initialize(library.DirectoryPath);
         AppVersionLabel.Text = Views.UpdateNotes.VersionLabel;
         try { system = new SystemSettings(library.DirectoryPath); } catch (Exception error) { Status(error.Message, true); }
@@ -69,18 +76,16 @@ public partial class MainWindow : Window
                     var preferences = JsonNode.Parse(File.ReadAllText(uiFile));
                     saved = preferences?["route"]?.GetValue<string>() ?? saved;
                     showUpdateNotesOnStartup = preferences?["showUpdateNotesOnStartup"]?.GetValue<bool>() ?? true;
+                    windowBlur = preferences?["windowBlur"]?.Deserialize<Views.WindowBlurOptions>(DataFiles.Json)?.Normalize() ?? new();
                 }
             }
             catch { }
             ShowUpdateNotesInput.IsChecked = showUpdateNotesOnStartup;
+            FillWindowBlur();
             Navigate(saved);
             await RunAsync(() => RefreshLibraryAsync());
-            if (!startupChangelogHandled && IsVisible)
-            {
-                startupChangelogHandled = true;
-                if (allowStartupChangelog && showUpdateNotesOnStartup) OpenUpdateNotes();
-            }
         };
+        ContentRendered += ShowStartupNotes;
         StateChanged += (_, _) => { SyncPreview(); updateNotes?.PlaceNextToOwner(); };
         IsVisibleChanged += (_, _) => { SyncPreview(); if (!IsVisible && !Quitting) updateNotes?.Close(); };
         LocationChanged += (_, _) => updateNotes?.PlaceNextToOwner();
@@ -125,14 +130,62 @@ public partial class MainWindow : Window
     }
     private void SaveWindowPreferences()
     {
-        try { DataFiles.Write(uiFile, new { route, showUpdateNotesOnStartup }); }
+        windowBlurSaveTimer.Stop();
+        try { DataFiles.Write(uiFile, new { route, showUpdateNotesOnStartup, windowBlur }); }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException) { Status(error.Message, true); }
+    }
+    internal void TrackWindowFrame(Window window) => windowFrames.Track(window);
+    private void FillWindowBlur()
+    {
+        fillingWindowBlur = true;
+        WindowBlurInput.IsChecked = windowBlur.Enabled;
+        WindowBlurColorValue.Text = windowBlur.Color;
+        WindowBlurRadius.Value = windowBlur.Radius;
+        WindowBlurIntensity.Value = windowBlur.Intensity;
+        fillingWindowBlur = false;
+        UpdateWindowBlur();
+    }
+    private void UpdateWindowBlur()
+    {
+        WindowBlurControls.Visibility = windowBlur.Enabled ? Visibility.Visible : Visibility.Collapsed;
+        WindowBlurSwatch.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(windowBlur.Color));
+        windowFrames.Configure(windowBlur);
+    }
+    private void WindowBlurChanged(object sender, RoutedEventArgs e)
+    {
+        if (!ready || fillingWindowBlur) return;
+        windowBlur = new(WindowBlurInput.IsChecked == true, WindowBlurColorValue.Text,
+            Number(WindowBlurRadius), Number(WindowBlurIntensity));
+        UpdateWindowBlur();
+        if (sender is Slider)
+        {
+            windowBlurSaveTimer.Stop();
+            windowBlurSaveTimer.Start();
+        }
+        else SaveWindowPreferences();
+    }
+    private void WindowBlurColorClick(object sender, RoutedEventArgs e)
+    {
+        var picker = new Views.ColorPicker(windowBlur.Color, "Цвет контура") { Owner = this };
+        TrackWindowFrame(picker);
+        if (picker.ShowDialog() != true) return;
+        WindowBlurColorValue.Text = picker.SelectedColor;
+        WindowBlurChanged(sender, e);
     }
     private void ShowUpdateNotesChanged(object sender, RoutedEventArgs e)
     {
         showUpdateNotesOnStartup = ShowUpdateNotesInput.IsChecked == true;
         SaveWindowPreferences();
         if (!showUpdateNotesOnStartup) updateNotes?.Close();
+    }
+    private void ShowStartupNotes(object? sender, EventArgs e)
+    {
+        ContentRendered -= ShowStartupNotes;
+        if (!allowStartupChangelog) return;
+        _ = Dispatcher.InvokeAsync(() =>
+        {
+            if (showUpdateNotesOnStartup) OpenUpdateNotes();
+        }, DispatcherPriority.ContextIdle);
     }
     private void OpenUpdateNotesClick(object sender, RoutedEventArgs e) => OpenUpdateNotes();
     private void OpenUpdateNotes()
@@ -142,8 +195,7 @@ public partial class MainWindow : Window
         {
             updateNotes = new Views.UpdateNotes { Owner = this };
             updateNotes.Closed += (_, _) => updateNotes = null;
-            updateNotes.Show();
-            updateNotes.PlaceNextToOwner();
+            updateNotes.ShowNextToOwner();
         }
         catch (Exception error)
         {
@@ -447,6 +499,7 @@ public partial class MainWindow : Window
     private void PickTaskbarColor(TextBlock value)
     {
         var dialog = new Views.ColorPicker(value.Text) { Owner = this };
+        TrackWindowFrame(dialog);
         if (dialog.ShowDialog() != true) return;
         value.Text = dialog.SelectedColor;
         QueueAppearance();
@@ -467,6 +520,10 @@ public partial class MainWindow : Window
     private void MinimizeClick(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
     private void MaximizeClick(object sender, RoutedEventArgs e) => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
     private void HideClick(object sender, RoutedEventArgs e) => Hide();
-    private void OnClosing(object? sender, CancelEventArgs e) { if (!Quitting) { e.Cancel = true; Hide(); } }
+    private void OnClosing(object? sender, CancelEventArgs e)
+    {
+        if (windowBlurSaveTimer.IsEnabled) SaveWindowPreferences();
+        if (!Quitting) { e.Cancel = true; Hide(); }
+    }
     internal bool ConfirmExit() => !dirty || MessageBox.Show(this, "В редакторе есть несохранённые изменения. Выйти из приложения?", "MagmPaper", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes;
 }

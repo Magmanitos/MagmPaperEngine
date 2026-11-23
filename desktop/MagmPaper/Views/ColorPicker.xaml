@@ -10,7 +10,7 @@
       <DockPanel Margin="0,0,0,20" MouseLeftButtonDown="DragTitle">
         <Button Content="×" DockPanel.Dock="Right" IsCancel="True" Width="32" Height="32" VerticalAlignment="Top" Padding="0"/>
         <StackPanel>
-          <TextBlock Text="Цвет панели" FontSize="23" FontWeight="SemiBold"/>
+          <TextBlock x:Name="PickerTitle" Text="Цвет панели" FontSize="23" FontWeight="SemiBold"/>
           <TextBlock Text="Оттенок, насыщенность и яркость" Style="{StaticResource Muted}" FontSize="12" Margin="0,6,0,0"/>
         </StackPanel>
       </DockPanel>

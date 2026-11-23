@@ -113,6 +113,7 @@ public partial class CursorPage : UserControl
             if (Path.GetExtension(name).Equals(".png", StringComparison.OrdinalIgnoreCase))
             {
                 var picker = new CursorHotspot(bytes) { Owner = owner };
+                if (owner is MainWindow main) main.TrackWindowFrame(picker);
                 if (picker.ShowDialog() != true) return "Назначение курсора отменено.";
                 bytes = picker.CursorBytes();
                 name = Path.ChangeExtension(name, ".cur");

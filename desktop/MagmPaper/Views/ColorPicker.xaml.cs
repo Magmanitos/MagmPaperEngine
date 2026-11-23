@@ -10,9 +10,10 @@ public partial class ColorPicker : Window
     private double saturation, brightness;
     private bool ready, filling;
     public string SelectedColor { get; private set; } = "#171923";
-    public ColorPicker(string initial)
+    public ColorPicker(string initial, string title = "Цвет панели")
     {
         InitializeComponent(); ready = true;
+        Title = PickerTitle.Text = title;
         foreach (string color in new[] { "#171923", "#303343", "#BCA6FF", "#5B8DEF", "#57C9AB", "#E6B85C", "#D47094", "#EAEAF1" })
         {
             var button = new Button { Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(color)), Margin = new Thickness(0, 0, 6, 0), Height = 25, Padding = new Thickness(0), ToolTip = color };

@@ -139,6 +139,27 @@
      <TextBlock Text="Настройки сохраняются сразу. Коллекция и резервные копии находятся в папке MagmPaper в AppData." Style="{StaticResource Muted}" Margin="0,24,0,0"/>
      <Border Style="{StaticResource Card}" Margin="0,20,0,0">
       <StackPanel>
+       <TextBlock Text="Оформление окон" FontSize="21" Margin="0,0,0,6"/>
+       <CheckBox x:Name="WindowBlurInput" Content="Размытый контур вокруг окон" Click="WindowBlurChanged"/>
+       <StackPanel x:Name="WindowBlurControls" Visibility="Collapsed">
+        <DockPanel Margin="0,8,0,4">
+         <Button DockPanel.Dock="Right" Padding="9,6" Click="WindowBlurColorClick" AutomationProperties.Name="Выбрать цвет контура">
+          <StackPanel Orientation="Horizontal">
+           <Border x:Name="WindowBlurSwatch" Width="15" Height="15" CornerRadius="4" BorderThickness="1" BorderBrush="{StaticResource MutedBrush}" Margin="0,0,7,0"/>
+           <TextBlock x:Name="WindowBlurColorValue" Text="#A78BFA"/>
+          </StackPanel>
+         </Button>
+         <TextBlock Text="Цвет контура" VerticalAlignment="Center"/>
+        </DockPanel>
+        <Slider x:Name="WindowBlurRadius" Style="{StaticResource SettingsSlider}" AutomationProperties.Name="Радиус размытия, px"
+                Minimum="6" Maximum="72" Value="30" ValueChanged="WindowBlurChanged"/>
+        <Slider x:Name="WindowBlurIntensity" Style="{StaticResource SettingsSlider}" AutomationProperties.Name="Интенсивность, %"
+                Minimum="0" Maximum="100" Value="42" ValueChanged="WindowBlurChanged"/>
+       </StackPanel>
+      </StackPanel>
+     </Border>
+     <Border Style="{StaticResource Card}" Margin="0,20,0,0">
+      <StackPanel>
        <TextBlock Text="Обновления" FontSize="21" Margin="0,0,0,6"/>
        <CheckBox x:Name="ShowUpdateNotesInput" Content="Показывать список изменений при запуске" Click="ShowUpdateNotesChanged"/>
        <Button x:Name="OpenUpdateNotesButton" Content="Что нового" HorizontalAlignment="Left" Margin="0,8,0,0" Click="OpenUpdateNotesClick"/>

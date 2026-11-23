@@ -1,7 +1,7 @@
 <UserControl x:Class="MagmPaper.Views.CursorPage"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-  <ScrollViewer VerticalScrollBarVisibility="Auto">
+  <ScrollViewer x:Name="PageScroll" VerticalScrollBarVisibility="Auto">
     <StackPanel>
       <TextBlock Text="Курсоры" Style="{StaticResource Title}"/>
       <TextBlock Text="Выберите готовый набор или назначьте свой файл каждому состоянию указателя Windows."
@@ -12,7 +12,11 @@
           <DockPanel Margin="0,10,0,0">
             <Button DockPanel.Dock="Right" Content="Установить набор" Click="InstallPackClick"
                     Style="{StaticResource Primary}" VerticalAlignment="Center" Margin="10,0,0,0"/>
-            <ComboBox x:Name="Packs" DisplayMemberPath="Name" AutomationProperties.Name="Готовый набор курсоров"/>
+            <ComboBox x:Name="Packs" AutomationProperties.Name="Готовый набор курсоров">
+              <ComboBox.ItemTemplate>
+                <DataTemplate><TextBlock Text="{Binding Name}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/></DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
           </DockPanel>
           <DockPanel LastChildFill="True">
             <Button DockPanel.Dock="Right" Content="Релиз автора ↗" Click="SourceClick" Padding="8,5" Margin="8,0,0,0"/>

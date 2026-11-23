@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
@@ -310,7 +311,22 @@ internal static class SmokeTests
         var buttonText = TextElements(window.AddWallpaperButton).First(text => !string.IsNullOrEmpty(text.Text));
         AssertReadable(buttonText.Foreground, window.AddWallpaperButton.Background, "primary button");
         CaptureWindow(window, Path.Combine(output, "native-interface.png"));
+        double originalHeight = window.Height;
+        window.Height = window.MinHeight;
         window.Navigate("cursors");
+        await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+        var packs = window.CursorsPage.Packs;
+        Assert(TextElements(packs).Any(text => text.Text == "Bibata Modern Ice"), "selected cursor pack was not displayed by name");
+        var cursorScroll = window.CursorsPage.PageScroll;
+        if (cursorScroll.ScrollableHeight >= 2)
+        {
+            packs.IsDropDownOpen = true;
+            await Until(() => packs.IsDropDownOpen, "cursor catalogue did not open");
+            await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+            cursorScroll.ScrollToVerticalOffset(Math.Min(40, cursorScroll.ScrollableHeight));
+            await Until(() => !packs.IsDropDownOpen, "cursor dropdown remained open after its anchor scrolled");
+        }
+        window.Height = originalHeight;
         Assert(window.CursorsPage.Roles.Items.Count == CursorFiles.Roles.Count && window.CursorsPage.Packs.Items.Count == 4,
             "cursor page did not expose all roles and presets");
         var source = BitmapSource.Create(2, 2, 96, 96, PixelFormats.Bgra32, null,
@@ -328,21 +344,53 @@ internal static class SmokeTests
         window.Navigate("settings");
         window.OpenUpdateNotesButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         var notes = window.OwnedWindows.OfType<Views.UpdateNotes>().Single();
-        await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
-        Assert(notes.IsVisible && notes.Changes.Items.Count > 0 && notes.VersionText.Text == Views.UpdateNotes.VersionLabel,
+        await Until(() => notes.IsVisible && notes.Opacity == 1, "changelog was not positioned after layout");
+        Assert(notes.Changes.Items.Count > 0 && notes.VersionText.Text == Views.UpdateNotes.VersionLabel,
             "changelog was not shown with notes for this build");
+        nint mainHandle = new WindowInteropHelper(window).Handle;
+        nint notesHandle = new WindowInteropHelper(notes).Handle;
+        var work = System.Windows.Forms.Screen.FromHandle(mainHandle).WorkingArea;
+        Assert(Win32.GetWindowRect(mainHandle, out var mainRect), "cannot read the main window bounds");
+        Assert(Win32.GetWindowRect(notesHandle, out var notesRect), "cannot read the changelog bounds");
+        double dpi = VisualTreeHelper.GetDpi(window).DpiScaleX;
+        if (work.Width >= Math.Ceiling((window.MinWidth + 10) * dpi) + notesRect.Right - notesRect.Left)
+            Assert(mainRect.Right <= notesRect.Left || notesRect.Right <= mainRect.Left, "changelog overlapped the main window despite available space");
         notes.DismissButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         Assert(!notes.IsVisible, "changelog close button did not dismiss the window");
         window.ShowUpdateNotesInput.IsChecked = false;
         window.ShowUpdateNotesInput.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));
         using var preferences = JsonDocument.Parse(File.ReadAllText(Path.Combine(window.Library.DirectoryPath, "ui.json")));
         Assert(!preferences.RootElement.GetProperty("showUpdateNotesOnStartup").GetBoolean(), "changelog preference was not saved");
+        window.WindowBlurInput.IsChecked = true;
+        window.WindowBlurInput.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));
+        const string frameTitle = "MagmPaper.WindowFrameBlur";
+        if (mainRect.Left > work.Left || mainRect.Top > work.Top || mainRect.Right < work.Right || mainRect.Bottom < work.Bottom)
+        {
+            await Until(() => Win32.FindWindow(null, frameTitle) != 0, "window blur did not create an overlay");
+            nint frame = Win32.FindWindow(null, frameTitle);
+            Assert((Win32.GetWindowLongPtr(frame, -20).ToInt64() & 0x08000020) == 0x08000020,
+                "window blur intercepts input or activates");
+            Assert(Win32.GetWindowRect(frame, out var frameRect) && frameRect.Left < mainRect.Left &&
+                frameRect.Right > mainRect.Right && frameRect.Top < mainRect.Top && frameRect.Bottom > mainRect.Bottom,
+                "window blur was not placed around the main window");
+            window.WindowState = WindowState.Maximized;
+            await Until(() => Win32.FindWindow(null, frameTitle) == 0, "window blur was kept when maximized");
+            window.WindowState = WindowState.Normal;
+            await Until(() => Win32.FindWindow(null, frameTitle) != 0, "window blur did not return in windowed mode");
+        }
+        window.WindowBlurRadius.Value = 48;
+        window.WindowBlurIntensity.Value = 55;
+        window.WindowBlurInput.IsChecked = false;
+        window.WindowBlurInput.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));
+        await Until(() => Win32.FindWindow(null, frameTitle) == 0, "window blur stayed visible after disabling it");
+        var savedBlur = DataFiles.Read<System.Text.Json.Nodes.JsonObject>(Path.Combine(window.Library.DirectoryPath, "ui.json"))["windowBlur"];
+        Assert(savedBlur?["radius"]?.GetValue<int>() == 48 && savedBlur?["intensity"]?.GetValue<int>() == 55, "window blur settings were not saved");
         long idleFrames = surface.Frames; await Task.Delay(150); idleFrames = surface.Frames; await Task.Delay(400);
         Assert(surface.Frames == idleFrames, "hidden preview consumes frames");
         await Task.Delay(3000); // Let startup compilation, layout and deferred GPU release settle.
         var process = Process.GetCurrentProcess(); var startCpu = process.TotalProcessorTime; var clockIdle = Stopwatch.StartNew(); await Task.Delay(5000); process.Refresh();
         var report = new { passed = true, version = typeof(App).Assembly.GetName().Version?.ToString(), nativeUi = "WPF", gpuTests = "ANGLE D3D11 WARP", composedDesktopPixels = composedPixels, workingSetBytes = process.WorkingSet64, idleCpuMilliseconds = (process.TotalProcessorTime - startCpu).TotalMilliseconds, idleSampleMilliseconds = clockIdle.Elapsed.TotalMilliseconds,
-            tests = new[] { "real GLSL pixels", "late GLSL extension compatibility", "compile error preserves program", "backbuffer", "quality fills window", "pause stops frames", "physical monitor geometry", "24H2 child layer order and opaque composition", "native window coverage/minimize/transparent overlay", "click-through and real cursor uniforms", "mouse toggle", "six GPU resets with active and paused second context", "Windows autostart and StartupApproved", "WPF editor/save/navigation", "native preview visibility and scroll clipping", "smooth scrolling over inputs and repeated wheel events", "inactive and disabled control colors", "stable collection after activation/navigation", "HSV and HEX color picker", "live taskbar preview and automatic slider persistence", "glass gradient settings", "cursor catalogue and PNG hotspot", "dismissible changelog and preference", "settings", "WPF theme contrast", "hidden preview" } };
+            tests = new[] { "real GLSL pixels", "late GLSL extension compatibility", "compile error preserves program", "backbuffer", "quality fills window", "pause stops frames", "physical monitor geometry", "24H2 child layer order and opaque composition", "native window coverage/minimize/transparent overlay", "click-through and real cursor uniforms", "mouse toggle", "six GPU resets with active and paused second context", "Windows autostart and StartupApproved", "WPF editor/save/navigation", "native preview visibility and scroll clipping", "smooth scrolling over inputs and repeated wheel events", "inactive and disabled control colors", "stable collection after activation/navigation", "HSV and HEX color picker", "live taskbar preview and automatic slider persistence", "glass gradient settings", "cursor catalogue caption, scroll and PNG hotspot", "changelog positioning and preference", "window blur toggle and settings", "settings", "WPF theme contrast", "hidden preview" } };
         File.WriteAllText(Path.Combine(output, "report.json"), JsonSerializer.Serialize(report, DataFiles.Json));
     }
     private static RenderTargetBitmap WindowBitmap(Window window)
