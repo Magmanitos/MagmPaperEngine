@@ -112,8 +112,7 @@ void StyledElement::apply(const Settings& settings) {
         dimension(xaml::FrameworkElement::MinWidthProperty(),xaml::FrameworkElement::MaxWidthProperty(),xaml::FrameworkElement::WidthProperty(),static_cast<double>(settings.icon));
         dimension(xaml::FrameworkElement::MinHeightProperty(),xaml::FrameworkElement::MaxHeightProperty(),xaml::FrameworkElement::HeightProperty(),static_cast<double>(settings.icon));break;
     case Kind::Button:
-        set(xaml::FrameworkElement::MinWidthProperty(),box_value(static_cast<double>(settings.button)));
-        set(xaml::FrameworkElement::WidthProperty(),box_value(static_cast<double>(settings.button)));break;
+        dimension(xaml::FrameworkElement::MinWidthProperty(),xaml::FrameworkElement::MaxWidthProperty(),xaml::FrameworkElement::WidthProperty(),static_cast<double>(settings.button));break;
     case Kind::Background: {
         Windows::UI::Color color{static_cast<uint8_t>((settings.opacity*255+50)/100),
             static_cast<uint8_t>(settings.color>>16),static_cast<uint8_t>(settings.color>>8),static_cast<uint8_t>(settings.color)};

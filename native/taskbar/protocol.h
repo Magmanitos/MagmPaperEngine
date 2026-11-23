@@ -60,15 +60,23 @@ inline bool read(Shared* shared,Settings& value) {
 inline RECT barRect(RECT monitor,UINT dpi,UINT height) {
     monitor.top=monitor.bottom-MulDiv(static_cast<int>(height),static_cast<int>(dpi),96);return monitor;
 }
+inline int resizedAutoHideTop(RECT current,int monitorBottom,int visibleTop,UINT dpi) {
+    if(current.top>=monitorBottom-MulDiv(4,dpi,96)) return current.top;
+    return visibleTop+std::max(0L,current.bottom-monitorBottom);
+}
 inline void anchorBarPosition(WINDOWPOS& position,RECT current,RECT monitor,UINT dpi,UINT height,bool autoHide) {
     // SWP_NOMOVE leaves x/y undefined. A size-only request must become a move
     // too, otherwise increasing height grows the taskbar below the screen.
     int x=(position.flags&SWP_NOMOVE)?current.left:position.x;
-    int y=(position.flags&SWP_NOMOVE)?current.top:position.y;
     if(position.flags&SWP_NOSIZE) position.cx=current.right-current.left;
     position.cy=MulDiv(static_cast<int>(height),static_cast<int>(dpi),96);
+    int visibleTop=monitor.bottom-position.cy;
+    // Keep the hidden offset during a size-only request while letting Explorer
+    // move the bar through intermediate positions when it animates auto-hide.
     position.x=x;
-    position.y=autoHide&&y>=monitor.bottom-4?y:monitor.bottom-position.cy;
+    if(!autoHide) position.y=visibleTop;
+    else if(position.flags&SWP_NOMOVE) position.y=resizedAutoHideTop(current,monitor.bottom,visibleTop,dpi);
+    else position.y=std::max(visibleTop,position.y);
     position.flags&=~(SWP_NOMOVE|SWP_NOSIZE);
 }
 inline RECT restoredWorkArea(RECT current,RECT monitor,UINT dpi,LONG originalHeight,UINT originalDpi,bool autoHide) {

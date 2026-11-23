@@ -249,8 +249,8 @@ internal static class SmokeTests
             window.TaskbarPage.ScrollToTop();
             await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
             int alignment = window.AlignmentInput.SelectedIndex;
-            var inputHost = (ScrollViewer)window.HeightInput.Template.FindName("PART_ContentHost", window.HeightInput);
-            foreach (var target in new UIElement[] { inputHost, window.ColorInput, window.AlignmentInput })
+            var track = (System.Windows.Controls.Primitives.Track)window.HeightInput.Template.FindName("PART_Track", window.HeightInput);
+            foreach (var target in new UIElement[] { track.Thumb, window.ColorButton, window.AlignmentInput })
             {
                 Assert(Wheel(target, -120), "taskbar field bypassed smooth page scrolling"); await Task.Delay(20);
             }
@@ -266,6 +266,18 @@ internal static class SmokeTests
             window.Navigate("taskbar"); window.TaskbarPage.ScrollToTop();
             await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
         }
+        // Change the draft with styling disabled so the smoke test never touches Explorer.
+        window.HeightInput.Value = 72;
+        window.IconInput.Value = 54;
+        Assert(window.TaskbarSample.Height == 72 && window.ButtonInput.Value == 54, "preview did not follow live slider values");
+        window.HeightInput.Value = 38;
+        window.OpacityInput.Value = 43;
+        Assert(window.TaskbarSample.Height == 38 && window.IconInput.Value == 30, "reducing the height did not keep the icon within bounds");
+        Assert(window.PageContainer.IsEnabled, "appearance settings blocked slider input");
+        await window.FinishTaskbarUpdatesAsync();
+        var draft = DataFiles.Read<AppearanceSettings>(Path.Combine(window.Library.DirectoryPath, "taskbar-appearance.json"));
+        Assert(!draft.Enabled && draft.Height == 38 && draft.Icon == 30 && draft.Button == 54 && draft.Opacity == 43,
+            "automatic appearance settings did not persist the last slider values");
         window.AlignmentInput.IsDropDownOpen = true;
         await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
         var dropdown = (System.Windows.Controls.Primitives.Popup)window.AlignmentInput.Template.FindName("PART_Popup", window.AlignmentInput);
@@ -294,7 +306,7 @@ internal static class SmokeTests
         await Task.Delay(3000); // Let startup compilation, layout and deferred GPU release settle.
         var process = Process.GetCurrentProcess(); var startCpu = process.TotalProcessorTime; var clockIdle = Stopwatch.StartNew(); await Task.Delay(5000); process.Refresh();
         var report = new { passed = true, version = typeof(App).Assembly.GetName().Version?.ToString(), nativeUi = "WPF", gpuTests = "ANGLE D3D11 WARP", composedDesktopPixels = composedPixels, workingSetBytes = process.WorkingSet64, idleCpuMilliseconds = (process.TotalProcessorTime - startCpu).TotalMilliseconds, idleSampleMilliseconds = clockIdle.Elapsed.TotalMilliseconds,
-            tests = new[] { "real GLSL pixels", "late GLSL extension compatibility", "compile error preserves program", "backbuffer", "quality fills window", "pause stops frames", "physical monitor geometry", "24H2 child layer order and opaque composition", "native window coverage/minimize/transparent overlay", "click-through and real cursor uniforms", "mouse toggle", "six GPU resets with active and paused second context", "Windows autostart and StartupApproved", "WPF editor/save/navigation", "native preview visibility and scroll clipping", "smooth scrolling over inputs and repeated wheel events", "inactive and disabled control colors", "stable collection after activation/navigation", "HSV and HEX color picker", "settings", "WPF theme contrast", "hidden preview" } };
+            tests = new[] { "real GLSL pixels", "late GLSL extension compatibility", "compile error preserves program", "backbuffer", "quality fills window", "pause stops frames", "physical monitor geometry", "24H2 child layer order and opaque composition", "native window coverage/minimize/transparent overlay", "click-through and real cursor uniforms", "mouse toggle", "six GPU resets with active and paused second context", "Windows autostart and StartupApproved", "WPF editor/save/navigation", "native preview visibility and scroll clipping", "smooth scrolling over inputs and repeated wheel events", "inactive and disabled control colors", "stable collection after activation/navigation", "HSV and HEX color picker", "live taskbar preview and automatic slider persistence", "settings", "WPF theme contrast", "hidden preview" } };
         File.WriteAllText(Path.Combine(output, "report.json"), JsonSerializer.Serialize(report, DataFiles.Json));
     }
     private static RenderTargetBitmap WindowBitmap(Window window)

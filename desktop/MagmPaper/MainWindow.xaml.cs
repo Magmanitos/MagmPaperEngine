@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using System.Globalization;
 using System.Text.Json.Nodes;
 using System.Windows;
 using System.Windows.Controls;
@@ -25,6 +24,10 @@ public partial class MainWindow : Window
     private string route = "overview";
     private string? editingId;
     private bool editing, dirty, filling, selecting, busy, ready;
+    private bool fillingBehavior, fillingAppearance;
+    private AppearanceSettings? pendingAppearance;
+    private Task appearanceUpdates = Task.CompletedTask;
+    private Task behaviorUpdate = Task.CompletedTask;
     private Wallpaper? selected;
     private RenderSurface? loadedPreview;
     private string? loadedPreviewCode;
@@ -40,9 +43,6 @@ public partial class MainWindow : Window
         this.library = library; this.wallpapers = wallpapers; this.appearance = appearance;
         uiFile = Path.Combine(library.DirectoryPath, "ui.json");
         InitializeComponent();
-        foreach (var field in new[] { HeightInput, IconInput, ButtonInput, ColorInput, OpacityInput, RadiusInput })
-            field.TextChanged += (_, _) => UpdateTaskbarPreview();
-        HideWidgetsInput.Click += (_, _) => UpdateTaskbarPreview();
         try { system = new SystemSettings(library.DirectoryPath); } catch (Exception error) { Status(error.Message, true); }
         Preview.Ready += () =>
         {
@@ -200,72 +200,188 @@ public partial class MainWindow : Window
     private SystemSettings PlatformSettings => system ?? throw new IOException("Не удалось прочитать резервные настройки панели. Исходный файл сохранён.");
     private void FillBehavior()
     {
+        fillingBehavior = true;
         try
         {
-            var settings = PlatformSettings.ReadTaskbar(); AlignmentInput.SelectedIndex = settings.Alignment; SearchInput.SelectedIndex = settings.Search;
-            AutoHideInput.IsChecked = settings.AutoHide; TaskViewInput.IsChecked = settings.TaskView;
+            var settings = PlatformSettings.ReadTaskbar();
+            AlignmentInput.SelectedIndex = settings.Alignment;
+            SearchInput.SelectedIndex = settings.Search;
+            AutoHideInput.IsChecked = settings.AutoHide;
+            TaskViewInput.IsChecked = settings.TaskView;
             LegacyPanel.Visibility = PlatformSettings.LegacyAvailable || PlatformSettings.CanRestoreLegacy ? Visibility.Visible : Visibility.Collapsed;
-            var legacy = PlatformSettings.ReadLegacy(); LegacyHeight.Text = legacy.Height.ToString(); LegacyIcon.Text = legacy.Icon.ToString(); LegacyButton.Text = legacy.Button.ToString(); LegacySmallIcon.Text = legacy.SmallIcon.ToString(); LegacySmallButton.Text = legacy.SmallButton.ToString();
+            if (LegacyPanel.Visibility == Visibility.Visible)
+            {
+                var legacy = PlatformSettings.ReadLegacy();
+                LegacyHeight.Value = legacy.Height;
+                LegacyIcon.Value = legacy.Icon;
+                LegacyButton.Value = legacy.Button;
+                LegacySmallIcon.Value = legacy.SmallIcon;
+                LegacySmallButton.Value = legacy.SmallButton;
+            }
         }
         catch (Exception error) { Status(error.Message, true); }
+        finally { fillingBehavior = false; }
     }
-    private async void ApplyBehaviorClick(object sender, RoutedEventArgs e) => await RunAsync(async () =>
+    private void BehaviorChanged(object sender, RoutedEventArgs e)
     {
-        var current = PlatformSettings.ReadTaskbar(); var next = current with { Alignment = AlignmentInput.SelectedIndex, Search = SearchInput.SelectedIndex, AutoHide = AutoHideInput.IsChecked == true, TaskView = TaskViewInput.IsChecked == true };
-        try { Status(await Task.Run(() => PlatformSettings.Apply(next))); } finally { FillBehavior(); }
-    });
+        if (!ready || busy || fillingBehavior || sender is not FrameworkElement { Tag: string key }) return;
+        JsonNode? value = sender switch
+        {
+            ComboBox { SelectedIndex: >= 0 } choice => JsonValue.Create(choice.SelectedIndex),
+            CheckBox toggle when key == "autoHide" => JsonValue.Create(toggle.IsChecked == true),
+            CheckBox toggle => JsonValue.Create(toggle.IsChecked == true ? 1 : 0),
+            _ => null
+        };
+        if (value is null) return;
+        behaviorUpdate = RunAsync(async () =>
+        {
+            try { Status(await Task.Run(() => PlatformSettings.Apply(key, value))); }
+            finally { FillBehavior(); }
+        });
+    }
     private async void RestoreBehaviorClick(object sender, RoutedEventArgs e) => await RunAsync(async () => { try { Status(await Task.Run(PlatformSettings.Restore)); } finally { FillBehavior(); } });
-    private void UpdateAppearanceStatus() => AppearanceStatus.Text = appearance.Error ?? (appearance.Active ? "Оформление MagmPaper работает." : appearance.Available ? "Модуль установлен вместе с приложением." : "Нужна полная сборка для Windows 11 x64 с модулем панели.");
+
+    private void UpdateAppearanceStatus()
+    {
+        AppearanceStatus.Text = pendingAppearance is not null ? "Обновление оформления…"
+            : appearance.Error ?? (appearance.Active ? "Оформление MagmPaper включено."
+            : appearance.Available ? "Оформление MagmPaper выключено." : "Нужна полная сборка для Windows 11 x64 с модулем панели.");
+    }
     private void FillAppearance()
     {
-        var value = appearance.Settings; AppearanceEnabled.IsChecked = value.Enabled; HeightInput.Text = value.Height.ToString(); IconInput.Text = value.Icon.ToString(); ButtonInput.Text = value.Button.ToString();
-        ColorInput.Text = value.Color; OpacityInput.Text = value.Opacity.ToString(); RadiusInput.Text = value.Radius.ToString(); HideWidgetsInput.IsChecked = value.HideWidgets; UpdateAppearanceStatus(); UpdateTaskbarPreview();
+        var value = appearance.Settings;
+        fillingAppearance = true;
+        AppearanceEnabled.IsChecked = value.Enabled;
+        SetAppearanceSizes(value.Height, value.Icon, value.Button);
+        ColorValue.Text = value.Color;
+        OpacityInput.Value = value.Opacity;
+        RadiusInput.Value = value.Radius;
+        HideWidgetsInput.IsChecked = value.HideWidgets;
+        fillingAppearance = false;
+        UpdateAppearanceStatus();
+        UpdateTaskbarPreview(value);
     }
-    private void UpdateTaskbarPreview()
+    private void SetAppearanceSizes(int height, int icon, int button)
     {
-        try
+        HeightInput.Value = height;
+        int maxIcon = Math.Min(64, height - 8);
+        icon = Math.Min(icon, maxIcon);
+        // Set values as well as constraints so that relaxing a bound does not
+        // restore a previously coerced value.
+        IconInput.Maximum = maxIcon;
+        IconInput.Value = icon;
+        ButtonInput.Minimum = Math.Max(28, icon);
+        ButtonInput.Value = Math.Max(button, icon);
+    }
+    private void UpdateTaskbarPreview(AppearanceSettings value)
+    {
+        var color = (Color)ColorConverter.ConvertFromString(value.Color);
+        if (ColorSwatch.Background is not SolidColorBrush swatch || swatch.Color != color)
+            ColorSwatch.Background = new SolidColorBrush(color);
+        color.A = (byte)((value.Opacity * 255 + 50) / 100);
+        if (TaskbarSample.Background is not SolidColorBrush background || background.Color != color)
+            TaskbarSample.Background = new SolidColorBrush(color);
+        TaskbarSample.Height = value.Height;
+        TaskbarSample.CornerRadius = new CornerRadius(value.Radius);
+        WidgetsSample.Visibility = value.HideWidgets ? Visibility.Collapsed : Visibility.Visible;
+        foreach (Border button in TaskbarSampleIcons.Children)
         {
-            var value = ReadAppearance();
-            var color = (Color)ColorConverter.ConvertFromString(value.Color);
-            color.A = (byte)Math.Round(value.Opacity * 2.55);
-            TaskbarSample.Background = new SolidColorBrush(color); TaskbarSample.Height = value.Height;
-            TaskbarSample.CornerRadius = new CornerRadius(value.Radius);
-            WidgetsSample.Visibility = value.HideWidgets ? Visibility.Collapsed : Visibility.Visible;
-            TaskbarSampleIcons.Children.Clear();
-            foreach (string tint in new[] { "#53A6FF", "#EABB58", "#6CC9B0", "#C295EB" })
-                TaskbarSampleIcons.Children.Add(new Border { Width = value.Button, Height = value.Height, Child = new Border
-                { Width = value.Icon, Height = value.Icon, CornerRadius = new CornerRadius(4), Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(tint)) } });
+            button.Width = value.Button;
+            if (button.Child is Border icon) icon.Width = icon.Height = value.Icon;
         }
-        catch (Exception error) when (error is InvalidDataException or FormatException) { /* Keep the last valid draft while typing. */ }
     }
-    private static int Number(TextBox input) => int.TryParse(input.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int number) ? number : throw new InvalidDataException("Введите целое число в поле размера или прозрачности.");
-    private AppearanceSettings ReadAppearance() => new AppearanceSettings { Enabled = AppearanceEnabled.IsChecked == true, Height = Number(HeightInput), Icon = Number(IconInput), Button = Number(ButtonInput),
-        Color = ColorInput.Text.Trim(), Opacity = Number(OpacityInput), Radius = Number(RadiusInput), HideWidgets = HideWidgetsInput.IsChecked == true }.Validate();
-    private async void ApplyAppearanceClick(object sender, RoutedEventArgs e) => await RunAsync(async () =>
+    private static int Number(Slider input) => (int)Math.Round(input.Value);
+    private AppearanceSettings ReadAppearance() => new()
     {
-        var next = ReadAppearance(); Status("Применение оформления…");
-        try { await appearance.ApplyAsync(next); Status("Оформление панели сохранено."); } finally { FillAppearance(); }
-    });
-    private async void DisableAppearanceClick(object sender, RoutedEventArgs e) => await RunAsync(async () =>
+        Enabled = AppearanceEnabled.IsChecked == true,
+        Height = Number(HeightInput),
+        Icon = Number(IconInput),
+        Button = Number(ButtonInput),
+        Color = ColorValue.Text,
+        Opacity = Number(OpacityInput),
+        Radius = Number(RadiusInput),
+        HideWidgets = HideWidgetsInput.IsChecked == true
+    };
+    private void AppearanceChanged(object sender, RoutedEventArgs e)
     {
-        try { await appearance.ApplyAsync(appearance.Settings with { Enabled = false }); Status("Исходное оформление Windows возвращено."); } finally { FillAppearance(); }
-    });
+        if (!ready || fillingAppearance) return;
+        if (ReferenceEquals(sender, HeightInput) || ReferenceEquals(sender, IconInput))
+        {
+            fillingAppearance = true;
+            SetAppearanceSizes(Number(HeightInput), Number(IconInput), Number(ButtonInput));
+            fillingAppearance = false;
+        }
+        QueueAppearance();
+    }
+    private void QueueAppearance()
+    {
+        var value = ReadAppearance();
+        UpdateTaskbarPreview(value);
+        pendingAppearance = value;
+        UpdateAppearanceStatus();
+        if (appearanceUpdates.IsCompleted) appearanceUpdates = ApplyAppearanceUpdatesAsync();
+    }
+    private async Task ApplyAppearanceUpdatesAsync()
+    {
+        while (pendingAppearance is not null)
+        {
+            // Sample the latest value during a drag, with at most one native
+            // request in flight. The final value is sent even when dragging stops.
+            await Task.Delay(40);
+            var next = pendingAppearance!;
+            pendingAppearance = null;
+            if (next == appearance.Settings && appearance.Error is null && next.Enabled == appearance.Active)
+            {
+                UpdateAppearanceStatus();
+                continue;
+            }
+
+            AppearanceStatus.Text = "Обновление оформления…";
+            string? previousError = appearance.Error;
+            try
+            {
+                await appearance.ApplyAsync(next);
+                if (previousError is not null && StatusText.Text == previousError)
+                    Status("Настройки оформления сохранены.");
+            }
+            catch (Exception error)
+            {
+                if (pendingAppearance is null)
+                {
+                    FillAppearance();
+                    Status(error.Message, true);
+                }
+            }
+            UpdateAppearanceStatus();
+        }
+    }
+    internal Task FinishTaskbarUpdatesAsync() => Task.WhenAll(appearanceUpdates, behaviorUpdate);
     private void PresetClick(object sender, RoutedEventArgs e)
     {
-        var tag = (sender as Button)?.Tag as string; int[] sizes = tag == "compact" ? [36, 20, 36] : tag == "large" ? [64, 40, 52] : [48, 24, 44];
-        HeightInput.Text = sizes[0].ToString(); IconInput.Text = sizes[1].ToString(); ButtonInput.Text = sizes[2].ToString();
+        var (height, icon, button) = ((Button)sender).Tag switch
+        {
+            "compact" => (36, 20, 36),
+            "large" => (64, 40, 52),
+            _ => (48, 24, 44)
+        };
+        fillingAppearance = true;
+        SetAppearanceSizes(height, icon, button);
+        fillingAppearance = false;
+        QueueAppearance();
     }
     private void ColorClick(object sender, RoutedEventArgs e)
     {
-        var dialog = new Views.ColorPicker(ColorInput.Text) { Owner = this };
-        if (dialog.ShowDialog() == true) ColorInput.Text = dialog.SelectedColor;
+        var dialog = new Views.ColorPicker(ColorValue.Text) { Owner = this };
+        if (dialog.ShowDialog() != true) return;
+        ColorValue.Text = dialog.SelectedColor;
+        QueueAppearance();
     }
     private async void ApplyLegacyClick(object sender, RoutedEventArgs e) => await RunAsync(async () =>
     {
         try { await PlatformSettings.ApplyLegacyAsync(new(Number(LegacyHeight), Number(LegacyIcon), Number(LegacyButton), Number(LegacySmallIcon), Number(LegacySmallButton))); Status("Размеры Windhawk сохранены."); } finally { FillBehavior(); }
     });
     private async void RestoreLegacyClick(object sender, RoutedEventArgs e) => await RunAsync(async () => { try { await PlatformSettings.ApplyLegacyAsync(new(), true); Status("Прежние размеры возвращены."); } finally { FillBehavior(); } });
-    private void RefreshTaskbarClick(object sender, RoutedEventArgs e) { FillBehavior(); FillAppearance(); }
+    private void RefreshTaskbarClick(object sender, RoutedEventArgs e) { FillBehavior(); if (appearanceUpdates.IsCompleted) FillAppearance(); }
     private void LegacyHelpClick(object sender, RoutedEventArgs e) => OpenTarget("https://windhawk.net/mods/taskbar-icon-size");
     private void OpenWindowsClick(object sender, RoutedEventArgs e) => OpenTarget("ms-settings:taskbar");
     private void CopyDiagnosticsClick(object sender, RoutedEventArgs e)

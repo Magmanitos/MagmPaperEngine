@@ -21,6 +21,9 @@ const UINT updateMessage=RegisterWindowMessageW(UpdateMessage);
 const UINT stopMessage=RegisterWindowMessageW(StopMessage);
 constexpr UINT Revisit=WM_APP+44;
 constexpr UINT_PTR RevisitTimer=0x4d47;
+constexpr UINT_PTR GeometryTimer=0x4d48;
+constexpr UINT GeometryRetryInterval=60;
+constexpr ULONGLONG GeometryRetryWindow=360;
 const CLSID TapClass={0x0476aa92,0x2461,0x4c27,{0xb2,0xe2,0x86,0x6f,0x66,0x92,0x42,0x09}};
 // XAML's diagnostics lifetime interface: release each diagnostic handle once
 // discovery finishes. Keeping these handles would retain removed shell elements.
@@ -37,6 +40,7 @@ struct Context {
     std::unordered_map<InstanceHandle,std::unique_ptr<StyledElement>> elements;
     std::unordered_map<InstanceHandle,PendingElement> pending;
     Settings settings{};
+    ULONGLONG geometryDeadline=0;
     bool revisitQueued=false;
     com_ptr<DiagnosticsLifetime> lifetime;
     std::vector<InstanceHandle> releases;
@@ -110,30 +114,45 @@ bool autoHiding(HWND window) {
     return (SHAppBarMessage(ABM_GETSTATE,&data)&ABS_AUTOHIDE)!=0;
 #endif
 }
+bool matchesBarGeometry(const RECT& actual,const RECT& target,bool autoHide) {
+    return actual.bottom-actual.top==target.bottom-target.top&&
+        (autoHide?actual.top>=target.top:actual.bottom==target.bottom);
+}
 LONG resizeBars(Context& ctx,bool enabled,LONG* failure=nullptr) {
     LONG errors=0;
-    auto fail=[&](LONG code){errors++;if(failure&&!*failure) *failure=code?code:ERROR_GEN_FAILURE;};
+    auto fail=[&](LONG code){
+        errors++;
+        if(failure&&(!*failure||*failure==ERROR_RETRY)) *failure=code?code:ERROR_GEN_FAILURE;
+    };
     for(auto& bar:ctx.bars) {
-        if(!IsWindow(bar.window)) continue;
+        if(!IsWindow(bar.window)||(!enabled&&!bar.resized)) continue;
+        MONITORINFO info{sizeof(info)};
+        if(!GetMonitorInfoW(MonitorFromWindow(bar.window,MONITOR_DEFAULTTONEAREST),&info)) {fail(GetLastError());continue;}
+        RECT actual{};
+        if(!GetWindowRect(bar.window,&actual)) {fail(GetLastError());continue;}
+        UINT dpi=GetDpiForWindow(bar.window);
+        if(!dpi) {fail(ERROR_INVALID_WINDOW_HANDLE);continue;}
+        bool autoHide=autoHiding(bar.window);
         if(enabled) {
-            MONITORINFO info{sizeof(info)};
-            if(!GetMonitorInfoW(MonitorFromWindow(bar.window,MONITOR_DEFAULTTONEAREST),&info)) {fail(GetLastError());continue;}
-            RECT target=barRect(info.rcMonitor,GetDpiForWindow(bar.window),ctx.settings.height);
-            RECT actual{};if(!GetWindowRect(bar.window,&actual)) {fail(GetLastError());continue;}
-            bool hidden=autoHiding(bar.window)&&actual.top>=info.rcMonitor.bottom-4;
-            int y=hidden?actual.top:target.top;
-            if(!SetWindowPos(bar.window,nullptr,actual.left,y,actual.right-actual.left,target.bottom-target.top,SWP_NOZORDER|SWP_NOACTIVATE)) fail(GetLastError());
-            RECT confirmed{};
-            if(!GetWindowRect(bar.window,&confirmed)) fail(GetLastError());
-            else if(confirmed.bottom-confirmed.top!=target.bottom-target.top||(!hidden&&confirmed.bottom!=info.rcMonitor.bottom)) fail(ERROR_RETRY);
-            bar.resized=true;workArea(bar,target);
-        } else if(bar.resized) {
-            MONITORINFO info{sizeof(info)};GetMonitorInfoW(MonitorFromWindow(bar.window,MONITOR_DEFAULTTONEAREST),&info);
+            RECT target=barRect(info.rcMonitor,dpi,ctx.settings.height);
+            bar.resized=true;
+            if(!matchesBarGeometry(actual,target,autoHide)) {
+                int y=autoHide?resizedAutoHideTop(actual,info.rcMonitor.bottom,target.top,dpi):target.top;
+                if(!SetWindowPos(bar.window,nullptr,actual.left,y,actual.right-actual.left,target.bottom-target.top,SWP_NOZORDER|SWP_NOACTIVATE)) {
+                    fail(GetLastError());continue;
+                }
+                if(!GetWindowRect(bar.window,&actual)) {fail(GetLastError());continue;}
+                if(!matchesBarGeometry(actual,target,autoHide)) {fail(ERROR_RETRY);continue;}
+            }
+            workArea(bar,target);
+        } else {
             restoreWorkArea(bar);
-            RECT actual{};GetWindowRect(bar.window,&actual);
-            int height=MulDiv(bar.original.bottom-bar.original.top,GetDpiForWindow(bar.window),bar.originalDpi);
-            int y=autoHiding(bar.window)&&actual.top>=info.rcMonitor.bottom-4?actual.top:info.rcMonitor.bottom-height;
-            if(!SetWindowPos(bar.window,nullptr,info.rcMonitor.left,y,info.rcMonitor.right-info.rcMonitor.left,height,SWP_NOZORDER|SWP_NOACTIVATE)) fail(GetLastError());
+            int height=MulDiv(bar.original.bottom-bar.original.top,dpi,bar.originalDpi);
+            int y=info.rcMonitor.bottom-height;
+            if(autoHide) y=resizedAutoHideTop(actual,info.rcMonitor.bottom,y,dpi);
+            if(!SetWindowPos(bar.window,nullptr,info.rcMonitor.left,y,info.rcMonitor.right-info.rcMonitor.left,height,SWP_NOZORDER|SWP_NOACTIVATE)) {
+                fail(GetLastError());continue;
+            }
             bar.resized=false;
         }
     }
@@ -153,6 +172,10 @@ LONG restoreElements(Context& ctx) {
 void update(Context& ctx) {
     Settings value{};if(!shared||!read(shared,value)) return;
     if(stopping) value.enabled=0;
+    if(ctx.settings.sequence!=value.sequence||ctx.settings.enabled!=value.enabled) {
+        KillTimer(ctx.window,GeometryTimer);
+        ctx.geometryDeadline=0;
+    }
     ctx.settings=value;
     LONG errors=0,code=0,stage=0;
     if(!value.enabled) {errors+=restoreElements(ctx);if(errors) {code=E_FAIL;stage=3;}}
@@ -160,6 +183,15 @@ void update(Context& ctx) {
         errors++;if(!code) {code=to_hresult();stage=1;}
     }
     LONG geometryError=0;errors+=resizeBars(ctx,value.enabled!=0,&geometryError);
+    if(!code&&geometryError==ERROR_RETRY&&value.enabled) {
+        auto now=GetTickCount64();
+        if(!ctx.geometryDeadline) ctx.geometryDeadline=now+GeometryRetryWindow;
+        // Explorer can finish an appbar or XAML layout pass after SetWindowPos.
+        // Retry on the UI queue and acknowledge only the confirmed geometry.
+        if(now<ctx.geometryDeadline&&SetTimer(ctx.window,GeometryTimer,GeometryRetryInterval,nullptr)) return;
+    }
+    KillTimer(ctx.window,GeometryTimer);
+    if(!geometryError) ctx.geometryDeadline=0;
     if(!code&&geometryError) {code=geometryError;stage=2;}
     InterlockedExchange(&ctx.slot->errors,errors);
     InterlockedExchange(&ctx.slot->errorCode,code);
@@ -244,10 +276,11 @@ LRESULT CALLBACK contextProcedure(HWND window,UINT message,WPARAM wp,LPARAM lp) 
             ctx->releases.clear();
             if(refresh) update(*ctx);return 0;
         }
-        if(message==updateMessage) {update(*ctx);return 0;}
+        if(message==updateMessage||(message==WM_TIMER&&wp==GeometryTimer)) {update(*ctx);return 0;}
         if(message==stopMessage) {
             stopping=true;
             KillTimer(window,RevisitTimer);
+            KillTimer(window,GeometryTimer);
             ctx->settings.enabled=0;
             restoreElements(*ctx);
             resizeBars(*ctx,false);

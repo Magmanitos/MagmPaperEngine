@@ -13,9 +13,19 @@ using namespace magm;
 using namespace winrt;
 void require(bool value,const char* message) {if(!value) throw std::runtime_error(message);}
 HWND island=nullptr;
+int deferResizeAtHeight=0;
 LRESULT CALLBACK surface(HWND hwnd,UINT message,WPARAM wp,LPARAM lp) {
     if(message==WM_SIZE&&island) SetWindowPos(island,nullptr,0,0,LOWORD(lp),HIWORD(lp),SWP_NOZORDER|SWP_NOACTIVATE);
-    return DefWindowProcW(hwnd,message,wp,lp);
+    auto result=DefWindowProcW(hwnd,message,wp,lp);
+    if(message==WM_WINDOWPOSCHANGED&&deferResizeAtHeight) {
+        auto pos=*reinterpret_cast<WINDOWPOS*>(lp);
+        if(!(pos.flags&SWP_NOSIZE)&&pos.cy!=deferResizeAtHeight) {
+            int oldHeight=deferResizeAtHeight;deferResizeAtHeight=0;
+            // Model a shell layout pass that temporarily restores its old height.
+            SetWindowPos(hwnd,nullptr,pos.x,pos.y+pos.cy-oldHeight,pos.cx,oldHeight,SWP_NOSENDCHANGING|SWP_NOZORDER|SWP_NOACTIVATE);
+        }
+    }
+    return result;
 }
 void pump(){MSG message{};while(PeekMessageW(&message,nullptr,0,0,PM_REMOVE)){TranslateMessage(&message);DispatchMessageW(&message);}}
 void until(const std::function<bool()>& predicate,const char* description) {
@@ -59,6 +69,15 @@ int main() try {
     proposed.flags=SWP_NOSIZE;proposed.x=-1920;proposed.y=1078;
     anchorBarPosition(proposed,RECT{-1920,984,0,1080},monitor,144,80,true);
     require(proposed.y==1078&&proposed.cy==120&&proposed.cx==1920,"keep auto-hidden taskbar at its reveal strip");
+    proposed.flags=SWP_NOSIZE;proposed.x=-1920;proposed.y=1024;
+    anchorBarPosition(proposed,RECT{-1920,984,0,1080},monitor,144,64,true);
+    require(proposed.y==1024&&proposed.cy==96,"auto-hide animation can move through intermediate positions");
+    proposed.flags=SWP_NOMOVE;proposed.cx=1920;
+    anchorBarPosition(proposed,RECT{-1920,1024,0,1120},monitor,144,80,true);
+    require(proposed.y==1000&&proposed.cy==120,"height change preserves the current auto-hide offset");
+    proposed.flags=SWP_NOMOVE;proposed.cx=1920;
+    anchorBarPosition(proposed,RECT{-1920,1078,0,1174},monitor,144,80,true);
+    require(proposed.y==1078&&proposed.cy==120,"resizing a fully hidden taskbar preserves the reveal strip");
     RECT changedMonitor{-2560,0,0,1440},changedWork{-2500,32,0,1344};
     auto restored=restoredWorkArea(changedWork,changedMonitor,144,48,96,false);
     require(restored.bottom==1368&&restored.left==-2500&&restored.top==32,"restore after resolution and DPI change while preserving other appbars");
@@ -79,12 +98,18 @@ int main() try {
     xaml::Controls::Image icon;icon.Name(L"Icon");icon.Width(24);icon.Height(24);frame.Children().Append(icon);
     xaml::Shapes::Rectangle background;background.Name(L"BackgroundFill");auto original=xaml::Media::SolidColorBrush(Windows::UI::Color{255,20,30,40});background.Fill(original);frame.Children().Append(background);
     xaml::Controls::Button widgets;widgets.Name(L"MagmPaper.Test.Widgets");frame.Children().Append(widgets);
+    xaml::Controls::Grid button;button.Name(L"MagmPaper.Test.Button");button.Width(44);button.MaxWidth(48);frame.Children().Append(button);
     source.Content(root);
     until([&]{return root.IsLoaded();},"test XAML content did not load");
-    StyledElement styledFrame(frame,Kind::Frame),styledIcon(icon,Kind::Icon),styledBackground(background,Kind::Background),styledWidgets(widgets,Kind::Widgets);
+    StyledElement styledFrame(frame,Kind::Frame),styledIcon(icon,Kind::Icon),styledBackground(background,Kind::Background),styledWidgets(widgets,Kind::Widgets),styledButton(button,Kind::Button);
     settings.enabled=1;settings.height=64;settings.icon=40;settings.button=52;settings.opacity=25;settings.color=0x123456;settings.hideWidgets=1;settings.radius=8;
-    styledFrame.apply(settings);styledIcon.apply(settings);styledBackground.apply(settings);styledWidgets.apply(settings);root.UpdateLayout();
+    styledFrame.apply(settings);styledIcon.apply(settings);styledBackground.apply(settings);styledWidgets.apply(settings);styledButton.apply(settings);root.UpdateLayout();
     require(frame.Height()==64&&frame.MaxHeight()==64&&icon.Width()==40,"native XAML dimensions");
+    require(button.ActualWidth()==52&&button.MaxWidth()==52,"button width can grow beyond the old XAML maximum");
+    settings.button=44;styledButton.apply(settings);root.UpdateLayout();
+    require(button.ActualWidth()==44&&button.MaxWidth()==44,"button width can shrink while styling stays enabled");
+    require(styledButton.restore()&&button.Width()==44&&button.MaxWidth()==48,"restore the original button constraints");
+    settings.button=52;
     bool invalidRange=false;
     auto checkRange=[&](auto const&,auto const&){invalidRange|=frame.MinHeight()>frame.MaxHeight();};
     auto minToken=frame.RegisterPropertyChangedCallback(xaml::FrameworkElement::MinHeightProperty(),checkRange);
@@ -169,10 +194,12 @@ int main() try {
         require(background.Fill().as<xaml::Media::SolidColorBrush>().Color().A==64,"external module background alpha");
         RECT actual{};GetWindowRect(window,&actual);require(actual.bottom-actual.top==MulDiv(64,GetDpiForWindow(window),96),"native taskbar window resized");
         int sequence=1;
+        deferResizeAtHeight=actual.bottom-actual.top;
         for(auto sizes:std::vector<std::pair<int,int>>{{80,48},{40,24},{96,64},{64,40}}) {
             sequence++;
             auto command=std::to_string(sequence)+" 1 "+std::to_string(sizes.first)+" "+std::to_string(sizes.second)+" "+std::to_string(std::max(52,sizes.second))+" 1193046 25 1 8\n";
             host.send(command.c_str());host.applied(sequence);
+            require(deferResizeAtHeight==0,"the simulated shell layout did not defer the resize");
             MONITORINFO screen{sizeof(screen)};GetMonitorInfoW(MonitorFromWindow(window,MONITOR_DEFAULTTONEAREST),&screen);GetWindowRect(window,&actual);
             require(frame.Height()==sizes.first&&icon.Width()==sizes.second&&actual.bottom==screen.rcMonitor.bottom&&actual.bottom-actual.top==MulDiv(sizes.first,GetDpiForWindow(window),96),
                 "live helper resize failed or moved the bottom edge off-screen");

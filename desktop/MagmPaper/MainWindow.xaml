@@ -3,11 +3,31 @@
  <shell:WindowChrome.WindowChrome><shell:WindowChrome CaptionHeight="42" ResizeBorderThickness="6" GlassFrameThickness="0" CornerRadius="0" UseAeroCaptionButtons="False"/></shell:WindowChrome.WindowChrome>
  <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="1">
  <Grid><Grid.RowDefinitions><RowDefinition Height="42"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-  <Grid Background="#14151D"><TextBlock Text="◈   MagmPaper" Margin="20,0" VerticalAlignment="Center" FontWeight="SemiBold"/><StackPanel Orientation="Horizontal" HorizontalAlignment="Right" shell:WindowChrome.IsHitTestVisibleInChrome="True"><Button Content="−" Padding="18,8" Click="MinimizeClick" ToolTip="Свернуть"/><Button Content="□" Padding="18,8" Click="MaximizeClick" ToolTip="Развернуть"/><Button Content="×" Padding="18,8" Click="HideClick" ToolTip="Свернуть в трей"/></StackPanel></Grid>
+  <Grid Background="#14151D">
+   <TextBlock Text="◈   MagmPaper" Margin="20,0" VerticalAlignment="Center" FontWeight="SemiBold"/>
+   <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,6,0" shell:WindowChrome.IsHitTestVisibleInChrome="True">
+    <Button Style="{StaticResource CaptionButton}" Content="&#xE921;" Click="MinimizeClick" ToolTip="Свернуть" AutomationProperties.Name="Свернуть"/>
+    <Button Click="MaximizeClick" AutomationProperties.Name="{Binding ToolTip, RelativeSource={RelativeSource Self}}">
+     <Button.Style>
+      <Style TargetType="Button" BasedOn="{StaticResource CaptionButton}">
+       <Setter Property="Content" Value="&#xE922;"/>
+       <Setter Property="ToolTip" Value="Развернуть"/>
+       <Style.Triggers>
+        <DataTrigger Binding="{Binding WindowState, RelativeSource={RelativeSource AncestorType=Window}}" Value="Maximized">
+         <Setter Property="Content" Value="&#xE923;"/>
+         <Setter Property="ToolTip" Value="Восстановить размер окна"/>
+        </DataTrigger>
+       </Style.Triggers>
+      </Style>
+     </Button.Style>
+    </Button>
+    <Button Style="{StaticResource CloseCaptionButton}" Content="&#xE8BB;" Click="HideClick" ToolTip="Свернуть в трей" AutomationProperties.Name="Свернуть в трей"/>
+   </StackPanel>
+  </Grid>
   <Grid Grid.Row="1"><Grid.ColumnDefinitions><ColumnDefinition Width="212"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
    <Border Background="#14151B" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,1,0"><DockPanel>
     <StackPanel DockPanel.Dock="Top" Margin="22,32,20,26"><TextBlock Text="MagmPaper" FontSize="24" FontWeight="Bold"/><TextBlock Text="ВАШ WINDOWS" FontSize="10" Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0"/></StackPanel>
-    <StackPanel DockPanel.Dock="Bottom" Margin="20,20,20,24"><TextBlock Text="●  MagmPaper 0.4.5" FontSize="11" Foreground="{StaticResource SuccessBrush}"/><TextBlock Text="Закрытие окна оставляет обои и оформление в трее." Style="{StaticResource Muted}" FontSize="12" Margin="0,12,0,0"/></StackPanel>
+    <StackPanel DockPanel.Dock="Bottom" Margin="20,20,20,24"><TextBlock Text="●  MagmPaper 0.4.6" FontSize="11" Foreground="{StaticResource SuccessBrush}"/><TextBlock Text="Закрытие окна оставляет обои и оформление в трее." Style="{StaticResource Muted}" FontSize="12" Margin="0,12,0,0"/></StackPanel>
     <StackPanel><TextBlock Text="ПЕРСОНАЛИЗАЦИЯ" FontSize="10" Foreground="{StaticResource MutedBrush}" Margin="26,6,0,12"/>
      <RadioButton x:Name="NavOverview" Content="◫     Обзор" Style="{StaticResource Nav}" GroupName="Navigation" Tag="overview" Click="NavigateClick"/>
      <RadioButton x:Name="NavWallpapers" Content="◈     Обои" Style="{StaticResource Nav}" GroupName="Navigation" Tag="wallpapers" Click="NavigateClick"/>
@@ -42,34 +62,56 @@
     </Grid>
     <ScrollViewer x:Name="TaskbarPage" Visibility="Collapsed" VerticalScrollBarVisibility="Auto"><StackPanel>
      <TextBlock Text="Панель задач" Style="{StaticResource Title}"/><TextBlock Text="Настройте стандартную панель Windows. Закреплённые приложения, трей и меню сохраняются." Style="{StaticResource Muted}" Margin="0,0,0,20"/>
-     <Border Style="{StaticResource Card}" Padding="16" Margin="0,0,0,20"><StackPanel><TextBlock Text="Предпросмотр оформления" FontSize="14" Margin="0,0,0,10"/><Viewbox Height="110" Stretch="Uniform"><Grid Width="620" Height="110" Background="#302442"><Border x:Name="TaskbarSample" VerticalAlignment="Bottom" Height="48" Background="#171923"><Grid><TextBlock x:Name="WidgetsSample" Text="☁  12°" VerticalAlignment="Center" Margin="12,0" FontSize="12"/><StackPanel x:Name="TaskbarSampleIcons" Orientation="Horizontal" HorizontalAlignment="Center"/><TextBlock Text="12:00" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="12,0" FontSize="12"/></Grid></Border></Grid></Viewbox><TextBlock Text="Схема размеров и цвета. Изменения появятся на панели после применения." Style="{StaticResource Muted}" FontSize="11" Margin="0,10,0,0"/></StackPanel></Border>
+     <Border Style="{StaticResource Card}" Padding="16" Margin="0,0,0,20"><StackPanel><TextBlock Text="Предпросмотр оформления" FontSize="14" Margin="0,0,0,10"/><Viewbox Height="110" Stretch="Uniform"><Grid Width="620" Height="110" Background="#302442"><Border x:Name="TaskbarSample" VerticalAlignment="Bottom" Height="48" Background="#171923"><Grid><TextBlock x:Name="WidgetsSample" Text="☁  12°" VerticalAlignment="Center" Margin="12,0" FontSize="12"/><StackPanel x:Name="TaskbarSampleIcons" Orientation="Horizontal" HorizontalAlignment="Center">
+       <Border><Border CornerRadius="4" Background="#53A6FF" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+       <Border><Border CornerRadius="4" Background="#EABB58" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+       <Border><Border CornerRadius="4" Background="#6CC9B0" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+       <Border><Border CornerRadius="4" Background="#C295EB" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+      </StackPanel><TextBlock Text="12:00" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="12,0" FontSize="12"/></Grid></Border></Grid></Viewbox><TextBlock Text="При включённом оформлении изменения сразу видны и на панели Windows." Style="{StaticResource Muted}" FontSize="11" Margin="0,10,0,0"/></StackPanel></Border>
      <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="20"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
       <Border Style="{StaticResource Card}" VerticalAlignment="Top"><StackPanel>
        <TextBlock Text="Поведение панели" FontSize="21" Margin="0,0,0,10"/><TextBlock Text="Настройки сохраняются в Windows и действуют после выхода из приложения." Style="{StaticResource Muted}" Margin="0,0,0,18"/>
-       <TextBlock Text="Расположение кнопок"/><ComboBox x:Name="AlignmentInput"><ComboBoxItem Content="Слева"/><ComboBoxItem Content="По центру"/></ComboBox>
-       <TextBlock Text="Поиск"/><ComboBox x:Name="SearchInput"><ComboBoxItem Content="Скрыт"/><ComboBoxItem Content="Значок"/><ComboBoxItem Content="Поле поиска"/><ComboBoxItem Content="Значок и подпись"/></ComboBox>
-       <CheckBox x:Name="AutoHideInput" Content="Автоматически скрывать панель"/><CheckBox x:Name="TaskViewInput" Content="Кнопка «Представление задач»"/>
-       <Button Content="Применить поведение" Click="ApplyBehaviorClick" Style="{StaticResource Primary}" Margin="0,20,0,8"/><Button Content="Вернуть исходные" Click="RestoreBehaviorClick"/>
+       <TextBlock Text="Расположение кнопок"/><ComboBox x:Name="AlignmentInput" Tag="alignment" SelectionChanged="BehaviorChanged"><ComboBoxItem Content="Слева"/><ComboBoxItem Content="По центру"/></ComboBox>
+       <TextBlock Text="Поиск"/><ComboBox x:Name="SearchInput" Tag="search" SelectionChanged="BehaviorChanged"><ComboBoxItem Content="Скрыт"/><ComboBoxItem Content="Значок"/><ComboBoxItem Content="Поле поиска"/><ComboBoxItem Content="Значок и подпись"/></ComboBox>
+       <CheckBox x:Name="AutoHideInput" Tag="autoHide" Click="BehaviorChanged" Content="Автоматически скрывать панель"/><CheckBox x:Name="TaskViewInput" Tag="taskView" Click="BehaviorChanged" Content="Кнопка «Представление задач»"/>
+       <Button Content="Вернуть исходные" Click="RestoreBehaviorClick" Margin="0,16,0,0"/>
        <Button Content="Открыть параметры Windows  ↗" Click="OpenWindowsClick" Margin="0,20,0,0"/>
        <TextBlock Text="Кнопку виджетов можно скрыть в оформлении справа. Включение самой функции виджетов доступно в параметрах Windows." Style="{StaticResource Muted}" FontSize="12" Margin="0,14,0,0"/>
       </StackPanel></Border>
       <Border Grid.Column="2" Style="{StaticResource Card}"><StackPanel>
-       <TextBlock Text="Оформление панели" FontSize="21"/><TextBlock x:Name="AppearanceStatus" Style="{StaticResource Muted}" Margin="0,12,0,12"/><CheckBox x:Name="AppearanceEnabled" Content="Включить оформление MagmPaper"/>
-       <TextBlock Text="Высота панели · px" Margin="0,12,0,5"/><TextBox x:Name="HeightInput" Text="48"/>
-       <TextBlock Text="Размер значков · px" Margin="0,12,0,5"/><TextBox x:Name="IconInput" Text="24"/>
-       <TextBlock Text="Ширина кнопок · px" Margin="0,12,0,5"/><TextBox x:Name="ButtonInput" Text="44"/>
-       <TextBlock Text="Цвет фона" Margin="0,12,0,5"/><DockPanel><Button DockPanel.Dock="Right" Content="Выбрать…" Click="ColorClick" Margin="8,0,0,0"/><TextBox x:Name="ColorInput" Text="#171923" MaxLength="7"/></DockPanel>
-       <TextBlock Text="Непрозрачность · %" Margin="0,12,0,5"/><TextBox x:Name="OpacityInput" Text="80"/>
-       <TextBlock Text="Скругление фона · px" Margin="0,12,0,5"/><TextBox x:Name="RadiusInput" Text="0"/>
-       <CheckBox x:Name="HideWidgetsInput" Content="Скрыть кнопку виджетов"/>
-       <WrapPanel Margin="0,12,0,12"><Button Content="Компактная" Tag="compact" Click="PresetClick" Padding="9,8" Margin="0,0,5,5"/><Button Content="Обычная" Tag="standard" Click="PresetClick" Padding="9,8" Margin="0,0,5,5"/><Button Content="Крупная" Tag="large" Click="PresetClick" Padding="9,8" Margin="0,0,0,5"/></WrapPanel>
+       <TextBlock Text="Оформление панели" FontSize="21"/><TextBlock x:Name="AppearanceStatus" Style="{StaticResource Muted}" Margin="0,12,0,12" AutomationProperties.LiveSetting="Polite"/><CheckBox x:Name="AppearanceEnabled" Click="AppearanceChanged" Content="Включить оформление MagmPaper"/>
+       <Slider x:Name="HeightInput" Style="{StaticResource SettingsSlider}" AutomationProperties.Name="Высота панели, px" Minimum="32" Maximum="96" Value="48" ValueChanged="AppearanceChanged"/>
+       <Slider x:Name="IconInput" Style="{StaticResource SettingsSlider}" AutomationProperties.Name="Размер значков, px" Minimum="16" Maximum="64" Value="24" ValueChanged="AppearanceChanged"/>
+       <Slider x:Name="ButtonInput" Style="{StaticResource SettingsSlider}" AutomationProperties.Name="Ширина кнопок, px" Minimum="28" Maximum="100" Value="44" ValueChanged="AppearanceChanged"/>
+       <DockPanel Margin="0,10,0,4">
+        <Button x:Name="ColorButton" DockPanel.Dock="Right" Click="ColorClick" AutomationProperties.Name="Выбрать цвет фона" Padding="9,6">
+         <StackPanel Orientation="Horizontal">
+          <Border x:Name="ColorSwatch" Width="15" Height="15" CornerRadius="4" BorderThickness="1" BorderBrush="{StaticResource MutedBrush}" Margin="0,0,7,0"/>
+          <TextBlock x:Name="ColorValue" Text="#171923"/>
+         </StackPanel>
+        </Button>
+        <TextBlock Text="Цвет фона" VerticalAlignment="Center" Margin="0,0,8,0"/>
+       </DockPanel>
+       <Slider x:Name="OpacityInput" Style="{StaticResource SettingsSlider}" AutomationProperties.Name="Непрозрачность, %" Minimum="0" Maximum="100" Value="80" ValueChanged="AppearanceChanged"/>
+       <Slider x:Name="RadiusInput" Style="{StaticResource SettingsSlider}" AutomationProperties.Name="Скругление фона, px" Minimum="0" Maximum="24" Value="0" ValueChanged="AppearanceChanged"/>
+       <CheckBox x:Name="HideWidgetsInput" Click="AppearanceChanged" Content="Скрыть кнопку виджетов"/>
+       <UniformGrid Columns="3" Margin="0,10,0,12" TextElement.FontSize="12">
+        <Button Content="Компактная" Tag="compact" Click="PresetClick" Padding="4,8" Margin="0,0,4,0"/>
+        <Button Content="Обычная" Tag="standard" Click="PresetClick" Padding="4,8" Margin="2,0"/>
+        <Button Content="Крупная" Tag="large" Click="PresetClick" Padding="4,8" Margin="4,0,0,0"/>
+       </UniformGrid>
        <TextBlock Text="0% — прозрачный фон, 100% — непрозрачный. Размеры указаны до масштабирования Windows. Оформление работает, пока MagmPaper запущен, включая режим в трее." Style="{StaticResource Muted}" FontSize="12"/>
-       <Button Content="Применить оформление" Click="ApplyAppearanceClick" Style="{StaticResource Primary}" Margin="0,18,0,8"/><Button Content="Вернуть оформление Windows" Click="DisableAppearanceClick"/>
       </StackPanel></Border>
      </Grid>
      <Expander x:Name="LegacyPanel" Header="Прежние настройки Windhawk" Visibility="Collapsed" Foreground="{StaticResource TextBrush}" Margin="0,24,0,0"><Border Style="{StaticResource Card}" Margin="0,14,0,0"><StackPanel>
-      <TextBlock Text="Сохранены для совместимости с прежними версиями. Не включайте оформление MagmPaper одновременно с модами панели Windhawk." Style="{StaticResource Muted}"/>
-      <UniformGrid Columns="5" Margin="0,14,0,14"><StackPanel Margin="0,0,8,0"><TextBlock Text="Высота"/><TextBox x:Name="LegacyHeight"/></StackPanel><StackPanel Margin="0,0,8,0"><TextBlock Text="Значки"/><TextBox x:Name="LegacyIcon"/></StackPanel><StackPanel Margin="0,0,8,0"><TextBlock Text="Кнопки"/><TextBox x:Name="LegacyButton"/></StackPanel><StackPanel Margin="0,0,8,0"><TextBlock Text="Малые значки"/><TextBox x:Name="LegacySmallIcon"/></StackPanel><StackPanel><TextBlock Text="Малые кнопки"/><TextBox x:Name="LegacySmallButton"/></StackPanel></UniformGrid>
+      <TextBlock Text="Для записи настроек Windhawk требуется подтверждение администратора. Не включайте оформление MagmPaper одновременно с модами панели Windhawk." Style="{StaticResource Muted}"/>
+      <UniformGrid Columns="2" Margin="0,10,0,14">
+       <Slider x:Name="LegacyHeight" Style="{StaticResource SettingsSlider}" Margin="0,6,12,2" AutomationProperties.Name="Высота панели, px" Minimum="32" Maximum="96" Value="48"/>
+       <Slider x:Name="LegacyIcon" Style="{StaticResource SettingsSlider}" Margin="0,6,12,2" AutomationProperties.Name="Размер значков, px" Minimum="16" Maximum="64" Value="24"/>
+       <Slider x:Name="LegacyButton" Style="{StaticResource SettingsSlider}" Margin="0,6,12,2" AutomationProperties.Name="Ширина кнопок, px" Minimum="28" Maximum="100" Value="44"/>
+       <Slider x:Name="LegacySmallIcon" Style="{StaticResource SettingsSlider}" Margin="0,6,12,2" AutomationProperties.Name="Размер малых значков, px" Minimum="16" Maximum="32" Value="16"/>
+       <Slider x:Name="LegacySmallButton" Style="{StaticResource SettingsSlider}" Margin="0,6,12,2" AutomationProperties.Name="Ширина малых кнопок, px" Minimum="24" Maximum="64" Value="32"/>
+      </UniformGrid>
       <WrapPanel><Button Content="Применить через Windhawk" Click="ApplyLegacyClick" Margin="0,0,10,0"/><Button Content="Вернуть прежние размеры" Click="RestoreLegacyClick" Margin="0,0,10,0"/><Button Content="Страница мода ↗" Click="LegacyHelpClick"/></WrapPanel>
      </StackPanel></Border></Expander>
      <Button Content="↻ Обновить состояние панели" Click="RefreshTaskbarClick" HorizontalAlignment="Left" Margin="0,20,0,0"/>

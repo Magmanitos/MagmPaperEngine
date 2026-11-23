@@ -108,11 +108,14 @@ internal sealed class AppearanceService : IAsyncDisposable
     }
     private async Task SendAsync(AppearanceSettings settings)
     {
-        Start(); int id = Interlocked.Increment(ref sequence);
+        Start();
+        var child = process ?? throw new IOException("Модуль панели завершился до отправки настроек.");
+        int id = Interlocked.Increment(ref sequence);
         var request = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously); pending[id] = request;
         try
         {
-            await process!.StandardInput.WriteLineAsync(settings.Encode(id)); await process.StandardInput.FlushAsync();
+            await child.StandardInput.WriteLineAsync(settings.Encode(id));
+            await child.StandardInput.FlushAsync();
             var result = await request.Task.WaitAsync(TimeSpan.FromSeconds(20));
             if (result.GetProperty("errors").GetInt32() != 0 || (settings.Enabled && new[] { "frames", "icons", "backgrounds" }.Any(key => !result.TryGetProperty(key, out var count) || count.GetInt32() < 1)))
                 throw new IOException("Модуль не подтвердил все элементы оформления панели.");

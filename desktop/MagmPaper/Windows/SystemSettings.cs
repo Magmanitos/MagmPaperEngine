@@ -63,30 +63,48 @@ internal sealed class SystemSettings
     private void Persist() => DataFiles.Replace(file, backup.ToJsonString(DataFiles.Json));
     private static string Failure(string key, Exception error) => $"{(key == "autoHide" ? "Скрытие панели" : Keys[key].Label)}: " +
         (error is UnauthorizedAccessException || error is System.Security.SecurityException ? "Windows запретила изменение. Используйте «Открыть параметры Windows»." : error.Message);
-    public string Apply(NativeTaskbarSettings next)
+    private static bool Confirm(string key, JsonNode? expected)
     {
-        if (next.Alignment is not (0 or 1) || next.Search is < 0 or > 3) throw new InvalidDataException("Некорректные параметры панели.");
-        var patch = new JsonObject { ["alignment"] = next.Alignment, ["search"] = next.Search, ["taskView"] = next.TaskView ? 1 : 0, ["autoHide"] = next.AutoHide };
-        var original = backup["native"]!.AsObject(); var changed = new List<string>(); var failures = new List<string>();
-        foreach (var item in patch)
+        if (key == "autoHide")
         {
-            var before = Read(item.Key); var effective = before ?? JsonValue.Create(Keys[item.Key].Default);
-            if (JsonNode.DeepEquals(effective, item.Value)) continue;
-            bool saved = original.ContainsKey(item.Key); if (!saved) original[item.Key] = before?.DeepClone(); Persist();
+            // AppBar acknowledges the request before Explorer finishes moving
+            // the bar. Let it process the change on its own thread.
+            for (int attempt = 0; attempt < 5; attempt++)
+            {
+                if (JsonNode.DeepEquals(Read(key), expected)) return true;
+                Thread.Sleep(50);
+            }
+        }
+        return JsonNode.DeepEquals(Read(key), expected);
+    }
+    public string Apply(string key, JsonNode value)
+    {
+        var before = Read(key);
+        var effective = before ?? JsonValue.Create(Keys[key].Default);
+        if (JsonNode.DeepEquals(effective, value)) return "Изменений нет.";
+
+        var original = backup["native"]!.AsObject();
+        bool saved = original.ContainsKey(key);
+        if (!saved) original[key] = before?.DeepClone();
+        Persist();
+        try
+        {
+            Write(key, value);
+            if (!Confirm(key, value)) throw new IOException("Windows не подтвердила изменение.");
+        }
+        catch (Exception error)
+        {
             try
             {
-                Write(item.Key, item.Value); if (!JsonNode.DeepEquals(Read(item.Key), item.Value)) throw new IOException("Windows не подтвердила изменение.");
-                changed.Add(item.Key);
+                if (!JsonNode.DeepEquals(Read(key), before)) Write(key, before);
+                if (!saved && Confirm(key, before)) original.Remove(key);
             }
-            catch (Exception error)
-            {
-                failures.Add(Failure(item.Key, error));
-                try { if (!JsonNode.DeepEquals(Read(item.Key), before)) Write(item.Key, before); if (!saved && JsonNode.DeepEquals(Read(item.Key), before)) original.Remove(item.Key); } catch { }
-            }
+            catch { /* Keep the backup if Explorer has not confirmed the rollback. */ }
             Persist();
+            throw new IOException(Failure(key, error), error);
         }
-        if (changed.Count > 0) Notify();
-        return (changed.Count > 0 ? "Настройки поведения сохранены. Некоторым изменениям нужен повторный вход в Windows. " : "Изменений нет. ") + string.Join(" ", failures);
+        Notify();
+        return "Настройка поведения сохранена. Некоторым изменениям нужен повторный вход в Windows.";
     }
     public string Restore()
     {
@@ -96,7 +114,7 @@ internal sealed class SystemSettings
             try
             {
                 if (!JsonNode.DeepEquals(Read(item.Key), item.Value)) { Write(item.Key, item.Value); changed = true; }
-                if (!JsonNode.DeepEquals(Read(item.Key), item.Value)) throw new IOException("Восстановление не подтверждено.");
+                if (!Confirm(item.Key, item.Value)) throw new IOException("Восстановление не подтверждено.");
                 original.Remove(item.Key);
             }
             catch (Exception error) { failures.Add(Failure(item.Key, error)); }

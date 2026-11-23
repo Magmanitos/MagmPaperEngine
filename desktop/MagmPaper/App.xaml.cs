@@ -110,6 +110,11 @@ public partial class App : Application
     {
         if (quitting || (confirm && manager?.ConfirmExit() == false)) return; quitting = true;
         wallpapers?.Dispose();
+        if (manager is not null)
+        {
+            manager.IsEnabled = false;
+            await manager.FinishTaskbarUpdatesAsync();
+        }
         if (appearance is not null) try { await appearance.ShutdownAsync(final: true); } catch { }
         if (manager is not null) { manager.Quitting = true; manager.Close(); }
         AngleDevice.Shutdown(); tray?.Dispose();
