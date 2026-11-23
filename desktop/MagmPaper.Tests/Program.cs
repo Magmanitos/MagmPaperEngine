@@ -1,3 +1,5 @@
+using System.Buffers.Binary;
+using System.Text.Json;
 using MagmPaper.Core;
 using System.Text.Json.Nodes;
 
@@ -80,7 +82,7 @@ Test("legacy directory migration preserves settings and refuses conflicts", (_, 
 tests.Add(("appearance wire protocol and motion are compatible", () =>
 {
     var style = new AppearanceSettings { Enabled = true, Color = "#123456", Height = 64, Icon = 40, Button = 52, Opacity = 25, HideWidgets = true, Radius = 8 };
-    Check(style.Encode(1) == "1 1 64 40 52 1193046 25 1 8", "native protocol changed");
+    Check(style.Encode(1) == "1 1 64 40 52 1193046 25 1 8 0 7429332", "native protocol defaults changed");
     Throws(() => (style with { Color = "red" }).Validate()); Throws(() => (style with { Height = 32 }).Validate());
     var a = new MouseMotion(20); a.Target(1, 0, true); a.Advance(20);
     var b = new MouseMotion(20); b.Target(1, 0, true); b.Advance(10); b.Advance(10);
@@ -89,6 +91,33 @@ tests.Add(("appearance wire protocol and motion are compatible", () =>
     Check(PlaybackPolicy.PauseReason(new(), false, false, false) is null, "visible desktop paused");
     Check(PlaybackPolicy.PauseReason(new(), true, false, false) is not null, "locked desktop running");
     Check(new Area(-1920, 0, 0, 1080).Covers(new(-1920, 0, 0, 1032)), "coverage geometry");
+}));
+
+tests.Add(("glass settings preserve legacy data and encode a second tint", () =>
+{
+    var old = JsonSerializer.Deserialize<AppearanceSettings>("""{"enabled":true,"color":"#123456","opacity":45}""", DataFiles.Json)!;
+    Check(old.Validate().Enabled && !old.Glass && old.Color == "#123456" && old.Opacity == 45, "legacy appearance changed");
+    var glass = old with { Glass = true, GlassColor = "#ABCDEF" };
+    Check(glass.Encode(2).EndsWith(" 1 11259375", StringComparison.Ordinal), "second tint missing from the wire protocol");
+    Throws(() => (glass with { GlassColor = "#GGCCAA" }).Validate());
+}));
+
+tests.Add(("cursor packs match Windows states and PNG conversion preserves the hotspot", () =>
+{
+    var names = new[] { "Pointer.cur", "Work.ani", "Dgn1.cur", "Diagonal_2.CUR", "Text.cur", "Zoom-out.cur", "uninstall.bat" };
+    var match = CursorFiles.Match(names, name => name);
+    Check(match.Count == 6 && match["Arrow"] == "Pointer.cur" && match["AppStarting"] == "Work.ani" &&
+        match["SizeNWSE"] == "Dgn1.cur" && match["SizeNESW"] == "Diagonal_2.CUR" && match["Zoom-out"] == "Zoom-out.cur",
+        "cursor roles were not recognized");
+    byte[] pixels = [0, 0, 255, 255, 0, 0, 0, 0, 255, 0, 0, 128, 0, 255, 0, 255];
+    byte[] cursor = CursorFiles.FromBgra(2, 2, 1, 0, pixels);
+    Check(CursorFiles.HasCursorHeader(".CUR", cursor) && !CursorFiles.HasCursorHeader(".ani", cursor), "wrong Windows cursor signature");
+    Check(BinaryPrimitives.ReadUInt16LittleEndian(cursor.AsSpan(10)) == 1 &&
+        BinaryPrimitives.ReadUInt16LittleEndian(cursor.AsSpan(12)) == 0, "wrong hotspot coordinates");
+    Check(cursor.AsSpan(62, 8).SequenceEqual(pixels.AsSpan(8, 8)) && cursor[82] == 0x40,
+        "cursor rows or the transparency mask were not encoded");
+    Throws(() => CursorFiles.FromBgra(2, 2, 2, 0, pixels));
+    Throws(() => CursorFiles.PngSize("not a PNG"u8));
 }));
 
 tests.Add(("scroll motion preserves velocity and trajectory across display rates", () =>

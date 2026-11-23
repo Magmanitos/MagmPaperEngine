@@ -31,18 +31,21 @@ public sealed record AppearanceSettings
     public int Opacity { get; init; } = 80;
     public bool HideWidgets { get; init; }
     public int Radius { get; init; }
+    public bool Glass { get; init; }
+    public string GlassColor { get; init; } = "#715CD4";
     public AppearanceSettings Validate()
     {
         if (Height is < 32 or > 96 || Icon is < 16 or > 64 || Button is < 28 or > 100 ||
             Icon + 8 > Height || Button < Icon || Opacity is < 0 or > 100 || Radius is < 0 or > 24 ||
-            Color is null || !Regex.IsMatch(Color, "^#[0-9a-fA-F]{6}$"))
+            !ValidColor(Color) || !ValidColor(GlassColor))
             throw new InvalidDataException("Проверьте размеры, цвет и прозрачность панели. Значки должны помещаться в панель и кнопки.");
         return this;
     }
+    private static bool ValidColor(string? value) => value is not null && Regex.IsMatch(value, @"\A#[0-9a-fA-F]{6}\z");
     public string Encode(int sequence)
     {
         Validate();
-        return FormattableString.Invariant($"{sequence} {(Enabled ? 1 : 0)} {Height} {Icon} {Button} {Convert.ToInt32(Color[1..], 16)} {Opacity} {(HideWidgets ? 1 : 0)} {Radius}");
+        return FormattableString.Invariant($"{sequence} {(Enabled ? 1 : 0)} {Height} {Icon} {Button} {Convert.ToInt32(Color[1..], 16)} {Opacity} {(HideWidgets ? 1 : 0)} {Radius} {(Glass ? 1 : 0)} {Convert.ToInt32(GlassColor[1..], 16)}");
     }
 }
 

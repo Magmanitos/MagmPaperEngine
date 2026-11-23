@@ -278,6 +278,15 @@ internal static class SmokeTests
         var draft = DataFiles.Read<AppearanceSettings>(Path.Combine(window.Library.DirectoryPath, "taskbar-appearance.json"));
         Assert(!draft.Enabled && draft.Height == 38 && draft.Icon == 30 && draft.Button == 54 && draft.Opacity == 43,
             "automatic appearance settings did not persist the last slider values");
+        window.GlassColorValue.Text = "#ABCDEF";
+        window.GlassInput.IsChecked = true;
+        window.GlassInput.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));
+        Assert(window.TaskbarSample.Background is LinearGradientBrush glass &&
+            glass.GradientStops.Count == 3 && glass.GradientStops[2].Color == Color.FromArgb(73, 0xAB, 0xCD, 0xEF),
+            "glass preview does not reflect the selected tint and opacity");
+        await window.FinishTaskbarUpdatesAsync();
+        draft = DataFiles.Read<AppearanceSettings>(Path.Combine(window.Library.DirectoryPath, "taskbar-appearance.json"));
+        Assert(draft.Glass && draft.GlassColor == "#ABCDEF", "glass settings were not saved");
         window.AlignmentInput.IsDropDownOpen = true;
         await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
         var dropdown = (System.Windows.Controls.Primitives.Popup)window.AlignmentInput.Template.FindName("PART_Popup", window.AlignmentInput);
@@ -301,12 +310,39 @@ internal static class SmokeTests
         var buttonText = TextElements(window.AddWallpaperButton).First(text => !string.IsNullOrEmpty(text.Text));
         AssertReadable(buttonText.Foreground, window.AddWallpaperButton.Background, "primary button");
         CaptureWindow(window, Path.Combine(output, "native-interface.png"));
+        window.Navigate("cursors");
+        Assert(window.CursorsPage.Roles.Items.Count == CursorFiles.Roles.Count && window.CursorsPage.Packs.Items.Count == 4,
+            "cursor page did not expose all roles and presets");
+        var source = BitmapSource.Create(2, 2, 96, 96, PixelFormats.Bgra32, null,
+            new byte[] { 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255 }, 8);
+        var pngEncoder = new PngBitmapEncoder();
+        pngEncoder.Frames.Add(BitmapFrame.Create(source));
+        using var png = new MemoryStream();
+        pngEncoder.Save(png);
+        var hotspot = new Views.CursorHotspot(png.ToArray()) { Owner = window };
+        hotspot.XInput.Value = 1;
+        using (var cursorBytes = new MemoryStream(hotspot.CursorBytes()))
+        using (var cursor = new System.Windows.Input.Cursor(cursorBytes)) { }
+        hotspot.Close();
+
+        window.Navigate("settings");
+        window.OpenUpdateNotesButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        var notes = window.OwnedWindows.OfType<Views.UpdateNotes>().Single();
+        await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+        Assert(notes.IsVisible && notes.Changes.Items.Count > 0 && notes.VersionText.Text == Views.UpdateNotes.VersionLabel,
+            "changelog was not shown with notes for this build");
+        notes.DismissButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Assert(!notes.IsVisible, "changelog close button did not dismiss the window");
+        window.ShowUpdateNotesInput.IsChecked = false;
+        window.ShowUpdateNotesInput.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));
+        using var preferences = JsonDocument.Parse(File.ReadAllText(Path.Combine(window.Library.DirectoryPath, "ui.json")));
+        Assert(!preferences.RootElement.GetProperty("showUpdateNotesOnStartup").GetBoolean(), "changelog preference was not saved");
         long idleFrames = surface.Frames; await Task.Delay(150); idleFrames = surface.Frames; await Task.Delay(400);
         Assert(surface.Frames == idleFrames, "hidden preview consumes frames");
         await Task.Delay(3000); // Let startup compilation, layout and deferred GPU release settle.
         var process = Process.GetCurrentProcess(); var startCpu = process.TotalProcessorTime; var clockIdle = Stopwatch.StartNew(); await Task.Delay(5000); process.Refresh();
         var report = new { passed = true, version = typeof(App).Assembly.GetName().Version?.ToString(), nativeUi = "WPF", gpuTests = "ANGLE D3D11 WARP", composedDesktopPixels = composedPixels, workingSetBytes = process.WorkingSet64, idleCpuMilliseconds = (process.TotalProcessorTime - startCpu).TotalMilliseconds, idleSampleMilliseconds = clockIdle.Elapsed.TotalMilliseconds,
-            tests = new[] { "real GLSL pixels", "late GLSL extension compatibility", "compile error preserves program", "backbuffer", "quality fills window", "pause stops frames", "physical monitor geometry", "24H2 child layer order and opaque composition", "native window coverage/minimize/transparent overlay", "click-through and real cursor uniforms", "mouse toggle", "six GPU resets with active and paused second context", "Windows autostart and StartupApproved", "WPF editor/save/navigation", "native preview visibility and scroll clipping", "smooth scrolling over inputs and repeated wheel events", "inactive and disabled control colors", "stable collection after activation/navigation", "HSV and HEX color picker", "live taskbar preview and automatic slider persistence", "settings", "WPF theme contrast", "hidden preview" } };
+            tests = new[] { "real GLSL pixels", "late GLSL extension compatibility", "compile error preserves program", "backbuffer", "quality fills window", "pause stops frames", "physical monitor geometry", "24H2 child layer order and opaque composition", "native window coverage/minimize/transparent overlay", "click-through and real cursor uniforms", "mouse toggle", "six GPU resets with active and paused second context", "Windows autostart and StartupApproved", "WPF editor/save/navigation", "native preview visibility and scroll clipping", "smooth scrolling over inputs and repeated wheel events", "inactive and disabled control colors", "stable collection after activation/navigation", "HSV and HEX color picker", "live taskbar preview and automatic slider persistence", "glass gradient settings", "cursor catalogue and PNG hotspot", "dismissible changelog and preference", "settings", "WPF theme contrast", "hidden preview" } };
         File.WriteAllText(Path.Combine(output, "report.json"), JsonSerializer.Serialize(report, DataFiles.Json));
     }
     private static RenderTargetBitmap WindowBitmap(Window window)

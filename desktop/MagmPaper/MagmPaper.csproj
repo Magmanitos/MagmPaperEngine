@@ -27,5 +27,6 @@
     <Content Include="../ThirdParty/WINDOWS-DESKTOP-LICENSE.txt" Link="Licenses/WINDOWS-DESKTOP.txt" CopyToOutputDirectory="PreserveNewest" />
     <EmbeddedResource Include="../../build/icon.ico" Link="Assets/icon.ico" />
     <EmbeddedResource Include="Assets/example.glsl" />
+    <EmbeddedResource Include="../../RELEASE_NOTES.md" LogicalName="MagmPaper.Assets.ReleaseNotes.md" />
   </ItemGroup>
 </Project>

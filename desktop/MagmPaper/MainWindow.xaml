@@ -1,4 +1,4 @@
-<Window x:Class="MagmPaper.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework" xmlns:graphics="clr-namespace:MagmPaper.Graphics"
+<Window x:Class="MagmPaper.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework" xmlns:graphics="clr-namespace:MagmPaper.Graphics" xmlns:views="clr-namespace:MagmPaper.Views"
  Title="MagmPaper" Style="{StaticResource AppWindow}" Width="1280" Height="850" MinWidth="980" MinHeight="650" WindowStyle="None" ResizeMode="CanResize" WindowStartupLocation="CenterScreen">
  <shell:WindowChrome.WindowChrome><shell:WindowChrome CaptionHeight="42" ResizeBorderThickness="6" GlassFrameThickness="0" CornerRadius="0" UseAeroCaptionButtons="False"/></shell:WindowChrome.WindowChrome>
  <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="1">
@@ -27,11 +27,12 @@
   <Grid Grid.Row="1"><Grid.ColumnDefinitions><ColumnDefinition Width="212"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
    <Border Background="#14151B" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,1,0"><DockPanel>
     <StackPanel DockPanel.Dock="Top" Margin="22,32,20,26"><TextBlock Text="MagmPaper" FontSize="24" FontWeight="Bold"/><TextBlock Text="ВАШ WINDOWS" FontSize="10" Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0"/></StackPanel>
-    <StackPanel DockPanel.Dock="Bottom" Margin="20,20,20,24"><TextBlock Text="●  MagmPaper 0.4.6" FontSize="11" Foreground="{StaticResource SuccessBrush}"/><TextBlock Text="Закрытие окна оставляет обои и оформление в трее." Style="{StaticResource Muted}" FontSize="12" Margin="0,12,0,0"/></StackPanel>
+    <StackPanel DockPanel.Dock="Bottom" Margin="20,20,20,24"><TextBlock x:Name="AppVersionLabel" FontSize="11" Foreground="{StaticResource SuccessBrush}"/><TextBlock Text="Закрытие окна оставляет обои и оформление в трее." Style="{StaticResource Muted}" FontSize="12" Margin="0,12,0,0"/></StackPanel>
     <StackPanel><TextBlock Text="ПЕРСОНАЛИЗАЦИЯ" FontSize="10" Foreground="{StaticResource MutedBrush}" Margin="26,6,0,12"/>
      <RadioButton x:Name="NavOverview" Content="◫     Обзор" Style="{StaticResource Nav}" GroupName="Navigation" Tag="overview" Click="NavigateClick"/>
      <RadioButton x:Name="NavWallpapers" Content="◈     Обои" Style="{StaticResource Nav}" GroupName="Navigation" Tag="wallpapers" Click="NavigateClick"/>
      <RadioButton x:Name="NavTaskbar" Content="▰     Панель задач" Style="{StaticResource Nav}" GroupName="Navigation" Tag="taskbar" Click="NavigateClick"/>
+     <RadioButton x:Name="NavCursors" Content="↖     Курсоры" Style="{StaticResource Nav}" GroupName="Navigation" Tag="cursors" Click="NavigateClick"/>
      <RadioButton x:Name="NavSettings" Content="⚙     Параметры" Style="{StaticResource Nav}" GroupName="Navigation" Tag="settings" Click="NavigateClick" Margin="10,24,10,3"/>
     </StackPanel>
    </DockPanel></Border>
@@ -92,6 +93,16 @@
         </Button>
         <TextBlock Text="Цвет фона" VerticalAlignment="Center" Margin="0,0,8,0"/>
        </DockPanel>
+       <CheckBox x:Name="GlassInput" Content="Стеклянный градиент" Click="AppearanceChanged"/>
+       <DockPanel x:Name="GlassColors" Visibility="Collapsed" Margin="0,2,0,6">
+        <Button DockPanel.Dock="Right" Click="GlassColorClick" AutomationProperties.Name="Выбрать второй цвет градиента" Padding="9,6">
+         <StackPanel Orientation="Horizontal">
+          <Border x:Name="GlassSwatch" Width="15" Height="15" CornerRadius="4" BorderThickness="1" BorderBrush="{StaticResource MutedBrush}" Margin="0,0,7,0"/>
+          <TextBlock x:Name="GlassColorValue" Text="#715CD4"/>
+         </StackPanel>
+        </Button>
+        <TextBlock Text="Второй цвет" VerticalAlignment="Center" Margin="0,0,8,0"/>
+       </DockPanel>
        <Slider x:Name="OpacityInput" Style="{StaticResource SettingsSlider}" AutomationProperties.Name="Непрозрачность, %" Minimum="0" Maximum="100" Value="80" ValueChanged="AppearanceChanged"/>
        <Slider x:Name="RadiusInput" Style="{StaticResource SettingsSlider}" AutomationProperties.Name="Скругление фона, px" Minimum="0" Maximum="24" Value="0" ValueChanged="AppearanceChanged"/>
        <CheckBox x:Name="HideWidgetsInput" Click="AppearanceChanged" Content="Скрыть кнопку виджетов"/>
@@ -100,7 +111,7 @@
         <Button Content="Обычная" Tag="standard" Click="PresetClick" Padding="4,8" Margin="2,0"/>
         <Button Content="Крупная" Tag="large" Click="PresetClick" Padding="4,8" Margin="4,0,0,0"/>
        </UniformGrid>
-       <TextBlock Text="0% — прозрачный фон, 100% — непрозрачный. Размеры указаны до масштабирования Windows. Оформление работает, пока MagmPaper запущен, включая режим в трее." Style="{StaticResource Muted}" FontSize="12"/>
+       <TextBlock Text="При 0% фон полностью прозрачный. Размеры указаны до масштабирования Windows. Оформление работает, пока MagmPaper запущен, включая режим в трее." Style="{StaticResource Muted}" FontSize="12"/>
       </StackPanel></Border>
      </Grid>
      <Expander x:Name="LegacyPanel" Header="Прежние настройки Windhawk" Visibility="Collapsed" Foreground="{StaticResource TextBrush}" Margin="0,24,0,0"><Border Style="{StaticResource Card}" Margin="0,14,0,0"><StackPanel>
@@ -116,6 +127,7 @@
      </StackPanel></Border></Expander>
      <Button Content="↻ Обновить состояние панели" Click="RefreshTaskbarClick" HorizontalAlignment="Left" Margin="0,20,0,0"/>
     </StackPanel></ScrollViewer>
+    <views:CursorPage x:Name="CursorsPage" Visibility="Collapsed"/>
     <ScrollViewer x:Name="SettingsPage" Visibility="Collapsed" VerticalScrollBarVisibility="Auto"><StackPanel MaxWidth="720" HorizontalAlignment="Left">
      <TextBlock Text="Параметры приложения" Style="{StaticResource Title}"/><TextBlock Text="Удобный запуск и контроль нагрузки на компьютер." Style="{StaticResource Muted}" Margin="0,0,0,24"/>
      <Border Style="{StaticResource Card}"><StackPanel><TextBlock Text="Запуск и взаимодействие" FontSize="21" Margin="0,0,0,12"/><CheckBox x:Name="StartupInput" Content="Запускать с Windows" Click="StartupClick"/><TextBlock Text="При входе в Windows восстановятся последние обои и сохранённое оформление панели." Style="{StaticResource Muted}" FontSize="12"/><CheckBox x:Name="MouseInput" Content="Реакция обоев на мышь" Click="PlaybackChanged" Margin="0,20,0,9"/></StackPanel></Border>
@@ -125,6 +137,13 @@
       <TextBlock Text="Частота обоев не меняет частоту дисплея Windows. Для экономии оставьте 30–60 FPS; для более плавной анимации выберите частоту монитора. На паузе кадры не рисуются и мышь не опрашивается. Скрытый предпросмотр также приостанавливается. Снижение качества сохраняет заполнение всего экрана." Style="{StaticResource Muted}" FontSize="12"/>
      </StackPanel></Border>
      <TextBlock Text="Настройки сохраняются сразу. Коллекция и резервные копии находятся в папке MagmPaper в AppData." Style="{StaticResource Muted}" Margin="0,24,0,0"/>
+     <Border Style="{StaticResource Card}" Margin="0,20,0,0">
+      <StackPanel>
+       <TextBlock Text="Обновления" FontSize="21" Margin="0,0,0,6"/>
+       <CheckBox x:Name="ShowUpdateNotesInput" Content="Показывать список изменений при запуске" Click="ShowUpdateNotesChanged"/>
+       <Button x:Name="OpenUpdateNotesButton" Content="Что нового" HorizontalAlignment="Left" Margin="0,8,0,0" Click="OpenUpdateNotesClick"/>
+      </StackPanel>
+     </Border>
      <Button Content="Скопировать диагностику" Click="CopyDiagnosticsClick" HorizontalAlignment="Left" Margin="0,18,0,0" ToolTip="Состояние рабочего стола и рендерера для разбора проблем"/>
     </StackPanel></ScrollViewer>
    </Grid>

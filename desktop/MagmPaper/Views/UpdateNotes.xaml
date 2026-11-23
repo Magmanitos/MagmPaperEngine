@@ -1,0 +1,32 @@
+<Window x:Class="MagmPaper.Views.UpdateNotes"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Что нового в MagmPaper" Style="{StaticResource AppWindow}" Width="330" SizeToContent="Height"
+        WindowStyle="None" ResizeMode="NoResize" ShowActivated="False" ShowInTaskbar="False"
+        WindowStartupLocation="Manual" AllowsTransparency="True" Background="Transparent">
+  <Border CornerRadius="14" BorderThickness="1" BorderBrush="#544568" Background="#1D1B29" Padding="18">
+    <DockPanel>
+      <DockPanel DockPanel.Dock="Top" Margin="0,0,0,12">
+        <Button x:Name="DismissButton" DockPanel.Dock="Right" Style="{StaticResource CloseCaptionButton}" Content="&#xE8BB;"
+                Width="30" Height="30" ToolTip="Закрыть" AutomationProperties.Name="Закрыть список изменений" Click="DismissClick"/>
+        <StackPanel VerticalAlignment="Center">
+          <TextBlock Text="Что нового" FontSize="21" FontWeight="SemiBold"/>
+          <TextBlock x:Name="VersionText" Foreground="{StaticResource AccentBrush}" FontSize="12" Margin="0,4,0,0"/>
+        </StackPanel>
+      </DockPanel>
+      <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="310">
+        <ItemsControl x:Name="Changes">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <DockPanel Margin="0,0,2,10">
+                <Ellipse DockPanel.Dock="Left" Width="5" Height="5" Fill="{StaticResource AccentBrush}"
+                         VerticalAlignment="Top" Margin="0,7,9,0"/>
+                <TextBlock Text="{Binding}" LineHeight="20"/>
+              </DockPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </ScrollViewer>
+    </DockPanel>
+  </Border>
+</Window>

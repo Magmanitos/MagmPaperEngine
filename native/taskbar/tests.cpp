@@ -189,7 +189,7 @@ int main() try {
     }
     std::cout<<"PASS: direct XAML styling and restoration. Starting helper attachment."<<std::endl;
     {
-        Host host;host.send("1 1 64 40 52 1193046 25 1 8\n");host.applied(1);
+        Host host;host.send("1 1 64 40 52 1193046 25 1 8 0 0\n");host.applied(1);
         require(frame.Height()==64&&icon.Width()==40,"external module changed real XAML elements");
         require(background.Fill().as<xaml::Media::SolidColorBrush>().Color().A==64,"external module background alpha");
         RECT actual{};GetWindowRect(window,&actual);require(actual.bottom-actual.top==MulDiv(64,GetDpiForWindow(window),96),"native taskbar window resized");
@@ -197,7 +197,7 @@ int main() try {
         deferResizeAtHeight=actual.bottom-actual.top;
         for(auto sizes:std::vector<std::pair<int,int>>{{80,48},{40,24},{96,64},{64,40}}) {
             sequence++;
-            auto command=std::to_string(sequence)+" 1 "+std::to_string(sizes.first)+" "+std::to_string(sizes.second)+" "+std::to_string(std::max(52,sizes.second))+" 1193046 25 1 8\n";
+            auto command=std::to_string(sequence)+" 1 "+std::to_string(sizes.first)+" "+std::to_string(sizes.second)+" "+std::to_string(std::max(52,sizes.second))+" 1193046 25 1 8 0 0\n";
             host.send(command.c_str());host.applied(sequence);
             require(deferResizeAtHeight==0,"the simulated shell layout did not defer the resize");
             MONITORINFO screen{sizeof(screen)};GetMonitorInfoW(MonitorFromWindow(window,MONITOR_DEFAULTTONEAREST),&screen);GetWindowRect(window,&actual);
@@ -208,14 +208,19 @@ int main() try {
             require(!(sizeOnly.flags&SWP_NOMOVE)&&sizeOnly.y+sizeOnly.cy==screen.rcMonitor.bottom,
                 "hook failed to anchor a native size-only request at the screen bottom");
         }
-        host.send("6 0 64 40 52 1193046 25 1 8\n");host.applied(6);
+        host.send("6 1 64 40 52 1193046 25 1 8 1 11259375\n");host.applied(6);
+        auto gradient=background.Fill().as<xaml::Media::LinearGradientBrush>().GradientStops();
+        auto last=gradient.GetAt(2).Color();
+        require(gradient.Size()==3&&gradient.GetAt(0).Color().A==64&&last.A==42&&last.R==0xab&&last.G==0xcd&&last.B==0xef,
+            "native glass gradient preserves both the tint and the opacity");
+        host.send("7 0 64 40 52 1193046 25 1 8 0 0\n");host.applied(7);
         require(frame.Height()==48&&icon.Width()==24&&widgets.Visibility()==xaml::Visibility::Visible,"disable restores native XAML");
-        host.send("7 1 64 40 52 1193046 25 1 8\n");host.applied(7);host.crash();
+        host.send("8 1 64 40 52 1193046 25 1 8 0 0\n");host.applied(8);host.crash();
         until([&]{return frame.Height()==48&&icon.Width()==24;},"host crash did not restore XAML");
         std::cout<<"PASS: helper attachment and crash restoration."<<std::endl;
     }
     {
-        Host restarted;restarted.send("1 1 60 32 48 3355443 50 0 0\n");restarted.applied(1);
+        Host restarted;restarted.send("1 1 60 32 48 3355443 50 0 0 0 0\n");restarted.applied(1);
         require(frame.Height()==60&&icon.Width()==32,"reconnect after host termination");
         // A running application can recreate its icon before the template has
         // assigned its name. Discover it after that first diagnostic callback.
@@ -242,7 +247,7 @@ int main() try {
         auto layout=frame.RegisterPropertyChangedCallback(xaml::FrameworkElement::HeightProperty(),[&](auto const&,auto const&){
             if(frame.Height()==48) {icon.Width(24);icon.Height(24);}
         });
-        Host dependent;dependent.send("1 1 72 48 56 3355443 50 0 0\n");dependent.applied(1);
+        Host dependent;dependent.send("1 1 72 48 56 3355443 50 0 0 0 0\n");dependent.applied(1);
         icon.Width(32);icon.Height(32);dependent.close();
         until([&]{return frame.Height()==48&&icon.Width()==24&&icon.Height()==24;},"container restoration overwrote Explorer's recalculated icon size");
         frame.UnregisterPropertyChangedCallback(xaml::FrameworkElement::HeightProperty(),layout);

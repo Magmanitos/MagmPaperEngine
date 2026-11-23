@@ -21,6 +21,10 @@ public partial class MainWindow : Window
     private readonly AppearanceService appearance;
     private readonly SystemSettings? system;
     private readonly string uiFile;
+    private readonly bool allowStartupChangelog;
+    private bool showUpdateNotesOnStartup = true;
+    private bool startupChangelogHandled;
+    private Views.UpdateNotes? updateNotes;
     private string route = "overview";
     private string? editingId;
     private bool editing, dirty, filling, selecting, busy, ready;
@@ -38,11 +42,14 @@ public partial class MainWindow : Window
     internal string CurrentRoute => route;
     private const string Sample = "precision mediump float;\nuniform float time;\nuniform vec2 resolution;\nuniform vec2 mouse;\n\nvoid main() {\n    vec2 uv = gl_FragCoord.xy / resolution;\n    gl_FragColor = vec4(uv, 0.5 + 0.5 * sin(time), 1.0);\n}\n";
 
-    internal MainWindow(Library library, WallpaperService wallpapers, AppearanceService appearance)
+    internal MainWindow(Library library, WallpaperService wallpapers, AppearanceService appearance, bool allowStartupChangelog)
     {
         this.library = library; this.wallpapers = wallpapers; this.appearance = appearance;
+        this.allowStartupChangelog = allowStartupChangelog;
         uiFile = Path.Combine(library.DirectoryPath, "ui.json");
         InitializeComponent();
+        CursorsPage.Initialize(library.DirectoryPath);
+        AppVersionLabel.Text = Views.UpdateNotes.VersionLabel;
         try { system = new SystemSettings(library.DirectoryPath); } catch (Exception error) { Status(error.Message, true); }
         Preview.Ready += () =>
         {
@@ -55,10 +62,29 @@ public partial class MainWindow : Window
             Height = Math.Min(Height, SystemParameters.WorkArea.Height - 24); Width = Math.Min(Width, SystemParameters.WorkArea.Width - 24);
             FillPreferences(); FillAppearance();
             string saved = "overview";
-            try { if (File.Exists(uiFile)) saved = JsonNode.Parse(File.ReadAllText(uiFile))?["route"]?.GetValue<string>() ?? saved; } catch { }
-            Navigate(saved); await RunAsync(() => RefreshLibraryAsync());
+            try
+            {
+                if (File.Exists(uiFile))
+                {
+                    var preferences = JsonNode.Parse(File.ReadAllText(uiFile));
+                    saved = preferences?["route"]?.GetValue<string>() ?? saved;
+                    showUpdateNotesOnStartup = preferences?["showUpdateNotesOnStartup"]?.GetValue<bool>() ?? true;
+                }
+            }
+            catch { }
+            ShowUpdateNotesInput.IsChecked = showUpdateNotesOnStartup;
+            Navigate(saved);
+            await RunAsync(() => RefreshLibraryAsync());
+            if (!startupChangelogHandled && IsVisible)
+            {
+                startupChangelogHandled = true;
+                if (allowStartupChangelog && showUpdateNotesOnStartup) OpenUpdateNotes();
+            }
         };
-        StateChanged += (_, _) => SyncPreview(); IsVisibleChanged += (_, _) => SyncPreview();
+        StateChanged += (_, _) => { SyncPreview(); updateNotes?.PlaceNextToOwner(); };
+        IsVisibleChanged += (_, _) => { SyncPreview(); if (!IsVisible && !Quitting) updateNotes?.Close(); };
+        LocationChanged += (_, _) => updateNotes?.PlaceNextToOwner();
+        SizeChanged += (_, _) => updateNotes?.PlaceNextToOwner();
         Activated += async (_, _) => { if (ready && !busy && !editing && route == "wallpapers") await RunAsync(() => RefreshLibraryAsync(selected?.Id)); };
         Closing += OnClosing;
         wallpapers.Status += (message, error) => Status(message, error);
@@ -82,17 +108,49 @@ public partial class MainWindow : Window
     }
     internal void Navigate(string destination)
     {
-        if (destination is not ("overview" or "wallpapers" or "taskbar" or "settings")) destination = "overview";
+        if (destination is not ("overview" or "wallpapers" or "taskbar" or "cursors" or "settings")) destination = "overview";
         route = destination; SyncPreview();
         OverviewPage.Visibility = route == "overview" ? Visibility.Visible : Visibility.Collapsed;
         WallpapersPage.Visibility = route == "wallpapers" ? Visibility.Visible : Visibility.Collapsed;
         TaskbarPage.Visibility = route == "taskbar" ? Visibility.Visible : Visibility.Collapsed;
+        CursorsPage.Visibility = route == "cursors" ? Visibility.Visible : Visibility.Collapsed;
+        NavCursors.IsChecked = route == "cursors";
         SettingsPage.Visibility = route == "settings" ? Visibility.Visible : Visibility.Collapsed;
         NavOverview.IsChecked = route == "overview"; NavWallpapers.IsChecked = route == "wallpapers"; NavTaskbar.IsChecked = route == "taskbar"; NavSettings.IsChecked = route == "settings";
-        try { DataFiles.Write(uiFile, new { route }); } catch (Exception error) when (error is IOException or UnauthorizedAccessException) { Status(error.Message, true); }
+        SaveWindowPreferences();
         if (route == "taskbar") { FillBehavior(); UpdateAppearanceStatus(); }
         if (route == "settings") FillPreferences();
+        if (route == "cursors") CursorsPage.Refresh();
         if (route == "wallpapers" && !editing && !busy) _ = RunAsync(() => RefreshLibraryAsync(selected?.Id));
+    }
+    private void SaveWindowPreferences()
+    {
+        try { DataFiles.Write(uiFile, new { route, showUpdateNotesOnStartup }); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { Status(error.Message, true); }
+    }
+    private void ShowUpdateNotesChanged(object sender, RoutedEventArgs e)
+    {
+        showUpdateNotesOnStartup = ShowUpdateNotesInput.IsChecked == true;
+        SaveWindowPreferences();
+        if (!showUpdateNotesOnStartup) updateNotes?.Close();
+    }
+    private void OpenUpdateNotesClick(object sender, RoutedEventArgs e) => OpenUpdateNotes();
+    private void OpenUpdateNotes()
+    {
+        if (updateNotes is not null || Quitting || !IsVisible) return;
+        try
+        {
+            updateNotes = new Views.UpdateNotes { Owner = this };
+            updateNotes.Closed += (_, _) => updateNotes = null;
+            updateNotes.Show();
+            updateNotes.PlaceNextToOwner();
+        }
+        catch (Exception error)
+        {
+            updateNotes?.Close();
+            updateNotes = null;
+            Status(error.Message, true);
+        }
     }
     private void NavigateClick(object sender, RoutedEventArgs e) { if ((sender as FrameworkElement)?.Tag is string page) Navigate(page); }
     private void SyncPreview() => Preview.SetActive(route == "wallpapers" && IsVisible && WindowState != WindowState.Minimized);
@@ -254,6 +312,8 @@ public partial class MainWindow : Window
         AppearanceEnabled.IsChecked = value.Enabled;
         SetAppearanceSizes(value.Height, value.Icon, value.Button);
         ColorValue.Text = value.Color;
+        GlassInput.IsChecked = value.Glass;
+        GlassColorValue.Text = value.GlassColor;
         OpacityInput.Value = value.Opacity;
         RadiusInput.Value = value.Radius;
         HideWidgetsInput.IsChecked = value.HideWidgets;
@@ -276,11 +336,22 @@ public partial class MainWindow : Window
     private void UpdateTaskbarPreview(AppearanceSettings value)
     {
         var color = (Color)ColorConverter.ConvertFromString(value.Color);
-        if (ColorSwatch.Background is not SolidColorBrush swatch || swatch.Color != color)
-            ColorSwatch.Background = new SolidColorBrush(color);
+        var end = (Color)ColorConverter.ConvertFromString(value.GlassColor);
+        ColorSwatch.Background = new SolidColorBrush(color);
+        GlassSwatch.Background = new SolidColorBrush(end);
+        GlassColors.Visibility = value.Glass ? Visibility.Visible : Visibility.Collapsed;
         color.A = (byte)((value.Opacity * 255 + 50) / 100);
-        if (TaskbarSample.Background is not SolidColorBrush background || background.Color != color)
-            TaskbarSample.Background = new SolidColorBrush(color);
+        if (value.Glass)
+        {
+            static byte Shine(byte channel) => (byte)((channel * 3 + 255) / 4);
+            var highlight = Color.FromArgb(color.A, Shine(color.R), Shine(color.G), Shine(color.B));
+            end.A = (byte)(color.A * 2 / 3);
+            color.A = (byte)(color.A * 3 / 4);
+            TaskbarSample.Background = new LinearGradientBrush(
+                new GradientStopCollection { new(highlight, 0), new(color, .38), new(end, 1) },
+                new Point(0, 0), new Point(.85, 1));
+        }
+        else TaskbarSample.Background = new SolidColorBrush(color);
         TaskbarSample.Height = value.Height;
         TaskbarSample.CornerRadius = new CornerRadius(value.Radius);
         WidgetsSample.Visibility = value.HideWidgets ? Visibility.Collapsed : Visibility.Visible;
@@ -298,6 +369,8 @@ public partial class MainWindow : Window
         Icon = Number(IconInput),
         Button = Number(ButtonInput),
         Color = ColorValue.Text,
+        Glass = GlassInput.IsChecked == true,
+        GlassColor = GlassColorValue.Text,
         Opacity = Number(OpacityInput),
         Radius = Number(RadiusInput),
         HideWidgets = HideWidgetsInput.IsChecked == true
@@ -369,11 +442,13 @@ public partial class MainWindow : Window
         fillingAppearance = false;
         QueueAppearance();
     }
-    private void ColorClick(object sender, RoutedEventArgs e)
+    private void ColorClick(object sender, RoutedEventArgs e) => PickTaskbarColor(ColorValue);
+    private void GlassColorClick(object sender, RoutedEventArgs e) => PickTaskbarColor(GlassColorValue);
+    private void PickTaskbarColor(TextBlock value)
     {
-        var dialog = new Views.ColorPicker(ColorValue.Text) { Owner = this };
+        var dialog = new Views.ColorPicker(value.Text) { Owner = this };
         if (dialog.ShowDialog() != true) return;
-        ColorValue.Text = dialog.SelectedColor;
+        value.Text = dialog.SelectedColor;
         QueueAppearance();
     }
     private async void ApplyLegacyClick(object sender, RoutedEventArgs e) => await RunAsync(async () =>

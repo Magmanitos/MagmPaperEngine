@@ -116,7 +116,24 @@ void StyledElement::apply(const Settings& settings) {
     case Kind::Background: {
         Windows::UI::Color color{static_cast<uint8_t>((settings.opacity*255+50)/100),
             static_cast<uint8_t>(settings.color>>16),static_cast<uint8_t>(settings.color>>8),static_cast<uint8_t>(settings.color)};
-        set(xaml::Shapes::Shape::FillProperty(),xaml::Media::SolidColorBrush(color));
+        if(settings.glass) {
+            xaml::Media::LinearGradientBrush brush;
+            brush.StartPoint({0,0});
+            brush.EndPoint({0.85f,1});
+            auto addStop=[&](double offset,Windows::UI::Color tint) {
+                xaml::Media::GradientStop stop;
+                stop.Offset(offset);stop.Color(tint);
+                brush.GradientStops().Append(stop);
+            };
+            auto shine=[](uint8_t channel) {return static_cast<uint8_t>((channel*3+255)/4);};
+            addStop(0,{color.A,shine(color.R),shine(color.G),shine(color.B)});
+            auto middle=color;
+            middle.A=static_cast<uint8_t>(color.A*3/4);
+            addStop(0.38,middle);
+            addStop(1,{static_cast<uint8_t>(color.A*2/3),static_cast<uint8_t>(settings.glassColor>>16),
+                static_cast<uint8_t>(settings.glassColor>>8),static_cast<uint8_t>(settings.glassColor)});
+            set(xaml::Shapes::Shape::FillProperty(),brush);
+        } else set(xaml::Shapes::Shape::FillProperty(),xaml::Media::SolidColorBrush(color));
         set(xaml::Shapes::Rectangle::RadiusXProperty(),box_value(static_cast<double>(settings.radius)));
         set(xaml::Shapes::Rectangle::RadiusYProperty(),box_value(static_cast<double>(settings.radius)));break;
     }

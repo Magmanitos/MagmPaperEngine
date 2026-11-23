@@ -71,7 +71,7 @@ public partial class App : Application
             }
             wallpapers = new WallpaperService(library, Dispatcher); appearance = new AppearanceService(directory);
             Diagnostics.Trace("Create WPF window");
-            manager = new MainWindow(library, wallpapers, appearance); MainWindow = manager;
+            manager = new MainWindow(library, wallpapers, appearance, allowStartupChangelog: !testing); MainWindow = manager;
             if (testing)
             {
                 AngleDevice.SoftwareForTests = true; Diagnostics.Trace("Show WPF window"); manager.Show();
@@ -113,7 +113,7 @@ public partial class App : Application
         if (manager is not null)
         {
             manager.IsEnabled = false;
-            await manager.FinishTaskbarUpdatesAsync();
+            await Task.WhenAll(manager.FinishTaskbarUpdatesAsync(), manager.CursorsPage.FinishUpdatesAsync());
         }
         if (appearance is not null) try { await appearance.ShutdownAsync(final: true); } catch { }
         if (manager is not null) { manager.Quitting = true; manager.Close(); }
