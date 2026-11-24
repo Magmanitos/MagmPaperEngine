@@ -4,7 +4,7 @@
         Title="Что нового в MagmPaper" Style="{StaticResource AppWindow}" Width="330" SizeToContent="Height"
         WindowStyle="None" ResizeMode="NoResize" ShowActivated="False" ShowInTaskbar="False"
         WindowStartupLocation="Manual" AllowsTransparency="True" Background="Transparent">
-  <Border CornerRadius="14" BorderThickness="1" BorderBrush="#544568" Background="#1D1B29" Padding="18">
+  <Border x:Name="NotesCard" CornerRadius="14" BorderThickness="1" BorderBrush="#544568" Background="#1D1B29" Padding="18">
     <DockPanel>
       <DockPanel DockPanel.Dock="Top" Margin="0,0,0,12">
         <Button x:Name="DismissButton" DockPanel.Dock="Right" Style="{StaticResource CloseCaptionButton}" Content="&#xE8BB;"

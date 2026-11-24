@@ -56,6 +56,46 @@ internal static class SmokeTests
             { RoutedEvent = System.Windows.Input.Mouse.PreviewMouseWheelEvent };
         source.RaiseEvent(args); return args.Handled;
     }
+    private static void CheckRoundedFrameBlur()
+    {
+        var visual = new DrawingVisual();
+        using (var context = visual.RenderOpen())
+            Views.WindowFrameBlur.DrawContour(context, new(Intensity: 100), new Size(100, 80), new Size(24, 24), new Size(14, 14));
+
+        var bitmap = new RenderTargetBitmap(148, 128, 96, 96, PixelFormats.Pbgra32);
+        bitmap.Render(visual);
+        byte Alpha(int x, int y)
+        {
+            var pixel = new byte[4];
+            bitmap.CopyPixels(new Int32Rect(x, y, 1, 1), pixel, 4, 0);
+            return pixel[3];
+        }
+
+        foreach (bool right in new[] { false, true })
+        foreach (bool bottom in new[] { false, true })
+        {
+            byte AtCorner(int x, int y) => Alpha(right ? 147 - x : x, bottom ? 127 - y : y);
+            Assert(AtCorner(25, 25) > 0, "rounded blur did not reach the transparent corner of the notes card");
+            Assert(AtCorner(34, 34) == 0, "rounded blur covered the interior of the notes card");
+        }
+    }
+
+    private static async Task CheckToggleMotion(CheckBox checkBox)
+    {
+        checkBox.ApplyTemplate();
+        var knob = (FrameworkElement)checkBox.Template.FindName("Knob", checkBox);
+        bool? original = checkBox.IsChecked;
+        checkBox.IsChecked = false;
+        await Until(() => knob.RenderTransform.Value.OffsetX == 0, "toggle did not return to the off position");
+        checkBox.IsChecked = true;
+        var motion = knob.RenderTransform as TranslateTransform;
+        Assert(motion is not null && motion.HasAnimatedProperties == SystemParameters.ClientAreaAnimation,
+            "toggle did not respect the system animation preference");
+        await Until(() => knob.RenderTransform.Value.OffsetX == 16, "toggle did not reach the on position");
+        checkBox.IsChecked = original;
+        await Until(() => knob.RenderTransform.Value.OffsetX == (original == true ? 16 : 0), "toggle did not restore its position");
+    }
+
     public static async Task RunAsync(MainWindow window, string output)
     {
         Directory.CreateDirectory(output);
@@ -361,6 +401,8 @@ internal static class SmokeTests
         window.ShowUpdateNotesInput.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));
         using var preferences = JsonDocument.Parse(File.ReadAllText(Path.Combine(window.Library.DirectoryPath, "ui.json")));
         Assert(!preferences.RootElement.GetProperty("showUpdateNotesOnStartup").GetBoolean(), "changelog preference was not saved");
+        CheckRoundedFrameBlur();
+        await CheckToggleMotion(window.WindowBlurInput);
         window.WindowBlurInput.IsChecked = true;
         window.WindowBlurInput.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));
         const string frameTitle = "MagmPaper.WindowFrameBlur";
@@ -390,7 +432,7 @@ internal static class SmokeTests
         await Task.Delay(3000); // Let startup compilation, layout and deferred GPU release settle.
         var process = Process.GetCurrentProcess(); var startCpu = process.TotalProcessorTime; var clockIdle = Stopwatch.StartNew(); await Task.Delay(5000); process.Refresh();
         var report = new { passed = true, version = typeof(App).Assembly.GetName().Version?.ToString(), nativeUi = "WPF", gpuTests = "ANGLE D3D11 WARP", composedDesktopPixels = composedPixels, workingSetBytes = process.WorkingSet64, idleCpuMilliseconds = (process.TotalProcessorTime - startCpu).TotalMilliseconds, idleSampleMilliseconds = clockIdle.Elapsed.TotalMilliseconds,
-            tests = new[] { "real GLSL pixels", "late GLSL extension compatibility", "compile error preserves program", "backbuffer", "quality fills window", "pause stops frames", "physical monitor geometry", "24H2 child layer order and opaque composition", "native window coverage/minimize/transparent overlay", "click-through and real cursor uniforms", "mouse toggle", "six GPU resets with active and paused second context", "Windows autostart and StartupApproved", "WPF editor/save/navigation", "native preview visibility and scroll clipping", "smooth scrolling over inputs and repeated wheel events", "inactive and disabled control colors", "stable collection after activation/navigation", "HSV and HEX color picker", "live taskbar preview and automatic slider persistence", "glass gradient settings", "cursor catalogue caption, scroll and PNG hotspot", "changelog positioning and preference", "window blur toggle and settings", "settings", "WPF theme contrast", "hidden preview" } };
+            tests = new[] { "real GLSL pixels", "late GLSL extension compatibility", "compile error preserves program", "backbuffer", "quality fills window", "pause stops frames", "physical monitor geometry", "24H2 child layer order and opaque composition", "native window coverage/minimize/transparent overlay", "click-through and real cursor uniforms", "mouse toggle", "six GPU resets with active and paused second context", "Windows autostart and StartupApproved", "WPF editor/save/navigation", "native preview visibility and scroll clipping", "smooth scrolling over inputs and repeated wheel events", "inactive and disabled control colors", "stable collection after activation/navigation", "HSV and HEX color picker", "live taskbar preview and automatic slider persistence", "glass gradient settings", "cursor catalogue caption, scroll and PNG hotspot", "changelog positioning and preference", "window blur toggle, rounded contour and settings", "animated toggles", "settings", "WPF theme contrast", "hidden preview" } };
         File.WriteAllText(Path.Combine(output, "report.json"), JsonSerializer.Serialize(report, DataFiles.Json));
     }
     private static RenderTargetBitmap WindowBitmap(Window window)

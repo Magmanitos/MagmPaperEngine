@@ -134,7 +134,7 @@ public partial class MainWindow : Window
         try { DataFiles.Write(uiFile, new { route, showUpdateNotesOnStartup, windowBlur }); }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException) { Status(error.Message, true); }
     }
-    internal void TrackWindowFrame(Window window) => windowFrames.Track(window);
+    internal void TrackWindowFrame(Window window, double cornerRadius = 0) => windowFrames.Track(window, cornerRadius);
     private void FillWindowBlur()
     {
         fillingWindowBlur = true;

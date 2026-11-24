@@ -157,8 +157,7 @@
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
               </Grid.ColumnDefinitions>
-              <Border x:Name="SwitchTrack" Width="40" Height="24" CornerRadius="12" Background="#393C50"
-                      Tag="{DynamicResource {x:Static SystemParameters.ClientAreaAnimationKey}}">
+              <Border x:Name="SwitchTrack" Width="40" Height="24" CornerRadius="12" Background="#393C50">
                 <Canvas>
                   <Ellipse x:Name="Knob" Width="16" Height="16" Canvas.Left="4" Canvas.Top="4" Fill="#F5F2FF"/>
                 </Canvas>
@@ -170,31 +169,8 @@
             <Trigger Property="IsChecked" Value="True">
               <Setter TargetName="SwitchTrack" Property="Background" Value="{StaticResource AccentBrush}"/>
               <Setter TargetName="Knob" Property="Fill" Value="#251D3A"/>
-              <Setter TargetName="Knob" Property="Canvas.Left" Value="20"/>
+              <Setter TargetName="Knob" Property="views:ToggleMotion.Offset" Value="16"/>
             </Trigger>
-            <MultiDataTrigger>
-              <MultiDataTrigger.Conditions>
-                <Condition Binding="{Binding IsChecked, RelativeSource={RelativeSource TemplatedParent}}" Value="True"/>
-                <Condition Binding="{Binding Tag, ElementName=SwitchTrack}" Value="True"/>
-              </MultiDataTrigger.Conditions>
-              <MultiDataTrigger.EnterActions>
-                <BeginStoryboard>
-                  <Storyboard>
-                    <DoubleAnimation Storyboard.TargetName="Knob" Storyboard.TargetProperty="(Canvas.Left)"
-                                     From="4" To="20" Duration="0:0:0.15" DecelerationRatio="0.7" FillBehavior="Stop"/>
-                  </Storyboard>
-                </BeginStoryboard>
-              </MultiDataTrigger.EnterActions>
-              <MultiDataTrigger.ExitActions>
-                <BeginStoryboard>
-                  <Storyboard>
-                    <DoubleAnimation Storyboard.TargetName="Knob" Storyboard.TargetProperty="(Canvas.Left)"
-                                     From="20" To="4" Duration="0:0:0.15" DecelerationRatio="0.7" FillBehavior="Stop"/>
-                  </Storyboard>
-                </BeginStoryboard>
-              </MultiDataTrigger.ExitActions>
-            </MultiDataTrigger>
-            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Row" Property="Background" Value="#0CFFFFFF"/></Trigger>
             <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Row" Property="BorderBrush" Value="{StaticResource AccentBrush}"/></Trigger>
             <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Row" Property="Opacity" Value="0.5"/></Trigger>
           </ControlTemplate.Triggers>

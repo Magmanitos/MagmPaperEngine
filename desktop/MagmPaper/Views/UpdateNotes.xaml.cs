@@ -47,7 +47,7 @@ public partial class UpdateNotes : Window
             Place(reserveSpace: true);
             placed = true;
             Opacity = 1;
-            if (owner is MainWindow manager) manager.TrackWindowFrame(this);
+            if (owner is MainWindow manager) manager.TrackWindowFrame(this, NotesCard.CornerRadius.TopLeft);
         }, DispatcherPriority.ContextIdle);
     }
 
