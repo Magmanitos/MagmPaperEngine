@@ -82,9 +82,26 @@ jobs:
             Write-Output "::error::$message"
             Remove-Item $dump.FullName
           }
-      - name: Install NSIS
+      - name: Prepare NSIS compiler
         if: ${{ !cancelled() && steps.publish.outcome == 'success' }}
-        run: choco install nsis --yes --no-progress --limit-output
+        shell: pwsh
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP 'nsis-3.12.zip'
+          $hash = '56581f90db321581c5381193d796fffcf2d24b2f8fed2160a6c6a3baa67f2c4f'
+          $sources = @(
+            'https://downloads.sourceforge.net/project/nsis/NSIS%203/3.12/nsis-3.12.zip'
+            'https://sourceforge.net/projects/nsis/files/NSIS%203/3.12/nsis-3.12.zip/download'
+          )
+          foreach ($source in $sources) {
+            curl.exe --fail --silent --show-error --location --retry 2 --max-time 30 --output $archive $source
+            if ($LASTEXITCODE -eq 0 -and (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -eq $hash) { break }
+            Remove-Item -LiteralPath $archive -ErrorAction SilentlyContinue
+          }
+          if (-not (Test-Path -LiteralPath $archive -PathType Leaf)) { throw 'Could not download the verified NSIS 3.12 archive' }
+          Expand-Archive -LiteralPath $archive -DestinationPath $env:RUNNER_TEMP -Force
+          $nsis = Join-Path $env:RUNNER_TEMP 'nsis-3.12'
+          if (-not (Test-Path -LiteralPath (Join-Path $nsis 'makensis.exe') -PathType Leaf)) { throw 'NSIS compiler missing from archive' }
+          Add-Content -LiteralPath $env:GITHUB_PATH -Value $nsis -Encoding utf8
       - name: Package standalone native installer and ZIP
         id: package
         if: ${{ !cancelled() && steps.publish.outcome == 'success' }}
