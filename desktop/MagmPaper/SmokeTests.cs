@@ -96,6 +96,53 @@ internal static class SmokeTests
         await Until(() => knob.RenderTransform.Value.OffsetX == (original == true ? 16 : 0), "toggle did not restore its position");
     }
 
+    private static async Task CheckMediaAsync(MainWindow window)
+    {
+        foreach (var (extension, format) in new[] { ("gif", WallpaperFormat.Gif), ("mp4", WallpaperFormat.Mp4) })
+        {
+            string file = Path.Combine(window.Library.DirectoryPath, $"preview.{extension}");
+            using (var fixture = typeof(SmokeTests).Assembly.GetManifestResourceStream($"MagmPaper.Smoke.sample.{extension}")!)
+            using (var output = File.Create(file)) fixture.CopyTo(output);
+            window.Navigate("wallpapers");
+            await Until(() => !window.Busy, "gallery did not return before media import");
+            await window.ImportMediaAsync(file, format);
+            Assert(window.MediaPreview.MediaReady && window.ViewCodeButton.Visibility == Visibility.Collapsed,
+                $"{extension} did not open in the media preview");
+            var wallpaper = window.Library.State.Items.Single(item => item.Format == format);
+            Assert(File.Exists(window.Library.MediaPath(wallpaper)), $"{extension} import did not copy the file");
+            await Until(() => window.MediaPreview.Playing && window.MediaPreview.PlaybackPosition > TimeSpan.FromMilliseconds(100),
+                $"{extension} animation did not advance");
+            if (format == WallpaperFormat.Gif)
+                await Until(() => window.MediaPreview.Frames > 0, "GIF never changed frames");
+            nint native = Win32.CreateSurface(0, composed: true);
+            try
+            {
+                Win32.SetWindowPos(native, 0, 0, 0, 320, 180, 0x14);
+                using var renderer = new DesktopMediaSurface(native);
+                await renderer.LoadAsync(window.Library.MediaPath(wallpaper));
+                renderer.Configure(new(Paused: false, Fps: 30, Quality: .75));
+                if (format == WallpaperFormat.Gif)
+                    await Until(() => renderer.Frames > 0, "GIF desktop surface never changed frames");
+                nint child = Win32.GetWindow(native, 5);
+                Assert(child != 0 && Win32.GetClientRect(child, out var bounds) && bounds.Width == 320 && bounds.Height == 180,
+                    $"{extension} desktop surface did not fit the host HWND");
+                renderer.Configure(new(Paused: true, Fps: 30, Quality: .75));
+            }
+            finally { Win32.DestroyWindow(native); }
+            window.Navigate("settings");
+            Assert(!window.MediaPreview.Playing, $"{extension} kept playing on another page");
+            window.Navigate("wallpapers");
+            await Until(() => !window.Busy, "media detail did not resume");
+            window.BackWallpaperButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            var card = window.Gallery.Cards.Single(tile => tile.Item.Id == wallpaper.Id);
+            await Until(() => card.Loaded && (card.Still is not null || card.PreviewStatus.StartsWith("▶")), $"{extension} gallery poster did not load");
+            window.Library.Remove(wallpaper.Id);
+            window.Navigate("wallpapers");
+            await Until(() => !window.Busy, "gallery did not reload after removing the media");
+            Assert(File.Exists(file), $"{extension} removal deleted the original file");
+        }
+    }
+
     public static async Task RunAsync(MainWindow window, string output)
     {
         Directory.CreateDirectory(output);
@@ -263,7 +310,7 @@ internal static class SmokeTests
         window.EditWallpaperButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         Assert(!window.CodeInput.IsReadOnly, "existing wallpaper code could not be edited");
         window.BackWallpaperButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        window.AddWallpaperButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await window.AddShaderAsync();
         await Until(() => !window.Busy, "new wallpaper preview did not load");
         window.NameInput.Text = "Нативный UI тест"; window.CodeInput.Text = Red;
         window.WallpaperScroll.ScrollToVerticalOffset(140);
@@ -487,12 +534,14 @@ internal static class SmokeTests
         await Until(() => Win32.FindWindow(null, frameTitle) == 0, "window blur stayed visible after disabling it");
         var savedBlur = DataFiles.Read<System.Text.Json.Nodes.JsonObject>(Path.Combine(window.Library.DirectoryPath, "ui.json"))["windowBlur"];
         Assert(savedBlur?["radius"]?.GetValue<int>() == 48 && savedBlur?["intensity"]?.GetValue<int>() == 55, "window blur settings were not saved");
+        await CheckMediaAsync(window);
+        window.Navigate("settings");
         long idleFrames = surface.Frames; await Task.Delay(150); idleFrames = surface.Frames; await Task.Delay(400);
         Assert(surface.Frames == idleFrames, "hidden preview consumes frames");
         await Task.Delay(3000); // Let startup compilation, layout and deferred GPU release settle.
         var process = Process.GetCurrentProcess(); var startCpu = process.TotalProcessorTime; var clockIdle = Stopwatch.StartNew(); await Task.Delay(5000); process.Refresh();
         var report = new { passed = true, version = typeof(App).Assembly.GetName().Version?.ToString(), nativeUi = "WPF", gpuTests = "ANGLE D3D11 WARP", composedDesktopPixels = composedPixels, workingSetBytes = process.WorkingSet64, idleCpuMilliseconds = (process.TotalProcessorTime - startCpu).TotalMilliseconds, idleSampleMilliseconds = clockIdle.Elapsed.TotalMilliseconds,
-            tests = new[] { "real GLSL pixels", "late GLSL extension compatibility", "compile error preserves program", "backbuffer", "quality fills window", "pause stops frames", "physical monitor geometry", "24H2 child layer order and opaque composition", "native window coverage/minimize/transparent overlay", "click-through and real cursor uniforms", "mouse toggle", "six GPU resets with active and paused second context", "Windows autostart and StartupApproved", "gallery thumbnails, hover shader uniforms and enlarged preview", "WPF editor/save/navigation", "native preview visibility and scroll clipping", "smooth scrolling over inputs and repeated wheel events", "inactive and disabled control colors", "stable collection after activation/navigation", "HSV and HEX color picker", "live taskbar preview and automatic slider persistence", "glass gradient settings and wallpaper palette", "light and dark themes", "cursor catalogue caption, scroll and PNG hotspot", "changelog positioning and preference", "window blur toggle, rounded contour and settings", "animated toggles and navigation", "settings", "WPF theme contrast", "hidden preview" } };
+            tests = new[] { "real GLSL pixels", "late GLSL extension compatibility", "compile error preserves program", "backbuffer", "quality fills window", "pause stops frames", "physical monitor geometry", "24H2 child layer order and opaque composition", "native window coverage/minimize/transparent overlay", "click-through and real cursor uniforms", "mouse toggle", "six GPU resets with active and paused second context", "Windows autostart and StartupApproved", "gallery thumbnails, hover shader uniforms and enlarged preview", "GIF and H.264 MP4 import and playback", "WPF editor/save/navigation", "native preview visibility and scroll clipping", "smooth scrolling over inputs and repeated wheel events", "inactive and disabled control colors", "stable collection after activation/navigation", "HSV and HEX color picker", "live taskbar preview and automatic slider persistence", "glass gradient settings and wallpaper palette", "light and dark themes", "cursor catalogue caption, scroll and PNG hotspot", "changelog positioning and preference", "window blur toggle, rounded contour and settings", "animated toggles and navigation", "settings", "WPF theme contrast", "hidden preview" } };
         File.WriteAllText(Path.Combine(output, "report.json"), JsonSerializer.Serialize(report, DataFiles.Json));
     }
     private static RenderTargetBitmap WindowBitmap(Window window)

@@ -12,8 +12,8 @@ internal sealed class WallpaperService : IDisposable
     private readonly Dispatcher dispatcher;
     private readonly DispatcherTimer health;
     private nint window, worker;
-    private RenderSurface? surface, paletteSurface;
-    private Task<WallpaperColors>? paletteTask;
+    private WallpaperSurface? surface, paletteSurface;
+    private Task<WallpaperColors?>? paletteTask;
     private CancellationTokenSource? recovery;
     private bool locked, sleeping, disposed, recovering;
     private int generation;
@@ -31,26 +31,19 @@ internal sealed class WallpaperService : IDisposable
         if (!ReferenceEquals(paletteSurface, current) || paletteTask is null || paletteTask.IsFaulted)
         {
             paletteSurface = current;
-            paletteTask = SampleAsync(current);
+            paletteTask = current.ReadColorsAsync();
         }
         try
         {
             var palette = await paletteTask.WaitAsync(TimeSpan.FromSeconds(2));
             return ReferenceEquals(surface, current) ? palette : null;
         }
-        catch (Exception error) when (error is TimeoutException or ObjectDisposedException or IOException or InvalidOperationException)
+        catch (Exception error) when (error is TimeoutException or IOException or InvalidOperationException or InvalidDataException or System.Runtime.InteropServices.ExternalException)
         {
             return null;
         }
     }
 
-    private static async Task<WallpaperColors> SampleAsync(RenderSurface renderer)
-    {
-        // A thin band from the lower part of the wallpaper gives both sides
-        // a representative tint without reading the entire desktop-sized frame.
-        var pixels = await renderer.CaptureAsync(captureRows: 12).ConfigureAwait(false);
-        return WallpaperColors.FromRgba(pixels.Rgba, pixels.Width, pixels.Height);
-    }
     internal string DiagnosticReport()
     {
         var monitor = Win32.PrimaryMonitor().Monitor;
@@ -91,23 +84,29 @@ internal sealed class WallpaperService : IDisposable
     {
         CancelRecovery(); int request = generation; var item = library.Get(id);
         // Build and validate a new surface before replacing the current wallpaper.
-        var attachment = DesktopHost.Create(); nint candidate = attachment.Window; RenderSurface? renderer = null;
+        var attachment = DesktopHost.Create(); nint candidate = attachment.Window; WallpaperSurface? renderer = null;
         try
         {
-            var parent = attachment.Parent; renderer = new RenderSurface(candidate, true);
-            await renderer.LoadAsync(item.Code);
+            var parent = attachment.Parent; renderer = CreateRenderer(candidate, item);
+            await renderer.LoadAsync(RenderSource(item));
             if (request != generation || disposed) return;
             // Shader compilation can overlap a game's resolution switch.
             // Fit again on the UI thread before recording the current monitor.
             DesktopHost.Fit(candidate, parent);
+            renderer.Fit();
             library.Activate(id); Destroy(); window = candidate; worker = parent; surface = renderer;
             candidate = 0; renderer = null; RunningId = id; previousMonitor = Win32.PrimaryMonitor().Monitor.Area;
             surface.Error += message => Post(() => Status?.Invoke(message, true));
-            surface.Recovered += message => Post(() => Status?.Invoke(message, false));
+            if (surface is RenderSurface shader) shader.Recovered += message => Post(() => Status?.Invoke(message, false));
             health.Start(); Refresh(); Changed?.Invoke(); PaletteSourceChanged?.Invoke(); Status?.Invoke("На рабочем столе: " + item.Name, false);
         }
         finally { renderer?.Dispose(); if (candidate != 0) Win32.DestroyWindow(candidate); }
     }
+    private static WallpaperSurface CreateRenderer(nint target, Wallpaper item) => item.Format == WallpaperFormat.Glsl
+        ? new RenderSurface(target, true) : new DesktopMediaSurface(target);
+
+    private string RenderSource(Wallpaper item) => item.Format == WallpaperFormat.Glsl ? item.Code : library.MediaPath(item);
+
     public void Stop()
     {
         CancelRecovery(); health.Stop(); library.Activate(null); Destroy(); PauseReason = null;
@@ -147,16 +146,18 @@ internal sealed class WallpaperService : IDisposable
             for (int attempt = 0; attempt < 20; attempt++)
             {
                 if (token.IsCancellationRequested || request != generation || sleeping || library.State.ActiveId is not { } id) return;
-                nint candidate = 0; RenderSurface? renderer = null;
+                nint candidate = 0; WallpaperSurface? renderer = null;
                 try
                 {
                     var attachment = DesktopHost.Create(); candidate = attachment.Window; var parent = attachment.Parent;
-                    renderer = new RenderSurface(candidate, true); await renderer.LoadAsync(library.Get(id).Code);
+                    var item = library.Get(id);
+                    renderer = CreateRenderer(candidate, item); await renderer.LoadAsync(RenderSource(item));
                     if (token.IsCancellationRequested || request != generation) return;
                     DesktopHost.Fit(candidate, parent);
+                    renderer.Fit();
                     Destroy(); window = candidate; worker = parent; surface = renderer; candidate = 0; renderer = null; RunningId = id;
                     surface.Error += message => Post(() => Status?.Invoke(message, true));
-                    surface.Recovered += message => Post(() => Status?.Invoke(message, false));
+                    if (surface is RenderSurface shader) shader.Recovered += message => Post(() => Status?.Invoke(message, false));
                     previousMonitor = Win32.PrimaryMonitor().Monitor.Area; recovering = false; health.Start(); Refresh(); Changed?.Invoke(); PaletteSourceChanged?.Invoke(); return;
                 }
                 catch (InvalidDataException error) { Status?.Invoke(error.Message, true); health.Stop(); return; }

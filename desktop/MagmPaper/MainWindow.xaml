@@ -55,18 +55,21 @@
        <TextBlock Text="Обои" Style="{StaticResource Title}"/>
        <WrapPanel Margin="0,7,0,0">
         <Button x:Name="AddWallpaperButton" Content="＋ Добавить обои" Click="AddWallpaperClick" Style="{StaticResource Primary}" Margin="0,0,8,4"/>
-        <Button Content="Папка обоев ↗" Click="OpenFolderClick" ToolTip="Открыть GLSL-файлы в Проводнике" Margin="0,0,8,4"/>
+        <Button Content="Папка обоев ↗" Click="OpenFolderClick" ToolTip="Открыть файлы обоев в Проводнике" Margin="0,0,8,4"/>
         <Button Content="↻ Обновить" Click="RefreshClick" AutomationProperties.Name="Обновить коллекцию" Margin="0,0,0,4"/>
        </WrapPanel>
       </StackPanel>
       <views:WallpaperGallery x:Name="Gallery"/>
      </DockPanel>
-     <ScrollViewer x:Name="WallpaperScroll" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+     <ScrollViewer x:Name="WallpaperScroll" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" ScrollChanged="WallpaperViewportChanged">
       <StackPanel Margin="0,0,12,0">
        <Button x:Name="BackWallpaperButton" Content="← К коллекции" Click="BackWallpaperClick" HorizontalAlignment="Left" Margin="0,0,0,12"/>
        <TextBlock x:Name="WallpaperTitle" Text="Предпросмотр" Style="{StaticResource Title}"/>
        <Border BorderThickness="1" BorderBrush="{DynamicResource LineBrush}" Background="#08090E" Height="355">
-        <graphics:PreviewHost x:Name="Preview"/>
+        <Grid>
+         <graphics:PreviewHost x:Name="Preview"/>
+         <graphics:MediaWallpaperView x:Name="MediaPreview" Visibility="Collapsed" SizeChanged="MediaPreviewResized"/>
+        </Grid>
        </Border>
        <TextBlock x:Name="PauseText" Foreground="{DynamicResource AccentBrush}" Margin="0,9,0,8"/>
        <WrapPanel Margin="0,0,0,14">
@@ -164,10 +167,10 @@
     <views:CursorPage x:Name="CursorsPage" Visibility="Collapsed"/>
     <ScrollViewer x:Name="SettingsPage" Visibility="Collapsed" VerticalScrollBarVisibility="Auto"><StackPanel MaxWidth="720" HorizontalAlignment="Left">
      <TextBlock Text="Параметры приложения" Style="{StaticResource Title}"/><TextBlock Text="Удобный запуск и контроль нагрузки на компьютер." Style="{StaticResource Muted}" Margin="0,0,0,24"/>
-     <Border Style="{StaticResource Card}"><StackPanel><TextBlock Text="Запуск и взаимодействие" FontSize="21" Margin="0,0,0,12"/><CheckBox x:Name="StartupInput" Content="Запускать с Windows" Click="StartupClick"/><TextBlock Text="При входе в Windows восстановятся последние обои и сохранённое оформление панели." Style="{StaticResource Muted}" FontSize="12"/><CheckBox x:Name="MouseInput" Content="Реакция обоев на мышь" Click="PlaybackChanged" Margin="0,20,0,9"/></StackPanel></Border>
+     <Border Style="{StaticResource Card}"><StackPanel><TextBlock Text="Запуск и взаимодействие" FontSize="21" Margin="0,0,0,12"/><CheckBox x:Name="StartupInput" Content="Запускать с Windows" Click="StartupClick"/><TextBlock Text="При входе в Windows восстановятся последние обои и сохранённое оформление панели." Style="{StaticResource Muted}" FontSize="12"/><CheckBox x:Name="MouseInput" Content="Реакция GLSL-обоев на мышь" Click="PlaybackChanged" Margin="0,20,0,9"/></StackPanel></Border>
      <Border Style="{StaticResource Card}" Margin="0,20,0,0"><StackPanel><TextBlock Text="Производительность" FontSize="21" Margin="0,0,0,12"/><CheckBox x:Name="CoveredInput" Content="Пауза, когда рабочий стол закрыт окном" Click="PlaybackChanged"/><CheckBox x:Name="BatteryInput" Content="Пауза при работе от батареи" Click="PlaybackChanged"/>
-      <TextBlock Text="Частота кадров обоев" Margin="0,16,0,0"/><ComboBox x:Name="FpsInput" SelectionChanged="PlaybackChanged"><ComboBoxItem Content="15 FPS" Tag="15"/><ComboBoxItem Content="30 FPS" Tag="30"/><ComboBoxItem Content="60 FPS" Tag="60"/><ComboBoxItem Content="120 FPS" Tag="120"/><ComboBoxItem Content="144 FPS" Tag="144"/><ComboBoxItem Content="165 FPS" Tag="165"/><ComboBoxItem Content="240 FPS" Tag="240"/><ComboBoxItem x:Name="MonitorFpsOption" Content="По частоте монитора" Tag="0"/></ComboBox>
-      <TextBlock Text="Качество рендера"/><ComboBox x:Name="QualityInput" SelectionChanged="PlaybackChanged"><ComboBoxItem Content="50% · меньше нагрузка" Tag="0.5"/><ComboBoxItem Content="75% · баланс" Tag="0.75"/><ComboBoxItem Content="100% · максимальная чёткость" Tag="1"/></ComboBox>
+      <TextBlock Text="Лимит кадров · GLSL и GIF" Margin="0,16,0,0"/><ComboBox x:Name="FpsInput" SelectionChanged="PlaybackChanged"><ComboBoxItem Content="15 FPS" Tag="15"/><ComboBoxItem Content="30 FPS" Tag="30"/><ComboBoxItem Content="60 FPS" Tag="60"/><ComboBoxItem Content="120 FPS" Tag="120"/><ComboBoxItem Content="144 FPS" Tag="144"/><ComboBoxItem Content="165 FPS" Tag="165"/><ComboBoxItem Content="240 FPS" Tag="240"/><ComboBoxItem x:Name="MonitorFpsOption" Content="По частоте монитора" Tag="0"/></ComboBox><TextBlock Text="MP4 воспроизводится с исходной частотой кадров и без звука." Style="{StaticResource Muted}" FontSize="12" Margin="0,0,0,7"/>
+      <TextBlock Text="Качество изображения"/><ComboBox x:Name="QualityInput" SelectionChanged="PlaybackChanged"><ComboBoxItem Content="50% · меньше нагрузка" Tag="0.5"/><ComboBoxItem Content="75% · баланс" Tag="0.75"/><ComboBoxItem Content="100% · максимальная чёткость" Tag="1"/></ComboBox>
       <TextBlock Text="Частота обоев не меняет частоту дисплея Windows. Для экономии оставьте 30–60 FPS; для более плавной анимации выберите частоту монитора. На паузе кадры не рисуются и мышь не опрашивается. Скрытый предпросмотр также приостанавливается. Снижение качества сохраняет заполнение всего экрана." Style="{StaticResource Muted}" FontSize="12"/>
      </StackPanel></Border>
      <TextBlock Text="Настройки сохраняются сразу. Коллекция и резервные копии находятся в папке MagmPaper в AppData." Style="{StaticResource Muted}" Margin="0,24,0,0"/>

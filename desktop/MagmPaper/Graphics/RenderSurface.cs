@@ -6,7 +6,7 @@ namespace MagmPaper.Graphics;
 
 internal sealed record RenderOptions(bool Paused = true, int Fps = 60, double Quality = 1, bool MouseEnabled = true);
 
-internal sealed class RenderSurface : IDisposable
+internal sealed class RenderSurface : WallpaperSurface
 {
     private sealed record Command(Action<ShaderContext> Run, Action<Exception> Fail);
     private readonly nint window;
@@ -62,6 +62,11 @@ internal sealed class RenderSurface : IDisposable
         if (!context.Loaded && source is { } code) context.Load(code);
         return context.Draw(Math.Max(1, rect.Width), Math.Max(1, rect.Height), options.Quality, time, x, y, true, captureRows, offscreenPreview)
             ?? throw new InvalidOperationException("Сначала загрузите шейдер.");
+    }
+    public async Task<WallpaperColors?> ReadColorsAsync()
+    {
+        var strip = await CaptureAsync(captureRows: 12).ConfigureAwait(false);
+        return WallpaperColors.FromRgba(strip.Rgba, strip.Width, strip.Height);
     }
     private void Loop()
     {

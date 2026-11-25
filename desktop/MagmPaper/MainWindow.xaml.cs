@@ -37,6 +37,7 @@ public partial class MainWindow : Window
     private Wallpaper? selected;
     private RenderSurface? loadedPreview;
     private string? loadedPreviewCode;
+    private Wallpaper? loadedMediaPreview;
     internal bool Quitting { get; set; }
     internal bool Busy => busy;
     internal Library Library => library;
@@ -54,12 +55,13 @@ public partial class MainWindow : Window
         TrackWindowFrame(this);
         windowBlurSaveTimer.Tick += (_, _) => SaveWindowPreferences();
         CursorsPage.Initialize(library.DirectoryPath);
-        Gallery.Initialize(library.DirectoryPath);
+        Gallery.Initialize(library);
         Gallery.OpenRequested += OpenWallpaperAsync;
         Gallery.ApplyRequested += ApplyWallpaperAsync;
         Gallery.StopRequested += item => StopWallpaperAsync(item.Id);
         Gallery.DeleteRequested += DeleteWallpaperAsync;
-        Closed += (_, _) => Gallery.Dispose();
+        Closed += (_, _) => { Gallery.Dispose(); MediaPreview.Dispose(); };
+        MediaPreview.Error += message => Status(message, true);
         AppVersionLabel.Text = Views.UpdateNotes.VersionLabel;
         try { system = new SystemSettings(library.DirectoryPath); } catch (Exception error) { Status(error.Message, true); }
         Preview.Ready += () =>
@@ -127,7 +129,9 @@ public partial class MainWindow : Window
     private void Buttons()
     {
         bool canUse = selected is not null && !editing;
-        ApplyWallpaperButton.IsEnabled = EditWallpaperButton.IsEnabled = DeleteWallpaperButton.IsEnabled = ViewCodeButton.IsEnabled = canUse;
+        ApplyWallpaperButton.IsEnabled = DeleteWallpaperButton.IsEnabled = canUse;
+        EditWallpaperButton.IsEnabled = ViewCodeButton.IsEnabled = canUse && selected!.Format == WallpaperFormat.Glsl;
+        EditWallpaperButton.Visibility = ViewCodeButton.Visibility = selected is { Format: not WallpaperFormat.Glsl } ? Visibility.Collapsed : Visibility.Visible;
         StopWallpaperButton.IsEnabled = canUse && selected!.Id == wallpapers.RunningId;
     }
     internal void Navigate(string destination)
@@ -246,9 +250,27 @@ public partial class MainWindow : Window
     private void SyncPreview()
     {
         bool visible = route == "wallpapers" && IsVisible && WindowState != WindowState.Minimized;
-        Preview.SetActive(visible && DetailsOpen);
+        bool media = selected is { Format: not WallpaperFormat.Glsl };
+        Preview.Visibility = media ? Visibility.Collapsed : Visibility.Visible;
+        MediaPreview.Visibility = media ? Visibility.Visible : Visibility.Collapsed;
+        Preview.SetActive(visible && DetailsOpen && !media);
+        MediaPreview.Configure(new(Paused: !visible || !DetailsOpen || !media || !MediaPreviewInViewport(), Fps: 0));
         Gallery.SetActive(visible && !DetailsOpen);
     }
+
+    private bool MediaPreviewInViewport()
+    {
+        if (!MediaPreview.IsVisible || MediaPreview.ActualHeight <= 0) return false;
+        var bounds = MediaPreview.TransformToAncestor(WallpaperScroll).TransformBounds(new Rect(MediaPreview.RenderSize));
+        return bounds.Bottom > 0 && bounds.Top < WallpaperScroll.ViewportHeight;
+    }
+
+    private void WallpaperViewportChanged(object sender, ScrollChangedEventArgs e)
+    {
+        if (ReferenceEquals(e.OriginalSource, WallpaperScroll) && selected is { Format: not WallpaperFormat.Glsl }) SyncPreview();
+    }
+
+    private void MediaPreviewResized(object sender, SizeChangedEventArgs e) => SyncPreview();
 
     private void ShowPlayback() => PauseText.Text = wallpapers.PauseReason is { } reason ? "Обои на паузе: " + reason : "";
 
@@ -276,7 +298,18 @@ public partial class MainWindow : Window
         RenderGallery();
         ShowPlayback();
         if (route == "wallpapers" && DetailsOpen && selected is not null && !editing)
-            await LoadPreviewAsync(selected.Code);
+            await LoadItemPreviewAsync(selected);
+    }
+
+    private async Task LoadItemPreviewAsync(Wallpaper item)
+    {
+        if (item.Format == WallpaperFormat.Glsl) { await LoadPreviewAsync(item.Code); return; }
+        if (loadedMediaPreview != item)
+        {
+            await MediaPreview.LoadAsync(library.MediaPath(item));
+            loadedMediaPreview = item;
+        }
+        SyncPreview();
     }
 
     private async Task LoadPreviewAsync(string code, bool force = false)
@@ -298,7 +331,7 @@ public partial class MainWindow : Window
         if (busy || !LeaveEditor()) return Task.CompletedTask;
         selected = item;
         ShowDetails(item.Name);
-        return RunAsync(() => LoadPreviewAsync(item.Code));
+        return RunAsync(() => LoadItemPreviewAsync(item));
     }
 
     private void ShowDetails(string title)
@@ -314,6 +347,8 @@ public partial class MainWindow : Window
     private void ShowGallery()
     {
         selected = null;
+        loadedMediaPreview = null;
+        MediaPreview.Clear();
         WallpaperScroll.Visibility = Visibility.Collapsed;
         GalleryPage.Visibility = Visibility.Visible;
         EditorPanel.Visibility = Visibility.Collapsed;
@@ -353,6 +388,23 @@ public partial class MainWindow : Window
 
     private async void AddWallpaperClick(object sender, RoutedEventArgs e)
     {
+        if (busy) return;
+        var choice = new Views.WallpaperFormatPicker { Owner = this };
+        TrackWindowFrame(choice);
+        if (choice.ShowDialog() != true) return;
+        if (choice.Format == WallpaperFormat.Glsl) { await AddShaderAsync(); return; }
+        string extension = choice.Format == WallpaperFormat.Gif ? "gif" : "mp4";
+        var file = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "Выберите файл обоев",
+            Filter = $"{extension.ToUpperInvariant()} (*.{extension})|*.{extension}",
+            CheckFileExists = true
+        };
+        if (file.ShowDialog(this) == true) await ImportMediaAsync(file.FileName, choice.Format);
+    }
+
+    internal async Task AddShaderAsync()
+    {
         if (busy || !LeaveEditor()) return;
         selected = null;
         ShowDetails("Новые обои");
@@ -360,9 +412,25 @@ public partial class MainWindow : Window
         await RunAsync(() => LoadPreviewAsync(Sample));
     }
 
+    internal Task ImportMediaAsync(string path, WallpaperFormat format) => RunAsync(async () =>
+    {
+        if (format is not (WallpaperFormat.Gif or WallpaperFormat.Mp4) || Library.FormatOf(path) != format)
+            throw new InvalidDataException("Выберите файл нужного формата.");
+        if (format == WallpaperFormat.Gif) _ = await GifClip.ReadAsync(path, GalleryRenderer.Width, animate: false);
+        else
+        {
+            using var probe = new MediaWallpaperView();
+            await probe.LoadAsync(path);
+        }
+        selected = await library.ImportMediaAsync(path, format);
+        ShowDetails(selected.Name);
+        await RefreshLibraryAsync();
+        Status("Обои добавлены в коллекцию.");
+    });
+
     private void ViewCodeClick(object sender, RoutedEventArgs e)
     {
-        if (selected is not { } item || editing) return;
+        if (selected is not { Format: WallpaperFormat.Glsl } item || editing) return;
         EditorTitle.Text = "Код GLSL";
         NameInput.Visibility = EditorActions.Visibility = Visibility.Collapsed;
         CodeInput.IsReadOnly = true;
@@ -374,7 +442,7 @@ public partial class MainWindow : Window
 
     private void EditWallpaperClick(object sender, RoutedEventArgs e)
     {
-        if (selected is { } item && LeaveEditor()) OpenEditor(item);
+        if (selected is { Format: WallpaperFormat.Glsl } item && LeaveEditor()) OpenEditor(item);
     }
     private void EditorChanged(object sender, TextChangedEventArgs e) { if (!filling && editing) dirty = true; }
     private async void CancelEditorClick(object sender, RoutedEventArgs e)
@@ -422,10 +490,11 @@ public partial class MainWindow : Window
     private async Task DeleteWallpaperAsync(Wallpaper item)
     {
         Gallery.ClearHover();
-        if (busy || MessageBox.Show(this, $"Удалить обои «{item.Name}» и их GLSL-файл?", "Удаление обоев", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        if (busy || MessageBox.Show(this, $"Удалить обои «{item.Name}» и их файл из коллекции?", "Удаление обоев", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
         await RunAsync(async () =>
         {
             if (library.State.ActiveId == item.Id) wallpapers.Stop();
+            if (selected?.Id == item.Id && item.Format != WallpaperFormat.Glsl) ShowGallery();
             library.Remove(item.Id);
             await RefreshLibraryAsync();
             Status("Обои удалены.");
@@ -441,7 +510,7 @@ public partial class MainWindow : Window
     private async void RefreshClick(object sender, RoutedEventArgs e)
     {
         if (editing) { Status("Сначала сохраните или отмените изменения в редакторе."); return; }
-        await RunAsync(async () => { await RefreshLibraryAsync(); Status("Коллекция обновлена из GLSL-файлов."); });
+        await RunAsync(async () => { await RefreshLibraryAsync(); Status("Коллекция обновлена из папки обоев."); });
     }
     private void FillPreferences()
     {

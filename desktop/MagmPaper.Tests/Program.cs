@@ -13,6 +13,44 @@ void Test(string name, Action<Library, string> action) => tests.Add((name, () =>
     try { action(new Library(path), path); } finally { Directory.Delete(path, true); }
 }));
 
+Test("GIF and MP4 join the same collection and preserve imported source files", (library, path) =>
+{
+    string animated = Path.Combine(path, "Wave.GIF");
+    string video = Path.Combine(path, "Wave.mp4");
+    byte[] original = "GIF89a-sample"u8.ToArray();
+    File.WriteAllBytes(animated, original);
+    File.WriteAllBytes(video, "test binary video"u8.ToArray());
+    var gif = library.ImportMediaAsync(animated, WallpaperFormat.Gif).GetAwaiter().GetResult();
+    var duplicate = library.ImportMediaAsync(animated, WallpaperFormat.Gif).GetAwaiter().GetResult();
+    var mp4 = library.ImportMediaAsync(video, WallpaperFormat.Mp4).GetAwaiter().GetResult();
+    var glsl = library.Save(null, "Wave", Code);
+    Check(gif.File == "Wave.gif" && duplicate.File == "Wave (2).gif" && mp4.File == "Wave.mp4", "media extension or collision handling failed");
+    library.Activate(mp4.Id);
+    var reloaded = new Library(path);
+    Check(reloaded.State.Items.Count == 4 && reloaded.State.ActiveId == mp4.Id &&
+        reloaded.Get(mp4.Id).Format == WallpaperFormat.Mp4 && reloaded.Get(glsl.Id).Code == Code, "mixed collection did not reload");
+    Throws(() => reloaded.Save(gif.Id, gif.Name, Code));
+    Throws(() => reloaded.ImportMediaAsync(video, WallpaperFormat.Gif).GetAwaiter().GetResult());
+    reloaded.Remove(mp4.Id);
+    reloaded.Remove(gif.Id);
+    Check(!File.Exists(Path.Combine(library.ShaderDirectory, mp4.File)) && File.Exists(video) && reloaded.State.ActiveId is null,
+        "removing media affected the source or left an active choice");
+    Check(File.ReadAllBytes(animated).SequenceEqual(original), "original GIF was changed");
+});
+
+Test("aborted binary wallpaper deletion restores the file", (library, path) =>
+{
+    string source = Path.Combine(path, "clip.mp4");
+    File.WriteAllBytes(source, "test binary video"u8.ToArray());
+    var item = library.ImportMediaAsync(source, WallpaperFormat.Mp4).GetAwaiter().GetResult();
+    string stage = ".media-" + Guid.NewGuid().ToString("N") + ".tmp";
+    File.Move(library.MediaPath(item), Path.Combine(library.ShaderDirectory, stage));
+    DataFiles.Write(library.Manifest + ".journal", new FileTransaction("uncommitted", [], [new(item.File, stage, false)]));
+    var reloaded = new Library(path);
+    Check(reloaded.Get(item.Id).Format == WallpaperFormat.Mp4 &&
+        File.ReadAllBytes(reloaded.MediaPath(item)).SequenceEqual(File.ReadAllBytes(source)), "binary rollback lost media bytes");
+});
+
 Test("CRUD, activation, immutable settings and reload", (library, path) =>
 {
     var item = library.Save(null, "Мои обои", Code); library.Activate(item.Id);

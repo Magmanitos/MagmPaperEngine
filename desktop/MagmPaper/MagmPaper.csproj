@@ -27,6 +27,8 @@
     <Content Include="../ThirdParty/WINDOWS-DESKTOP-LICENSE.txt" Link="Licenses/WINDOWS-DESKTOP.txt" CopyToOutputDirectory="PreserveNewest" />
     <EmbeddedResource Include="../../build/icon.ico" Link="Assets/icon.ico" />
     <EmbeddedResource Include="Assets/example.glsl" />
+    <EmbeddedResource Include="../MagmPaper.Tests/Fixtures/sample.gif" LogicalName="MagmPaper.Smoke.sample.gif" />
+    <EmbeddedResource Include="../MagmPaper.Tests/Fixtures/sample.mp4" LogicalName="MagmPaper.Smoke.sample.mp4" />
     <EmbeddedResource Include="../../RELEASE_NOTES.md" LogicalName="MagmPaper.Assets.ReleaseNotes.md" />
   </ItemGroup>
 </Project>

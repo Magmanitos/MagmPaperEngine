@@ -31,7 +31,7 @@ public partial class WallpaperGallery : UserControl, IDisposable
                 Changed(nameof(Subtitle));
             }
         }
-        public string Subtitle => Active ? "● На рабочем столе" : Item.File;
+        public string Subtitle => Active ? "● На рабочем столе" : Item.Format.ToString().ToUpperInvariant() + " · " + Item.File;
         public ImageSource? Image { get => image; set { image = value; Changed(nameof(Image)); } }
         public string PreviewStatus { get => status; set { status = value; Changed(nameof(PreviewStatus)); } }
         public ImageSource? Still { get; set; }
@@ -51,6 +51,8 @@ public partial class WallpaperGallery : UserControl, IDisposable
     private Tile[] tiles = [];
     private readonly Dictionary<string, Tile> byId = new(StringComparer.Ordinal);
     private string? cacheDirectory;
+    private Library? library;
+    private MediaWallpaperView? mediaHover;
     private GalleryRenderer? stillRenderer, liveRenderer;
     private Hover? hover;
     private Task thumbs = Task.CompletedTask, live = Task.CompletedTask;
@@ -60,7 +62,11 @@ public partial class WallpaperGallery : UserControl, IDisposable
     internal IReadOnlyList<Tile> Cards => tiles;
 
     public WallpaperGallery() => InitializeComponent();
-    internal void Initialize(string directory) => cacheDirectory = Path.Combine(directory, "GalleryPreview-v1");
+    internal void Initialize(Library source)
+    {
+        library = source;
+        cacheDirectory = Path.Combine(source.DirectoryPath, "GalleryPreview-v1");
+    }
 
     internal void UpdateItems(IReadOnlyList<Wallpaper> items, string? runningId)
     {
@@ -123,6 +129,13 @@ public partial class WallpaperGallery : UserControl, IDisposable
             tile.Loaded = true;
             try
             {
+                if (tile.Item.Format != WallpaperFormat.Glsl)
+                {
+                    tile.Still = await MediaThumbnails.ReadAsync(library!.MediaPath(tile.Item));
+                    if (!ReferenceEquals(hover?.Tile, tile) || tile.Image is null) tile.Image = tile.Still;
+                    if (tile.Still is null) tile.PreviewStatus = "▶ " + tile.Item.Format.ToString().ToUpperInvariant();
+                    continue;
+                }
                 var path = CacheFile(tile.Item, out var hash);
                 var pixels = await ReadCacheAsync(path, hash);
                 if (pixels is null)
@@ -202,6 +215,12 @@ public partial class WallpaperGallery : UserControl, IDisposable
     {
         if (hover is not { } old) return;
         hover = null;
+        if (mediaHover is { } view)
+        {
+            view.Dispose();
+            if (view.Parent is Grid layer) layer.Children.Remove(view);
+            mediaHover = null;
+        }
         old.Tile.Image = old.Tile.Still;
     }
 
@@ -213,6 +232,12 @@ public partial class WallpaperGallery : UserControl, IDisposable
             if (!ReferenceEquals(hover, request) || !active) continue;
             try
             {
+                if (request.Tile.Item.Format != WallpaperFormat.Glsl)
+                {
+                    await AnimateMediaAsync(request);
+                    if (ReferenceEquals(hover, request)) ClearHover();
+                    continue;
+                }
                 liveRenderer ??= new GalleryRenderer();
                 await liveRenderer.LoadAsync(request.Tile.Item.Code);
                 var bitmap = GalleryRenderer.LiveBitmap();
@@ -232,6 +257,18 @@ public partial class WallpaperGallery : UserControl, IDisposable
             catch { /* Keep the still image if the shader cannot animate. */ }
             if (ReferenceEquals(hover, request)) ClearHover();
         }
+    }
+
+    private async Task AnimateMediaAsync(Hover request)
+    {
+        if (request.Stage is not Border { Child: Grid layer }) return;
+        using var view = new MediaWallpaperView { IsHitTestVisible = false };
+        mediaHover = view;
+        layer.Children.Add(view);
+        await view.LoadAsync(library!.MediaPath(request.Tile.Item), maxDimension: GalleryRenderer.Width);
+        if (!active || !ReferenceEquals(hover, request)) return;
+        view.Configure(new(Paused: false, Fps: 30));
+        while (active && ReferenceEquals(hover, request) && InViewport(request.Tile)) await Task.Delay(100);
     }
 
     private static Task Request(object sender, Func<Wallpaper, Task>? action) =>
