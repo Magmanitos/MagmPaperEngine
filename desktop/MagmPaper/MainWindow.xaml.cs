@@ -129,9 +129,12 @@ public partial class MainWindow : Window
     private void Buttons()
     {
         bool canUse = selected is not null && !editing;
+        bool media = selected is { Format: not WallpaperFormat.Glsl };
         ApplyWallpaperButton.IsEnabled = DeleteWallpaperButton.IsEnabled = canUse;
-        EditWallpaperButton.IsEnabled = ViewCodeButton.IsEnabled = canUse && selected!.Format == WallpaperFormat.Glsl;
-        EditWallpaperButton.Visibility = ViewCodeButton.Visibility = selected is { Format: not WallpaperFormat.Glsl } ? Visibility.Collapsed : Visibility.Visible;
+        EditWallpaperButton.IsEnabled = ViewCodeButton.IsEnabled = canUse && !media;
+        EditWallpaperButton.Visibility = ViewCodeButton.Visibility = media ? Visibility.Collapsed : Visibility.Visible;
+        RenameWallpaperButton.Visibility = media ? Visibility.Visible : Visibility.Collapsed;
+        RenameWallpaperButton.IsEnabled = canUse && media;
         StopWallpaperButton.IsEnabled = canUse && selected!.Id == wallpapers.RunningId;
     }
     internal void Navigate(string destination)
@@ -304,7 +307,7 @@ public partial class MainWindow : Window
     private async Task LoadItemPreviewAsync(Wallpaper item)
     {
         if (item.Format == WallpaperFormat.Glsl) { await LoadPreviewAsync(item.Code); return; }
-        if (loadedMediaPreview != item)
+        if (loadedMediaPreview is not { } loaded || loaded.Id != item.Id || loaded.File != item.File || loaded.MediaStamp != item.MediaStamp)
         {
             await MediaPreview.LoadAsync(library.MediaPath(item));
             loadedMediaPreview = item;
@@ -389,18 +392,17 @@ public partial class MainWindow : Window
     private async void AddWallpaperClick(object sender, RoutedEventArgs e)
     {
         if (busy) return;
-        var choice = new Views.WallpaperFormatPicker { Owner = this };
-        TrackWindowFrame(choice);
-        if (choice.ShowDialog() != true) return;
+        var choice = new Views.WallpaperDialog();
+        if (!ShowWallpaperDialog(choice)) return;
         if (choice.Format == WallpaperFormat.Glsl) { await AddShaderAsync(); return; }
-        string extension = choice.Format == WallpaperFormat.Gif ? "gif" : "mp4";
-        var file = new Microsoft.Win32.OpenFileDialog
-        {
-            Title = "Выберите файл обоев",
-            Filter = $"{extension.ToUpperInvariant()} (*.{extension})|*.{extension}",
-            CheckFileExists = true
-        };
-        if (file.ShowDialog(this) == true) await ImportMediaAsync(file.FileName, choice.Format);
+        if (choice.MediaFile is { } path) await ImportMediaAsync(path, choice.Format, choice.WallpaperName);
+    }
+
+    private bool ShowWallpaperDialog(Views.WallpaperDialog dialog)
+    {
+        dialog.Owner = this;
+        TrackWindowFrame(dialog, dialog.FrameRadius);
+        return dialog.ShowDialog() == true;
     }
 
     internal async Task AddShaderAsync()
@@ -412,7 +414,7 @@ public partial class MainWindow : Window
         await RunAsync(() => LoadPreviewAsync(Sample));
     }
 
-    internal Task ImportMediaAsync(string path, WallpaperFormat format) => RunAsync(async () =>
+    private Task ImportMediaAsync(string path, WallpaperFormat format, string name) => RunAsync(async () =>
     {
         if (format is not (WallpaperFormat.Gif or WallpaperFormat.Mp4) || Library.FormatOf(path) != format)
             throw new InvalidDataException("Выберите файл нужного формата.");
@@ -422,11 +424,25 @@ public partial class MainWindow : Window
             using var probe = new MediaWallpaperView();
             await probe.LoadAsync(path);
         }
-        selected = await library.ImportMediaAsync(path, format);
+        selected = await library.ImportMediaAsync(path, format, name);
         ShowDetails(selected.Name);
         await RefreshLibraryAsync();
         Status("Обои добавлены в коллекцию.");
     });
+
+    private async void RenameWallpaperClick(object sender, RoutedEventArgs e)
+    {
+        if (busy || selected is not { Format: not WallpaperFormat.Glsl } item) return;
+        var dialog = new Views.WallpaperDialog(item.Name);
+        if (!ShowWallpaperDialog(dialog)) return;
+        await RunAsync(() =>
+        {
+            selected = library.RenameMedia(item.Id, dialog.WallpaperName);
+            RenderGallery();
+            Status("Название обоев сохранено.");
+            return Task.CompletedTask;
+        });
+    }
 
     private void ViewCodeClick(object sender, RoutedEventArgs e)
     {

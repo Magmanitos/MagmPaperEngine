@@ -77,6 +77,7 @@
         <Button x:Name="StopWallpaperButton" Content="Остановить" Click="StopWallpaperClick" Margin="0,0,8,6"/>
         <Button x:Name="ViewCodeButton" Content="Код GLSL" Click="ViewCodeClick" Margin="0,0,8,6"/>
         <Button x:Name="EditWallpaperButton" Content="Редактировать" Click="EditWallpaperClick" Margin="0,0,8,6"/>
+        <Button x:Name="RenameWallpaperButton" Content="Переименовать" Click="RenameWallpaperClick" Visibility="Collapsed" Margin="0,0,8,6"/>
         <Button x:Name="DeleteWallpaperButton" Content="Удалить" Click="DeleteWallpaperClick" Margin="0,0,0,6"/>
        </WrapPanel>
        <StackPanel x:Name="EditorPanel" Visibility="Collapsed">

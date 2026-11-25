@@ -1,0 +1,34 @@
+<Window x:Class="MagmPaper.Views.WallpaperDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Добавить обои" Style="{StaticResource AppWindow}" Width="420" SizeToContent="Height"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False" ResizeMode="NoResize"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent">
+  <Border x:Name="DialogCard" CornerRadius="14" Background="{DynamicResource BackgroundBrush}"
+          BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" Padding="22,14,22,22">
+    <StackPanel>
+      <DockPanel Margin="0,0,0,14">
+        <Button DockPanel.Dock="Right" Style="{StaticResource CloseCaptionButton}" Content="&#xE8BB;"
+                Width="32" Height="32" IsCancel="True" AutomationProperties.Name="Закрыть"/>
+        <Border Background="Transparent" MouseLeftButtonDown="DragTitle">
+          <TextBlock Text="{Binding Title, RelativeSource={RelativeSource AncestorType=Window}}" VerticalAlignment="Center" FontWeight="SemiBold"/>
+        </Border>
+      </DockPanel>
+      <StackPanel x:Name="FormatPanel">
+        <TextBlock Text="Формат обоев" Style="{StaticResource Title}" Margin="0,0,0,16"/>
+        <Button Content="GLSL · редактор кода" Tag="Glsl" Click="Choose" Margin="0,0,0,8"/>
+        <Button Content="GIF · выбрать анимацию" Tag="Gif" Click="Choose" Margin="0,0,0,8"/>
+        <Button Content="MP4 · выбрать видео" Tag="Mp4" Click="Choose"/>
+      </StackPanel>
+      <StackPanel x:Name="NamePanel" Visibility="Collapsed">
+        <Label Content="Название обоев" Padding="0" Target="{Binding ElementName=NameInput}"/>
+        <TextBox x:Name="NameInput" MaxLength="80" TextChanged="NameChanged" Margin="0,6,0,0"/>
+      </StackPanel>
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+        <Button Content="Отмена" IsCancel="True"/>
+        <Button x:Name="AcceptName" Content="Добавить" Style="{StaticResource Primary}" Click="Accept" IsDefault="True"
+                IsEnabled="False" Visibility="Collapsed" Margin="8,0,0,0"/>
+      </StackPanel>
+    </StackPanel>
+  </Border>
+</Window>

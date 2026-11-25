@@ -71,6 +71,12 @@ public sealed class Library
     {
         if (string.IsNullOrWhiteSpace(name) || name.Trim().Length > 80) throw new InvalidDataException("Введите название от 1 до 80 символов.");
     }
+    public static string SuggestedMediaName(string path)
+    {
+        var name = Path.GetFileNameWithoutExtension(path).Trim();
+        if (name.Length > 80) name = name[..80].TrimEnd();
+        return name.Length > 0 ? name : "Обои";
+    }
     public static void Validate(string name, string code)
     {
         ValidateName(name);
@@ -267,10 +273,13 @@ public sealed class Library
         if (previous is null) items.Add(item); else items[items.FindIndex(x => x.Id == id)] = item;
         Commit(State with { Items = items }); return item;
     }
-    public async Task<Wallpaper> ImportMediaAsync(string source, WallpaperFormat format)
+    public async Task<Wallpaper> ImportMediaAsync(string source, WallpaperFormat format, string? name = null)
     {
         if (format is not (WallpaperFormat.Gif or WallpaperFormat.Mp4) || FormatOf(source) != format)
             throw new InvalidDataException("Выберите файл нужного формата.");
+        string suggestedName = SuggestedMediaName(source);
+        name = (name ?? suggestedName).Trim();
+        ValidateName(name);
         var stage = MediaStage();
         var pending = Path.Combine(ShaderDirectory, stage);
         try
@@ -278,11 +287,8 @@ public sealed class Library
             await using (var input = File.OpenRead(source))
             await using (var output = File.Open(pending, FileMode.CreateNew, FileAccess.Write))
                 await input.CopyToAsync(output);
-            string name = Path.GetFileNameWithoutExtension(source).Trim();
-            if (name.Length > 80) name = name[..80].TrimEnd();
-            ValidateName(name);
             Refresh();
-            var file = FileName(name, Occupied(), format == WallpaperFormat.Gif ? ".gif" : ".mp4");
+            var file = FileName(suggestedName, Occupied(), format == WallpaperFormat.Gif ? ".gif" : ".mp4");
             var item = new Wallpaper(Guid.NewGuid().ToString(), name, file, "");
             Commit(State with { Items = [.. State.Items, item] }, new(file, stage, true, Stamp(new FileInfo(pending))));
             return Get(item.Id);
@@ -292,6 +298,18 @@ public sealed class Library
             // An unresolved transaction still owns its staging file.
             if (!File.Exists(Manifest + ".journal")) File.Delete(pending);
         }
+    }
+
+    public Wallpaper RenameMedia(string id, string name)
+    {
+        name = name.Trim();
+        ValidateName(name);
+        var previous = Get(id);
+        if (previous.Format == WallpaperFormat.Glsl) throw new InvalidDataException("Измените название GLSL-обоев в редакторе.");
+        if (name == previous.Name) return previous;
+        var item = previous with { Name = name };
+        Commit(State with { Items = State.Items.Select(current => current.Id == id ? item : current).ToArray() });
+        return item;
     }
 
     public void Remove(string id)

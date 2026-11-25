@@ -22,14 +22,21 @@ Test("GIF and MP4 join the same collection and preserve imported source files", 
     File.WriteAllBytes(video, "test binary video"u8.ToArray());
     var gif = library.ImportMediaAsync(animated, WallpaperFormat.Gif).GetAwaiter().GetResult();
     var duplicate = library.ImportMediaAsync(animated, WallpaperFormat.Gif).GetAwaiter().GetResult();
-    var mp4 = library.ImportMediaAsync(video, WallpaperFormat.Mp4).GetAwaiter().GetResult();
+    var mp4 = library.ImportMediaAsync(video, WallpaperFormat.Mp4, "  Морская волна  ").GetAwaiter().GetResult();
     var glsl = library.Save(null, "Wave", Code);
     Check(gif.File == "Wave.gif" && duplicate.File == "Wave (2).gif" && mp4.File == "Wave.mp4", "media extension or collision handling failed");
     library.Activate(mp4.Id);
+    Check(mp4.Name == "Морская волна" && gif.Name == "Wave", "imported display name or file name suggestion was lost");
+    var renamed = library.RenameMedia(mp4.Id, "  Прибой  ");
+    Check(renamed == mp4 with { Name = "Прибой" }, "renaming changed the imported file, stamp, or ID");
     var reloaded = new Library(path);
     Check(reloaded.State.Items.Count == 4 && reloaded.State.ActiveId == mp4.Id &&
-        reloaded.Get(mp4.Id).Format == WallpaperFormat.Mp4 && reloaded.Get(glsl.Id).Code == Code, "mixed collection did not reload");
+        reloaded.Get(mp4.Id) == renamed && reloaded.Get(glsl.Id).Code == Code, "mixed collection or renamed active video did not reload");
+    Check(File.ReadAllBytes(reloaded.MediaPath(renamed)).SequenceEqual(File.ReadAllBytes(video)), "renaming changed the media bytes");
     Throws(() => reloaded.Save(gif.Id, gif.Name, Code));
+    Throws(() => reloaded.RenameMedia(glsl.Id, "Без редактора"));
+    Throws(() => reloaded.RenameMedia(gif.Id, "  "));
+    Throws(() => reloaded.ImportMediaAsync(animated, WallpaperFormat.Gif, "  ").GetAwaiter().GetResult());
     Throws(() => reloaded.ImportMediaAsync(video, WallpaperFormat.Gif).GetAwaiter().GetResult());
     reloaded.Remove(mp4.Id);
     reloaded.Remove(gif.Id);

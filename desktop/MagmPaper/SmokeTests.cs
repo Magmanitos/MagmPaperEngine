@@ -96,6 +96,19 @@ internal static class SmokeTests
         await Until(() => knob.RenderTransform.Value.OffsetX == (original == true ? 16 : 0), "toggle did not restore its position");
     }
 
+    private static async Task UseWallpaperDialogAsync(MainWindow window, Button button, Action<Views.WallpaperDialog> interact)
+    {
+        var interaction = window.Dispatcher.InvokeAsync(() =>
+        {
+            var dialog = window.OwnedWindows.OfType<Views.WallpaperDialog>().SingleOrDefault(item => item.IsVisible)
+                ?? throw new InvalidOperationException("wallpaper dialog did not open");
+            try { interact(dialog); }
+            finally { if (dialog.IsVisible) dialog.Close(); }
+        }, DispatcherPriority.ApplicationIdle);
+        button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await interaction;
+    }
+
     private static async Task CheckMediaAsync(MainWindow window)
     {
         foreach (var (extension, format) in new[] { ("gif", WallpaperFormat.Gif), ("mp4", WallpaperFormat.Mp4) })
@@ -105,11 +118,32 @@ internal static class SmokeTests
             using (var output = File.Create(file)) fixture.CopyTo(output);
             window.Navigate("wallpapers");
             await Until(() => !window.Busy, "gallery did not return before media import");
-            await window.ImportMediaAsync(file, format);
-            Assert(window.MediaPreview.MediaReady && window.ViewCodeButton.Visibility == Visibility.Collapsed,
+            string name = $"Обои {extension} на заказ";
+            await UseWallpaperDialogAsync(window, window.AddWallpaperButton, dialog =>
+            {
+                dialog.ChooseMedia(file, format);
+                Assert(dialog.NameInput.Text == "preview" && dialog.NamePanel.Visibility == Visibility.Visible,
+                    "media file did not open a name field with the suggested name");
+                dialog.NameInput.Text = "   ";
+                Assert(!dialog.AcceptName.IsEnabled, "wallpaper dialog allowed an empty name");
+                dialog.NameInput.Text = name;
+                dialog.AcceptName.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            });
+            await Until(() => !window.Busy, $"{extension} import did not finish");
+            Assert(window.MediaPreview.MediaReady && window.ViewCodeButton.Visibility == Visibility.Collapsed &&
+                window.WallpaperTitle.Text == name && window.RenameWallpaperButton.IsVisible,
                 $"{extension} did not open in the media preview");
             var wallpaper = window.Library.State.Items.Single(item => item.Format == format);
-            Assert(File.Exists(window.Library.MediaPath(wallpaper)), $"{extension} import did not copy the file");
+            Assert(wallpaper.Name == name && File.Exists(window.Library.MediaPath(wallpaper)), $"{extension} import lost the chosen name or file");
+            string renamed = $"Новое имя для {extension}";
+            await UseWallpaperDialogAsync(window, window.RenameWallpaperButton, dialog =>
+            {
+                Assert(dialog.NameInput.Text == name, "rename dialog did not open with the current name");
+                dialog.NameInput.Text = renamed;
+                dialog.AcceptName.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            });
+            Assert(window.WallpaperTitle.Text == renamed && window.Library.Get(wallpaper.Id) == wallpaper with { Name = renamed } &&
+                window.MediaPreview.MediaReady, $"{extension} rename did not update the name while preserving playback and the file");
             await Until(() => window.MediaPreview.Playing && window.MediaPreview.PlaybackPosition > TimeSpan.FromMilliseconds(100),
                 $"{extension} animation did not advance");
             if (format == WallpaperFormat.Gif)
@@ -136,6 +170,7 @@ internal static class SmokeTests
             window.BackWallpaperButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             var card = window.Gallery.Cards.Single(tile => tile.Item.Id == wallpaper.Id);
             await Until(() => card.Loaded && (card.Still is not null || card.PreviewStatus.StartsWith("▶")), $"{extension} gallery poster did not load");
+            Assert(card.Item.Name == renamed, $"{extension} gallery did not show the new name");
             window.Library.Remove(wallpaper.Id);
             window.Navigate("wallpapers");
             await Until(() => !window.Busy, "gallery did not reload after removing the media");
@@ -527,6 +562,25 @@ internal static class SmokeTests
             window.WindowState = WindowState.Normal;
             await Until(() => Win32.FindWindow(null, frameTitle) != 0, "window blur did not return in windowed mode");
         }
+        window.Navigate("wallpapers");
+        await Until(() => !window.Busy, "gallery did not open for the wallpaper dialog test");
+        await UseWallpaperDialogAsync(window, window.AddWallpaperButton, dialog =>
+        {
+            byte[] pixel = new byte[4];
+            WindowBitmap(dialog).CopyPixels(new Int32Rect(0, 0, 1, 1), pixel, 4, 0);
+            Assert(dialog.FrameRadius > 0 && dialog.AllowsTransparency && pixel[3] == 0,
+                "wallpaper dialog did not have transparent rounded corners");
+            nint dialogHandle = new System.Windows.Interop.WindowInteropHelper(dialog).Handle;
+            bool found = false;
+            Win32.EnumWindows((handle, _) =>
+            {
+                found = Win32.GetWindow(handle, 4) == dialogHandle &&
+                    (Win32.GetWindowLongPtr(handle, Win32.ExtendedStyle).ToInt64() & 0x08000020) == 0x08000020;
+                return !found;
+            }, 0);
+            Assert(found, "rounded wallpaper dialog did not have its own blur overlay");
+        });
+        window.Navigate("settings");
         window.WindowBlurRadius.Value = 48;
         window.WindowBlurIntensity.Value = 55;
         window.WindowBlurInput.IsChecked = false;
@@ -541,7 +595,7 @@ internal static class SmokeTests
         await Task.Delay(3000); // Let startup compilation, layout and deferred GPU release settle.
         var process = Process.GetCurrentProcess(); var startCpu = process.TotalProcessorTime; var clockIdle = Stopwatch.StartNew(); await Task.Delay(5000); process.Refresh();
         var report = new { passed = true, version = typeof(App).Assembly.GetName().Version?.ToString(), nativeUi = "WPF", gpuTests = "ANGLE D3D11 WARP", composedDesktopPixels = composedPixels, workingSetBytes = process.WorkingSet64, idleCpuMilliseconds = (process.TotalProcessorTime - startCpu).TotalMilliseconds, idleSampleMilliseconds = clockIdle.Elapsed.TotalMilliseconds,
-            tests = new[] { "real GLSL pixels", "late GLSL extension compatibility", "compile error preserves program", "backbuffer", "quality fills window", "pause stops frames", "physical monitor geometry", "24H2 child layer order and opaque composition", "native window coverage/minimize/transparent overlay", "click-through and real cursor uniforms", "mouse toggle", "six GPU resets with active and paused second context", "Windows autostart and StartupApproved", "gallery thumbnails, hover shader uniforms and enlarged preview", "GIF and H.264 MP4 import and playback", "WPF editor/save/navigation", "native preview visibility and scroll clipping", "smooth scrolling over inputs and repeated wheel events", "inactive and disabled control colors", "stable collection after activation/navigation", "HSV and HEX color picker", "live taskbar preview and automatic slider persistence", "glass gradient settings and wallpaper palette", "light and dark themes", "cursor catalogue caption, scroll and PNG hotspot", "changelog positioning and preference", "window blur toggle, rounded contour and settings", "animated toggles and navigation", "settings", "WPF theme contrast", "hidden preview" } };
+            tests = new[] { "real GLSL pixels", "late GLSL extension compatibility", "compile error preserves program", "backbuffer", "quality fills window", "pause stops frames", "physical monitor geometry", "24H2 child layer order and opaque composition", "native window coverage/minimize/transparent overlay", "click-through and real cursor uniforms", "mouse toggle", "six GPU resets with active and paused second context", "Windows autostart and StartupApproved", "gallery thumbnails, hover shader uniforms and enlarged preview", "GIF and H.264 MP4 import, naming, and playback", "WPF editor/save/navigation", "native preview visibility and scroll clipping", "smooth scrolling over inputs and repeated wheel events", "inactive and disabled control colors", "stable collection after activation/navigation", "HSV and HEX color picker", "live taskbar preview and automatic slider persistence", "glass gradient settings and wallpaper palette", "light and dark themes", "cursor catalogue caption, scroll and PNG hotspot", "changelog positioning and preference", "window blur toggle, rounded notes and wallpaper dialogs, and settings", "animated toggles and navigation", "settings", "WPF theme contrast", "hidden preview" } };
         File.WriteAllText(Path.Combine(output, "report.json"), JsonSerializer.Serialize(report, DataFiles.Json));
     }
     private static RenderTargetBitmap WindowBitmap(Window window)
