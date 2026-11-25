@@ -136,18 +136,18 @@ internal sealed class ShaderContext : IDisposable
         Gpu.DrawArrays(4, 0, 6);
         Gpu.DisableVertexAttribArray((uint)location);
     }
-    public PixelFrame? Draw(int outputWidth, int outputHeight, double quality, double seconds, double x, double y, bool capture = false, int captureRows = 0)
+    public PixelFrame? Draw(int outputWidth, int outputHeight, double quality, double seconds, double x, double y, bool capture = false, int captureRows = 0, byte[]? offscreenPreview = null)
     {
         lock (AngleDevice.GraphicsGate)
         {
             // Explicitly hand off the shared D3D11 device between EGL contexts.
             // No context stays current after releasing the submission gate.
             Bind();
-            try { return DrawCore(outputWidth, outputHeight, quality, seconds, x, y, capture, captureRows); }
+            try { return DrawCore(outputWidth, outputHeight, quality, seconds, x, y, capture, captureRows, offscreenPreview); }
             finally { Gpu.EglMakeCurrent(display, 0, 0, 0); }
         }
     }
-    private PixelFrame? DrawCore(int outputWidth, int outputHeight, double quality, double seconds, double x, double y, bool capture, int captureRows)
+    private PixelFrame? DrawCore(int outputWidth, int outputHeight, double quality, double seconds, double x, double y, bool capture, int captureRows, byte[]? offscreenPreview)
     {
         if (program == 0) return null;
         Resize(Math.Max(1, outputWidth), Math.Max(1, outputHeight), quality);
@@ -168,14 +168,17 @@ internal sealed class ShaderContext : IDisposable
         {
             int rows = captureRows > 0 ? Math.Min(outputHeight, captureRows) : outputHeight;
             int bottom = (outputHeight - rows) / 6;
-            var bytes = new byte[checked(outputWidth * rows * 4)];
+            int length = checked(outputWidth * rows * 4);
+            var bytes = offscreenPreview is { Length: var size } && size == length ? offscreenPreview : new byte[length];
             Gpu.ReadPixels(0, bottom, outputWidth, rows, 0x1908, 0x1401, bytes);
             pixels = new(outputWidth, rows, bytes);
         }
         var error = Gpu.GetError();
         if (error == 0x507) throw new DeviceLostException("Видеодрайвер восстанавливает устройство.");
         if (error != 0) throw new IOException($"Ошибка рендера OpenGL ES: 0x{error:X}.");
-        if (Gpu.EglSwapBuffers(display, surface) == 0) throw new DeviceLostException($"Поверхность обоев требует восстановления (EGL 0x{Gpu.EglGetError():X}).");
+        // Gallery frames go straight to WPF after glReadPixels. The hidden
+        // surface does not need a swap-chain presentation.
+        if (offscreenPreview is null && Gpu.EglSwapBuffers(display, surface) == 0) throw new DeviceLostException($"Поверхность обоев требует восстановления (EGL 0x{Gpu.EglGetError():X}).");
         return pixels;
     }
     public void Dispose() { lock (AngleDevice.GraphicsGate) DisposeCore(); }

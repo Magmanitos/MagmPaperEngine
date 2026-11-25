@@ -101,6 +101,21 @@ internal static class SmokeTests
         Directory.CreateDirectory(output);
         await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
         window.Navigate("wallpapers");
+        await Until(() => !window.Busy && window.Gallery.Cards.Count > 0, "gallery did not load the collection");
+        var firstCard = window.Gallery.Cards[0];
+        await Until(() => firstCard.Still is not null, "gallery did not generate a GLSL thumbnail");
+        window.Gallery.StartHover(firstCard, window.Gallery);
+        await Until(() => firstCard.Image is WriteableBitmap, "hover did not start the gallery renderer");
+        window.Gallery.ClearHover();
+        Assert(ReferenceEquals(firstCard.Image, firstCard.Still), "leaving the card did not restore its thumbnail");
+        using (var renderer = new GalleryRenderer())
+        {
+            await renderer.LoadAsync("precision mediump float; uniform vec2 mouse; uniform float time; void main(){gl_FragColor=vec4(mouse.x,mouse.y,time,1.0);}");
+            byte[] cardFrame = await renderer.FrameAsync(.4, .7, .2);
+            Assert(Math.Abs(cardFrame[0] - 102) < 3 && Math.Abs(cardFrame[1] - 51) < 3 && Math.Abs(cardFrame[2] - 178) < 3,
+                "gallery shader did not receive the hover time and pointer uniforms");
+        }
+        await window.OpenWallpaperAsync(firstCard.Item);
         await Until(() => !window.Busy && window.PreviewSurface is not null, "native preview did not initialize");
         var surface = window.PreviewSurface!;
         Assert(Win32.GetLayeredWindowAttributes(window.Preview.NativeWindow, out _, out byte previewOpacity, out _) && previewOpacity == 255, "preview bypasses DWM composition");
@@ -242,7 +257,14 @@ internal static class SmokeTests
             finally { startup.DeleteValue(startupTestName, false); approved.DeleteValue(startupTestName, false); }
         }
         // Exercise real WPF controls and their async handlers, not a renderer mock.
+        window.ViewCodeButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Assert(window.EditorPanel.Visibility == Visibility.Visible && window.CodeInput.IsReadOnly && window.CodeInput.Text == firstCard.Item.Code,
+            "open wallpaper did not expose its GLSL code");
+        window.EditWallpaperButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Assert(!window.CodeInput.IsReadOnly, "existing wallpaper code could not be edited");
+        window.BackWallpaperButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         window.AddWallpaperButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await Until(() => !window.Busy, "new wallpaper preview did not load");
         window.NameInput.Text = "Нативный UI тест"; window.CodeInput.Text = Red;
         window.WallpaperScroll.ScrollToVerticalOffset(140);
         await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
@@ -263,24 +285,26 @@ internal static class SmokeTests
         await Until(() => !window.Busy, "WPF save did not complete");
         Assert(window.Library.State.Items.Any(x => x.Name == "Нативный UI тест" && x.Code == Red), "WPF save did not persist GLSL");
         var added = window.Library.State.Items.First(x => x.Name == "Нативный UI тест");
+        window.BackWallpaperButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         window.Library.Remove(added.Id);
         window.Navigate("wallpapers"); await Until(() => !window.Busy, "library refresh did not complete");
-        var collectionBeforeActivation = window.WallpaperList.ItemsSource;
-        var selectionBeforeActivation = window.WallpaperList.SelectedItem;
+        var collectionBeforeActivation = window.Gallery.Cards;
+        Assert(window.GalleryPage.Visibility == Visibility.Visible && window.WallpaperScroll.Visibility == Visibility.Collapsed,
+            "returning to the gallery kept the detail view visible");
         var other = new Window { Owner = window, Title = "Activation test", Width = 200, Height = 120, ShowInTaskbar = false,
             WindowStartupLocation = WindowStartupLocation.CenterOwner, Background = (Brush)window.FindResource("PanelBrush") };
         other.Show(); other.Activate();
         await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
         window.PageContainer.IsEnabled = false;
-        AssertDarkSurface(window, window.WallpaperList, "wallpaper collection after deactivation");
+        AssertDarkSurface(window, window.Gallery.Scroller, "wallpaper gallery after deactivation");
         CaptureWindow(window, Path.Combine(output, "inactive-interface.png"));
         window.Navigate("taskbar");
         await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
         AssertDarkSurface(window, window.HeightInput, "taskbar input while applying");
         window.PageContainer.IsEnabled = true; other.Close(); window.Activate();
         window.Navigate("wallpapers"); await Until(() => !window.Busy, "activation refresh did not complete");
-        Assert(ReferenceEquals(collectionBeforeActivation, window.WallpaperList.ItemsSource) && ReferenceEquals(selectionBeforeActivation, window.WallpaperList.SelectedItem),
-            "activation/navigation unnecessarily rebuilt the unchanged collection");
+        Assert(ReferenceEquals(collectionBeforeActivation, window.Gallery.Cards),
+            "activation/navigation unnecessarily rebuilt the unchanged gallery");
         window.Navigate("settings"); window.FpsInput.SelectedIndex = 1;
         await Until(() => !window.Busy, "settings did not save"); Assert(window.Library.State.Settings.Fps == 30, "native performance preference lost");
         window.Navigate("taskbar");
@@ -468,7 +492,7 @@ internal static class SmokeTests
         await Task.Delay(3000); // Let startup compilation, layout and deferred GPU release settle.
         var process = Process.GetCurrentProcess(); var startCpu = process.TotalProcessorTime; var clockIdle = Stopwatch.StartNew(); await Task.Delay(5000); process.Refresh();
         var report = new { passed = true, version = typeof(App).Assembly.GetName().Version?.ToString(), nativeUi = "WPF", gpuTests = "ANGLE D3D11 WARP", composedDesktopPixels = composedPixels, workingSetBytes = process.WorkingSet64, idleCpuMilliseconds = (process.TotalProcessorTime - startCpu).TotalMilliseconds, idleSampleMilliseconds = clockIdle.Elapsed.TotalMilliseconds,
-            tests = new[] { "real GLSL pixels", "late GLSL extension compatibility", "compile error preserves program", "backbuffer", "quality fills window", "pause stops frames", "physical monitor geometry", "24H2 child layer order and opaque composition", "native window coverage/minimize/transparent overlay", "click-through and real cursor uniforms", "mouse toggle", "six GPU resets with active and paused second context", "Windows autostart and StartupApproved", "WPF editor/save/navigation", "native preview visibility and scroll clipping", "smooth scrolling over inputs and repeated wheel events", "inactive and disabled control colors", "stable collection after activation/navigation", "HSV and HEX color picker", "live taskbar preview and automatic slider persistence", "glass gradient settings and wallpaper palette", "light and dark themes", "cursor catalogue caption, scroll and PNG hotspot", "changelog positioning and preference", "window blur toggle, rounded contour and settings", "animated toggles and navigation", "settings", "WPF theme contrast", "hidden preview" } };
+            tests = new[] { "real GLSL pixels", "late GLSL extension compatibility", "compile error preserves program", "backbuffer", "quality fills window", "pause stops frames", "physical monitor geometry", "24H2 child layer order and opaque composition", "native window coverage/minimize/transparent overlay", "click-through and real cursor uniforms", "mouse toggle", "six GPU resets with active and paused second context", "Windows autostart and StartupApproved", "gallery thumbnails, hover shader uniforms and enlarged preview", "WPF editor/save/navigation", "native preview visibility and scroll clipping", "smooth scrolling over inputs and repeated wheel events", "inactive and disabled control colors", "stable collection after activation/navigation", "HSV and HEX color picker", "live taskbar preview and automatic slider persistence", "glass gradient settings and wallpaper palette", "light and dark themes", "cursor catalogue caption, scroll and PNG hotspot", "changelog positioning and preference", "window blur toggle, rounded contour and settings", "animated toggles and navigation", "settings", "WPF theme contrast", "hidden preview" } };
         File.WriteAllText(Path.Combine(output, "report.json"), JsonSerializer.Serialize(report, DataFiles.Json));
     }
     private static RenderTargetBitmap WindowBitmap(Window window)

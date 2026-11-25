@@ -13,11 +13,6 @@ namespace MagmPaper;
 
 public partial class MainWindow : Window
 {
-    internal sealed record WallpaperRow(Wallpaper Item, bool Active)
-    {
-        public string Name => Item.Name;
-        public string Subtitle => Active ? "● На рабочем столе" : Item.File;
-    }
     private readonly Library library;
     private readonly WallpaperService wallpapers;
     private readonly AppearanceService appearance;
@@ -33,7 +28,7 @@ public partial class MainWindow : Window
     private Views.UpdateNotes? updateNotes;
     private string route = "overview";
     private string? editingId;
-    private bool editing, dirty, filling, selecting, busy, ready;
+    private bool editing, dirty, filling, busy, ready;
     private bool fillingBehavior, fillingAppearance;
     private AppearanceSettings? pendingAppearance;
     private string taskbarColor = "#171923", glassColor = "#715CD4";
@@ -46,6 +41,7 @@ public partial class MainWindow : Window
     internal bool Busy => busy;
     internal Library Library => library;
     internal RenderSurface? PreviewSurface => Preview.Surface;
+    private bool DetailsOpen => WallpaperScroll.Visibility == Visibility.Visible;
     internal string CurrentRoute => route;
     private const string Sample = "precision mediump float;\nuniform float time;\nuniform vec2 resolution;\nuniform vec2 mouse;\n\nvoid main() {\n    vec2 uv = gl_FragCoord.xy / resolution;\n    gl_FragColor = vec4(uv, 0.5 + 0.5 * sin(time), 1.0);\n}\n";
 
@@ -58,12 +54,18 @@ public partial class MainWindow : Window
         TrackWindowFrame(this);
         windowBlurSaveTimer.Tick += (_, _) => SaveWindowPreferences();
         CursorsPage.Initialize(library.DirectoryPath);
+        Gallery.Initialize(library.DirectoryPath);
+        Gallery.OpenRequested += OpenWallpaperAsync;
+        Gallery.ApplyRequested += ApplyWallpaperAsync;
+        Gallery.StopRequested += item => StopWallpaperAsync(item.Id);
+        Gallery.DeleteRequested += DeleteWallpaperAsync;
+        Closed += (_, _) => Gallery.Dispose();
         AppVersionLabel.Text = Views.UpdateNotes.VersionLabel;
         try { system = new SystemSettings(library.DirectoryPath); } catch (Exception error) { Status(error.Message, true); }
         Preview.Ready += () =>
         {
             Preview.Surface!.Error += message => Dispatcher.BeginInvoke(() => Status(message, true));
-            _ = RunAsync(async () => { if (selected is not null) await LoadPreviewAsync(selected.Code); }); SyncPreview();
+            SyncPreview();
         };
         Loaded += async (_, _) =>
         {
@@ -88,17 +90,22 @@ public partial class MainWindow : Window
             if (lightTheme) ApplyTheme();
             FillWindowBlur();
             Navigate(saved);
-            await RunAsync(() => RefreshLibraryAsync());
+            await RunAsync(RefreshLibraryAsync);
         };
         ContentRendered += ShowStartupNotes;
         StateChanged += (_, _) => { SyncPreview(); updateNotes?.PlaceNextToOwner(); };
         IsVisibleChanged += (_, _) => { SyncPreview(); if (!IsVisible && !Quitting && updateNotes is { IsDocked: true } notes) notes.Close(); };
         LocationChanged += (_, _) => updateNotes?.PlaceNextToOwner();
         SizeChanged += (_, _) => updateNotes?.PlaceNextToOwner();
-        Activated += async (_, _) => { if (ready && !busy && !editing && route == "wallpapers") await RunAsync(() => RefreshLibraryAsync(selected?.Id)); };
+        Activated += async (_, _) =>
+        {
+            SyncPreview();
+            if (ready && !busy && !editing && route == "wallpapers") await RunAsync(RefreshLibraryAsync);
+        };
+        Deactivated += (_, _) => Gallery.ClearHover();
         Closing += OnClosing;
         wallpapers.Status += (message, error) => Status(message, error);
-        wallpapers.Changed += () => { ShowPlayback(); RenderList(selected?.Id); };
+        wallpapers.Changed += () => { ShowPlayback(); RenderGallery(); };
         wallpapers.PaletteSourceChanged += () =>
         {
             var current = ready ? ReadAppearance() : appearance.Settings;
@@ -119,12 +126,14 @@ public partial class MainWindow : Window
     }
     private void Buttons()
     {
-        ApplyWallpaperButton.IsEnabled = EditWallpaperButton.IsEnabled = DeleteWallpaperButton.IsEnabled = selected is not null && !editing;
+        bool canUse = selected is not null && !editing;
+        ApplyWallpaperButton.IsEnabled = EditWallpaperButton.IsEnabled = DeleteWallpaperButton.IsEnabled = ViewCodeButton.IsEnabled = canUse;
+        StopWallpaperButton.IsEnabled = canUse && selected!.Id == wallpapers.RunningId;
     }
     internal void Navigate(string destination)
     {
         if (destination is not ("overview" or "wallpapers" or "taskbar" or "cursors" or "settings")) destination = "overview";
-        route = destination; SyncPreview();
+        route = destination;
         OverviewPage.Visibility = route == "overview" ? Visibility.Visible : Visibility.Collapsed;
         WallpapersPage.Visibility = route == "wallpapers" ? Visibility.Visible : Visibility.Collapsed;
         TaskbarPage.Visibility = route == "taskbar" ? Visibility.Visible : Visibility.Collapsed;
@@ -132,11 +141,12 @@ public partial class MainWindow : Window
         NavCursors.IsChecked = route == "cursors";
         SettingsPage.Visibility = route == "settings" ? Visibility.Visible : Visibility.Collapsed;
         NavOverview.IsChecked = route == "overview"; NavWallpapers.IsChecked = route == "wallpapers"; NavTaskbar.IsChecked = route == "taskbar"; NavSettings.IsChecked = route == "settings";
+        SyncPreview();
         SaveWindowPreferences();
         if (route == "taskbar") { FillBehavior(); UpdateAppearanceStatus(); }
         if (route == "settings") FillPreferences();
         if (route == "cursors") CursorsPage.Refresh();
-        if (route == "wallpapers" && !editing && !busy) _ = RunAsync(() => RefreshLibraryAsync(selected?.Id));
+        if (route == "wallpapers" && !editing && !busy) _ = RunAsync(RefreshLibraryAsync);
     }
     private void SaveWindowPreferences()
     {
@@ -233,71 +243,197 @@ public partial class MainWindow : Window
         }
     }
     private void NavigateClick(object sender, RoutedEventArgs e) { if ((sender as FrameworkElement)?.Tag is string page) Navigate(page); }
-    private void SyncPreview() => Preview.SetActive(route == "wallpapers" && IsVisible && WindowState != WindowState.Minimized);
+    private void SyncPreview()
+    {
+        bool visible = route == "wallpapers" && IsVisible && WindowState != WindowState.Minimized;
+        Preview.SetActive(visible && DetailsOpen);
+        Gallery.SetActive(visible && !DetailsOpen);
+    }
+
     private void ShowPlayback() => PauseText.Text = wallpapers.PauseReason is { } reason ? "Обои на паузе: " + reason : "";
-    private void RenderList(string? id)
+
+    private void RenderGallery()
     {
-        selecting = true;
-        var rows = library.State.Items.Select(x => new WallpaperRow(x, wallpapers.RunningId == x.Id)).ToArray();
-        if (WallpaperList.ItemsSource is WallpaperRow[] previous && previous.SequenceEqual(rows)) rows = previous;
-        else WallpaperList.ItemsSource = rows;
-        WallpaperList.SelectedItem = rows.FirstOrDefault(x => x.Item.Id == id) ?? rows.FirstOrDefault();
-        selected = (WallpaperList.SelectedItem as WallpaperRow)?.Item;
-        WallpaperTitle.Text = selected?.Name ?? "Выберите обои"; CollectionCount.Text = $"{rows.Length} в коллекции";
-        selecting = false; Buttons();
+        Gallery.UpdateItems(library.State.Items, wallpapers.RunningId);
+        CollectionCount.Text = $"{library.State.Items.Count} в коллекции";
+        if (selected is { } previous && !editing)
+        {
+            selected = library.State.Items.FirstOrDefault(item => item.Id == previous.Id);
+            if (selected is null) ShowGallery();
+            else
+            {
+                WallpaperTitle.Text = selected.Name;
+                if (EditorPanel.Visibility == Visibility.Visible && CodeInput.IsReadOnly) CodeInput.Text = selected.Code;
+            }
+        }
+        Buttons();
     }
-    private async Task RefreshLibraryAsync(string? id = null)
+
+    private async Task RefreshLibraryAsync()
     {
-        library.Refresh(); wallpapers.Refresh(); RenderList(id ?? selected?.Id); ShowPlayback();
-        if (selected is not null && route == "wallpapers") await LoadPreviewAsync(selected.Code);
+        library.Refresh();
+        wallpapers.Refresh();
+        RenderGallery();
+        ShowPlayback();
+        if (route == "wallpapers" && DetailsOpen && selected is not null && !editing)
+            await LoadPreviewAsync(selected.Code);
     }
+
     private async Task LoadPreviewAsync(string code, bool force = false)
     {
-        if (Preview.Surface is not { } surface) return;
+        if (Preview.Surface is null)
+            await Dispatcher.InvokeAsync(UpdateLayout, DispatcherPriority.Loaded);
+        var surface = Preview.Surface ?? throw new IOException("Предпросмотр ещё не готов.");
         if (force || !ReferenceEquals(loadedPreview, surface) || loadedPreviewCode != code)
         {
-            await surface.LoadAsync(code); loadedPreview = surface; loadedPreviewCode = code;
+            await surface.LoadAsync(code);
+            loadedPreview = surface;
+            loadedPreviewCode = code;
         }
         SyncPreview();
     }
-    private async void SelectionChanged(object sender, SelectionChangedEventArgs e)
+
+    internal Task OpenWallpaperAsync(Wallpaper item)
     {
-        if (selecting || !ready || busy || WallpaperList.SelectedItem is not WallpaperRow row) return;
-        if (!LeaveEditor()) { RenderList(selected?.Id); return; }
-        selected = row.Item; WallpaperTitle.Text = row.Name; Buttons();
-        await RunAsync(async () => { await LoadPreviewAsync(row.Item.Code); Status("Предпросмотр готов."); });
+        if (busy || !LeaveEditor()) return Task.CompletedTask;
+        selected = item;
+        ShowDetails(item.Name);
+        return RunAsync(() => LoadPreviewAsync(item.Code));
     }
+
+    private void ShowDetails(string title)
+    {
+        WallpaperTitle.Text = title;
+        GalleryPage.Visibility = Visibility.Collapsed;
+        WallpaperScroll.Visibility = Visibility.Visible;
+        WallpaperScroll.ScrollToTop();
+        Buttons();
+        SyncPreview();
+    }
+
+    private void ShowGallery()
+    {
+        selected = null;
+        WallpaperScroll.Visibility = Visibility.Collapsed;
+        GalleryPage.Visibility = Visibility.Visible;
+        EditorPanel.Visibility = Visibility.Collapsed;
+        SyncPreview();
+    }
+
+    private void BackWallpaperClick(object sender, RoutedEventArgs e)
+    {
+        if (LeaveEditor()) ShowGallery();
+    }
+
     private bool LeaveEditor()
     {
-        if (dirty && MessageBox.Show(this, "Отменить несохранённые изменения?", "Редактор обоев", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return false;
-        editing = dirty = false; editingId = null; EditorPanel.Visibility = Visibility.Collapsed; Buttons(); return true;
+        if (dirty && MessageBox.Show(this, "Отменить несохранённые изменения?", "Редактор обоев", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            return false;
+        editing = dirty = false;
+        editingId = null;
+        EditorPanel.Visibility = Visibility.Collapsed;
+        Buttons();
+        return true;
     }
+
     private void OpenEditor(Wallpaper? item)
     {
-        if (!LeaveEditor()) return;
-        filling = true; editing = true; editingId = item?.Id; NameInput.Text = item?.Name ?? ""; CodeInput.Text = item?.Code ?? Sample;
-        EditorTitle.Text = item is null ? "Новые обои" : "Редактирование обоев";
-        EditorPanel.Visibility = Visibility.Visible; filling = false; dirty = false; Buttons(); NameInput.Focus();
+        filling = editing = true;
+        editingId = item?.Id;
+        NameInput.Text = item?.Name ?? "";
+        CodeInput.Text = item?.Code ?? Sample;
+        CodeInput.IsReadOnly = false;
+        EditorTitle.Text = "Редактор GLSL";
+        NameInput.Visibility = EditorActions.Visibility = EditorPanel.Visibility = Visibility.Visible;
+        filling = dirty = false;
+        Buttons();
+        NameInput.BringIntoView();
+        NameInput.Focus();
     }
-    private void AddWallpaperClick(object sender, RoutedEventArgs e) => OpenEditor(null);
-    private void EditWallpaperClick(object sender, RoutedEventArgs e) { if (selected is not null) OpenEditor(selected); }
+
+    private async void AddWallpaperClick(object sender, RoutedEventArgs e)
+    {
+        if (busy || !LeaveEditor()) return;
+        selected = null;
+        ShowDetails("Новые обои");
+        OpenEditor(null);
+        await RunAsync(() => LoadPreviewAsync(Sample));
+    }
+
+    private void ViewCodeClick(object sender, RoutedEventArgs e)
+    {
+        if (selected is not { } item || editing) return;
+        EditorTitle.Text = "Код GLSL";
+        NameInput.Visibility = EditorActions.Visibility = Visibility.Collapsed;
+        CodeInput.IsReadOnly = true;
+        CodeInput.Text = item.Code;
+        EditorPanel.Visibility = Visibility.Visible;
+        EditorTitle.BringIntoView();
+        CodeInput.Focus();
+    }
+
+    private void EditWallpaperClick(object sender, RoutedEventArgs e)
+    {
+        if (selected is { } item && LeaveEditor()) OpenEditor(item);
+    }
     private void EditorChanged(object sender, TextChangedEventArgs e) { if (!filling && editing) dirty = true; }
-    private async void CancelEditorClick(object sender, RoutedEventArgs e) { if (LeaveEditor() && selected is not null) await RunAsync(() => LoadPreviewAsync(selected.Code)); }
-    private async void PreviewCodeClick(object sender, RoutedEventArgs e) => await RunAsync(async () => { await LoadPreviewAsync(CodeInput.Text, force: true); Status("Шейдер скомпилирован. Проверьте изображение в предпросмотре."); });
+    private async void CancelEditorClick(object sender, RoutedEventArgs e)
+    {
+        if (!LeaveEditor()) return;
+        if (selected is { } item) await RunAsync(() => LoadPreviewAsync(item.Code));
+        else ShowGallery();
+    }
+    private async void PreviewCodeClick(object sender, RoutedEventArgs e) => await RunAsync(async () =>
+    {
+        await LoadPreviewAsync(CodeInput.Text, force: true);
+        WallpaperScroll.ScrollToTop();
+        Status("Шейдер скомпилирован. Проверьте изображение в предпросмотре.");
+    });
     private async void SaveWallpaperClick(object sender, RoutedEventArgs e) => await RunAsync(async () =>
     {
         Library.Validate(NameInput.Text, CodeInput.Text);
-        if (Preview.Surface is null) throw new IOException("Предпросмотр ещё не готов.");
         await LoadPreviewAsync(CodeInput.Text);
-        var item = library.Save(editingId, NameInput.Text, CodeInput.Text); dirty = false; LeaveEditor(); await RefreshLibraryAsync(item.Id);
+        selected = library.Save(editingId, NameInput.Text, CodeInput.Text);
+        dirty = false;
+        LeaveEditor();
+        await RefreshLibraryAsync();
+        WallpaperScroll.ScrollToTop();
         Status("Обои сохранены. Для применения изменений нажмите «На рабочий стол».");
     });
-    private async void ApplyWallpaperClick(object sender, RoutedEventArgs e) => await RunAsync(async () => { if (selected is not null) { await wallpapers.ApplyAsync(selected.Id); RenderList(selected.Id); } });
-    private async void StopWallpaperClick(object sender, RoutedEventArgs e) => await RunAsync(() => { wallpapers.Stop(); RenderList(selected?.Id); return Task.CompletedTask; });
+
+    private Task ApplyWallpaperAsync(Wallpaper item) => RunAsync(async () =>
+    {
+        Gallery.ClearHover();
+        await wallpapers.ApplyAsync(item.Id);
+    });
+    private async void ApplyWallpaperClick(object sender, RoutedEventArgs e)
+    {
+        if (selected is { } item) await ApplyWallpaperAsync(item);
+    }
+    private Task StopWallpaperAsync(string id) => RunAsync(() =>
+    {
+        if (library.State.ActiveId == id || wallpapers.RunningId == id) wallpapers.Stop();
+        return Task.CompletedTask;
+    });
+    private async void StopWallpaperClick(object sender, RoutedEventArgs e)
+    {
+        if (selected is { } item) await StopWallpaperAsync(item.Id);
+    }
+    private async Task DeleteWallpaperAsync(Wallpaper item)
+    {
+        Gallery.ClearHover();
+        if (busy || MessageBox.Show(this, $"Удалить обои «{item.Name}» и их GLSL-файл?", "Удаление обоев", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        await RunAsync(async () =>
+        {
+            if (library.State.ActiveId == item.Id) wallpapers.Stop();
+            library.Remove(item.Id);
+            await RefreshLibraryAsync();
+            Status("Обои удалены.");
+        });
+    }
     private async void DeleteWallpaperClick(object sender, RoutedEventArgs e)
     {
-        if (selected is null || MessageBox.Show(this, $"Удалить обои «{selected.Name}» и их GLSL-файл?", "Удаление обоев", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
-        await RunAsync(async () => { var id = selected.Id; if (library.State.ActiveId == id) wallpapers.Stop(); library.Remove(id); await RefreshLibraryAsync(); Status("Обои удалены."); });
+        if (selected is { } item) await DeleteWallpaperAsync(item);
     }
     private void OpenTarget(string target) { try { SystemSettings.Open(target); } catch (Exception error) { Status(error.Message, true); } }
     internal void OpenCollectionFolder() => OpenTarget(library.ShaderDirectory);
@@ -305,7 +441,7 @@ public partial class MainWindow : Window
     private async void RefreshClick(object sender, RoutedEventArgs e)
     {
         if (editing) { Status("Сначала сохраните или отмените изменения в редакторе."); return; }
-        await RunAsync(async () => { await RefreshLibraryAsync(selected?.Id); Status("Коллекция обновлена из GLSL-файлов."); });
+        await RunAsync(async () => { await RefreshLibraryAsync(); Status("Коллекция обновлена из GLSL-файлов."); });
     }
     private void FillPreferences()
     {

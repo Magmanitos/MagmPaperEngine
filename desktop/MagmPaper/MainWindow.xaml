@@ -49,23 +49,47 @@
      <UniformGrid Columns="2" Margin="0,22,0,0"><Border Style="{StaticResource Card}" Margin="0,0,10,0"><StackPanel><TextBlock Text="◈  Живые обои" FontSize="20"/><TextBlock x:Name="CollectionCount" Text="Ваша коллекция GLSL" Style="{StaticResource Muted}" Margin="0,14,0,18"/><Button Content="Коллекция и редактор" Tag="wallpapers" Click="NavigateClick" HorizontalAlignment="Left"/></StackPanel></Border><Border Style="{StaticResource Card}" Margin="10,0,0,0"><StackPanel><TextBlock Text="▰  Панель задач" FontSize="20"/><TextBlock Text="Размеры, цвет, прозрачность и поведение." Style="{StaticResource Muted}" Margin="0,14,0,18"/><Button Content="Настроить панель" Tag="taskbar" Click="NavigateClick" HorizontalAlignment="Left"/></StackPanel></Border></UniformGrid>
      <TextBlock Text="Предпросмотр приостанавливается, когда вы его не видите. Параметры экономии ресурсов доступны в настройках." Style="{StaticResource Muted}" Margin="0,26,0,0"/>
     </StackPanel></ScrollViewer>
-    <Grid x:Name="WallpapersPage" Visibility="Collapsed"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-     <StackPanel Margin="0,0,0,18"><TextBlock Text="Ваша коллекция" Style="{StaticResource Title}"/><TextBlock Text="Добавляйте GLSL-обои, проверяйте код и выбирайте настроение рабочего стола." Style="{StaticResource Muted}"/></StackPanel>
-     <Grid Grid.Row="1"><Grid.ColumnDefinitions><ColumnDefinition Width="230"/><ColumnDefinition Width="20"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-      <Border Style="{StaticResource Card}" Padding="12"><DockPanel>
-       <Button x:Name="AddWallpaperButton" DockPanel.Dock="Top" Content="＋  Добавить обои" Click="AddWallpaperClick" Style="{StaticResource Primary}" Margin="0,0,0,12"/>
-       <StackPanel DockPanel.Dock="Bottom" Margin="0,12,0,0"><Button Content="📁  Папка обоев" Click="OpenFolderClick" ToolTip="Открыть GLSL-файлы в Проводнике"/><Button Content="↻  Обновить коллекцию" Click="RefreshClick" Margin="0,8,0,0"/></StackPanel>
-       <ListBox x:Name="WallpaperList" SelectionChanged="SelectionChanged"><ListBox.ItemTemplate><DataTemplate><StackPanel><TextBlock Text="{Binding Name}" FontWeight="SemiBold"/><TextBlock Text="{Binding Subtitle}" FontSize="11" Foreground="{DynamicResource MutedBrush}" Margin="0,5,0,0"/></StackPanel></DataTemplate></ListBox.ItemTemplate></ListBox>
-      </DockPanel></Border>
-      <ScrollViewer x:Name="WallpaperScroll" Grid.Column="2" VerticalScrollBarVisibility="Auto"><StackPanel>
-       <TextBlock x:Name="WallpaperTitle" Text="Выберите обои" FontSize="22" FontWeight="SemiBold" Margin="0,0,0,12"/>
-       <Border BorderThickness="1" BorderBrush="{DynamicResource LineBrush}" Background="#08090E" Height="235"><graphics:PreviewHost x:Name="Preview"/></Border>
+    <Grid x:Name="WallpapersPage" Visibility="Collapsed">
+     <DockPanel x:Name="GalleryPage">
+      <StackPanel DockPanel.Dock="Top" Margin="0,0,0,16">
+       <TextBlock Text="Обои" Style="{StaticResource Title}"/>
+       <WrapPanel Margin="0,7,0,0">
+        <Button x:Name="AddWallpaperButton" Content="＋ Добавить обои" Click="AddWallpaperClick" Style="{StaticResource Primary}" Margin="0,0,8,4"/>
+        <Button Content="Папка обоев ↗" Click="OpenFolderClick" ToolTip="Открыть GLSL-файлы в Проводнике" Margin="0,0,8,4"/>
+        <Button Content="↻ Обновить" Click="RefreshClick" AutomationProperties.Name="Обновить коллекцию" Margin="0,0,0,4"/>
+       </WrapPanel>
+      </StackPanel>
+      <views:WallpaperGallery x:Name="Gallery"/>
+     </DockPanel>
+     <ScrollViewer x:Name="WallpaperScroll" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+      <StackPanel Margin="0,0,12,0">
+       <Button x:Name="BackWallpaperButton" Content="← К коллекции" Click="BackWallpaperClick" HorizontalAlignment="Left" Margin="0,0,0,12"/>
+       <TextBlock x:Name="WallpaperTitle" Text="Предпросмотр" Style="{StaticResource Title}"/>
+       <Border BorderThickness="1" BorderBrush="{DynamicResource LineBrush}" Background="#08090E" Height="355">
+        <graphics:PreviewHost x:Name="Preview"/>
+       </Border>
        <TextBlock x:Name="PauseText" Foreground="{DynamicResource AccentBrush}" Margin="0,9,0,8"/>
-       <WrapPanel Margin="0,0,0,14"><Button x:Name="ApplyWallpaperButton" Content="На рабочий стол" Style="{StaticResource Primary}" Click="ApplyWallpaperClick" Margin="0,0,8,6"/><Button Content="Остановить" Click="StopWallpaperClick" Margin="0,0,8,6"/><Button x:Name="EditWallpaperButton" Content="Изменить" Click="EditWallpaperClick" Margin="0,0,8,6"/><Button x:Name="DeleteWallpaperButton" Content="Удалить" Click="DeleteWallpaperClick" Margin="0,0,0,6"/></WrapPanel>
-       <StackPanel x:Name="EditorPanel" Visibility="Collapsed"><TextBlock x:Name="EditorTitle" Text="Редактор GLSL" FontSize="20" Margin="0,0,0,10"/><TextBox x:Name="NameInput" MaxLength="80" TextChanged="EditorChanged" ToolTip="Название обоев" Margin="0,0,0,10"/><TextBox x:Name="CodeInput" FontFamily="Cascadia Mono,Consolas" FontSize="12" Height="235" AcceptsReturn="True" AcceptsTab="True" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" TextWrapping="NoWrap" TextChanged="EditorChanged" SpellCheck.IsEnabled="False"/><WrapPanel Margin="0,12,0,0"><Button x:Name="PreviewCodeButton" Content="Проверить код" Click="PreviewCodeClick" Margin="0,0,8,0"/><Button x:Name="SaveWallpaperButton" Content="Сохранить" Style="{StaticResource Primary}" Click="SaveWallpaperClick" Margin="0,0,8,0"/><Button Content="Отмена" Click="CancelEditorClick"/></WrapPanel></StackPanel>
-       <TextBlock x:Name="ShaderHint" Text="Шейдеры GLSL Sandbox: time, resolution, mouse, backbuffer. Предпросмотр реагирует на мышь." Style="{StaticResource Muted}" Margin="0,10,0,0"/>
-      </StackPanel></ScrollViewer>
-     </Grid>
+       <WrapPanel Margin="0,0,0,14">
+        <Button x:Name="ApplyWallpaperButton" Content="На рабочий стол" Style="{StaticResource Primary}" Click="ApplyWallpaperClick" Margin="0,0,8,6"/>
+        <Button x:Name="StopWallpaperButton" Content="Остановить" Click="StopWallpaperClick" Margin="0,0,8,6"/>
+        <Button x:Name="ViewCodeButton" Content="Код GLSL" Click="ViewCodeClick" Margin="0,0,8,6"/>
+        <Button x:Name="EditWallpaperButton" Content="Редактировать" Click="EditWallpaperClick" Margin="0,0,8,6"/>
+        <Button x:Name="DeleteWallpaperButton" Content="Удалить" Click="DeleteWallpaperClick" Margin="0,0,0,6"/>
+       </WrapPanel>
+       <StackPanel x:Name="EditorPanel" Visibility="Collapsed">
+        <TextBlock x:Name="EditorTitle" Text="Редактор GLSL" FontSize="20" Margin="0,0,0,10"/>
+        <TextBox x:Name="NameInput" MaxLength="80" TextChanged="EditorChanged" AutomationProperties.Name="Название обоев" Margin="0,0,0,10"/>
+        <TextBox x:Name="CodeInput" FontFamily="Cascadia Mono,Consolas" FontSize="12" Height="235" AcceptsReturn="True" AcceptsTab="True"
+                 HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" TextWrapping="NoWrap" TextChanged="EditorChanged"
+                 SpellCheck.IsEnabled="False" AutomationProperties.Name="Код GLSL"/>
+        <WrapPanel x:Name="EditorActions" Margin="0,12,0,6">
+         <Button x:Name="PreviewCodeButton" Content="Проверить код" Click="PreviewCodeClick" Margin="0,0,8,0"/>
+         <Button x:Name="SaveWallpaperButton" Content="Сохранить" Style="{StaticResource Primary}" Click="SaveWallpaperClick" Margin="0,0,8,0"/>
+         <Button Content="Отмена" Click="CancelEditorClick"/>
+        </WrapPanel>
+       </StackPanel>
+      </StackPanel>
+     </ScrollViewer>
     </Grid>
     <ScrollViewer x:Name="TaskbarPage" Visibility="Collapsed" VerticalScrollBarVisibility="Auto"><StackPanel>
      <TextBlock Text="Панель задач" Style="{StaticResource Title}"/><TextBlock Text="Настройте стандартную панель Windows. Закреплённые приложения, трей и меню сохраняются." Style="{StaticResource Muted}" Margin="0,0,0,20"/>
