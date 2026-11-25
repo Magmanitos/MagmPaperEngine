@@ -29,12 +29,14 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer windowBlurSaveTimer = new(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(180) };
     private readonly bool allowStartupChangelog;
     private bool showUpdateNotesOnStartup = true;
+    private bool lightTheme;
     private Views.UpdateNotes? updateNotes;
     private string route = "overview";
     private string? editingId;
     private bool editing, dirty, filling, selecting, busy, ready;
     private bool fillingBehavior, fillingAppearance;
     private AppearanceSettings? pendingAppearance;
+    private string taskbarColor = "#171923", glassColor = "#715CD4";
     private Task appearanceUpdates = Task.CompletedTask;
     private Task behaviorUpdate = Task.CompletedTask;
     private Wallpaper? selected;
@@ -76,11 +78,14 @@ public partial class MainWindow : Window
                     var preferences = JsonNode.Parse(File.ReadAllText(uiFile));
                     saved = preferences?["route"]?.GetValue<string>() ?? saved;
                     showUpdateNotesOnStartup = preferences?["showUpdateNotesOnStartup"]?.GetValue<bool>() ?? true;
+                    lightTheme = preferences?["lightTheme"]?.GetValue<bool>() ?? false;
                     windowBlur = preferences?["windowBlur"]?.Deserialize<Views.WindowBlurOptions>(DataFiles.Json)?.Normalize() ?? new();
                 }
             }
             catch { }
             ShowUpdateNotesInput.IsChecked = showUpdateNotesOnStartup;
+            ThemeInput.IsChecked = !lightTheme;
+            if (lightTheme) ApplyTheme();
             FillWindowBlur();
             Navigate(saved);
             await RunAsync(() => RefreshLibraryAsync());
@@ -94,11 +99,16 @@ public partial class MainWindow : Window
         Closing += OnClosing;
         wallpapers.Status += (message, error) => Status(message, error);
         wallpapers.Changed += () => { ShowPlayback(); RenderList(selected?.Id); };
+        wallpapers.PaletteSourceChanged += () =>
+        {
+            var current = ready ? ReadAppearance() : appearance.Settings;
+            if (current.UsesWallpaperColors()) QueueAppearance(current);
+        };
         appearance.Changed += () => Dispatcher.BeginInvoke(UpdateAppearanceStatus);
     }
     internal void Status(string message, bool error = false)
     {
-        StatusText.Text = message; StatusText.Foreground = (Brush)FindResource(error ? "ErrorBrush" : "MutedBrush");
+        StatusText.Text = message; StatusText.SetResourceReference(TextBlock.ForegroundProperty, error ? "ErrorBrush" : "MutedBrush");
     }
     private async Task RunAsync(Func<Task> task)
     {
@@ -131,8 +141,21 @@ public partial class MainWindow : Window
     private void SaveWindowPreferences()
     {
         windowBlurSaveTimer.Stop();
-        try { DataFiles.Write(uiFile, new { route, showUpdateNotesOnStartup, windowBlur }); }
+        try { DataFiles.Write(uiFile, new { route, showUpdateNotesOnStartup, windowBlur, lightTheme }); }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException) { Status(error.Message, true); }
+    }
+    private void ThemeChanged(object sender, RoutedEventArgs e)
+    {
+        lightTheme = ThemeInput.IsChecked != true;
+        ApplyTheme();
+        SaveWindowPreferences();
+    }
+
+    private void ApplyTheme()
+    {
+        var dictionaries = Application.Current.Resources.MergedDictionaries;
+        var palette = lightTheme ? "Light" : "Dark";
+        dictionaries[0] = new ResourceDictionary { Source = new Uri($"/MagmPaper;component/Views/Palette.{palette}.xaml", UriKind.Relative) };
     }
     internal void TrackWindowFrame(Window window, double cornerRadius = 0) => windowFrames.Track(window, cornerRadius);
     private void FillWindowBlur()
@@ -363,9 +386,10 @@ public partial class MainWindow : Window
         fillingAppearance = true;
         AppearanceEnabled.IsChecked = value.Enabled;
         SetAppearanceSizes(value.Height, value.Icon, value.Button);
-        ColorValue.Text = value.Color;
+        taskbarColor = value.Color;
         GlassInput.IsChecked = value.Glass;
-        GlassColorValue.Text = value.GlassColor;
+        WallpaperColorsInput.IsChecked = value.MatchWallpaperColors;
+        glassColor = value.GlassColor;
         OpacityInput.Value = value.Opacity;
         RadiusInput.Value = value.Radius;
         HideWidgetsInput.IsChecked = value.HideWidgets;
@@ -387,6 +411,14 @@ public partial class MainWindow : Window
     }
     private void UpdateTaskbarPreview(AppearanceSettings value)
     {
+        bool automatic = value.UsesWallpaperColors();
+        bool matched = automatic && appearance.MatchedColors is not null;
+        value = value.WithWallpaperColors(appearance.MatchedColors);
+        ColorValue.Text = value.Color;
+        GlassColorValue.Text = value.GlassColor;
+        ColorButton.IsEnabled = GlassColorButton.IsEnabled = !matched;
+        WallpaperColorsStatus.Visibility = automatic ? Visibility.Visible : Visibility.Collapsed;
+        WallpaperColorsStatus.Text = matched ? "Цвета из активных обоев." : "Ручные цвета, пока оттенки обоев недоступны.";
         var color = (Color)ColorConverter.ConvertFromString(value.Color);
         var end = (Color)ColorConverter.ConvertFromString(value.GlassColor);
         ColorSwatch.Background = new SolidColorBrush(color);
@@ -420,9 +452,10 @@ public partial class MainWindow : Window
         Height = Number(HeightInput),
         Icon = Number(IconInput),
         Button = Number(ButtonInput),
-        Color = ColorValue.Text,
+        Color = taskbarColor,
         Glass = GlassInput.IsChecked == true,
-        GlassColor = GlassColorValue.Text,
+        GlassColor = glassColor,
+        MatchWallpaperColors = WallpaperColorsInput.IsChecked == true,
         Opacity = Number(OpacityInput),
         Radius = Number(RadiusInput),
         HideWidgets = HideWidgetsInput.IsChecked == true
@@ -438,10 +471,10 @@ public partial class MainWindow : Window
         }
         QueueAppearance();
     }
-    private void QueueAppearance()
+    private void QueueAppearance(AppearanceSettings? settings = null)
     {
-        var value = ReadAppearance();
-        UpdateTaskbarPreview(value);
+        var value = settings ?? ReadAppearance();
+        if (ready) UpdateTaskbarPreview(value);
         pendingAppearance = value;
         UpdateAppearanceStatus();
         if (appearanceUpdates.IsCompleted) appearanceUpdates = ApplyAppearanceUpdatesAsync();
@@ -455,7 +488,9 @@ public partial class MainWindow : Window
             await Task.Delay(40);
             var next = pendingAppearance!;
             pendingAppearance = null;
-            if (next == appearance.Settings && appearance.Error is null && next.Enabled == appearance.Active)
+            var palette = next.UsesWallpaperColors() ? await wallpapers.ReadColorsAsync() : null;
+            if (pendingAppearance is not null) continue;
+            if (next == appearance.Settings && palette == appearance.MatchedColors && appearance.Error is null && next.Enabled == appearance.Active)
             {
                 UpdateAppearanceStatus();
                 continue;
@@ -465,7 +500,8 @@ public partial class MainWindow : Window
             string? previousError = appearance.Error;
             try
             {
-                await appearance.ApplyAsync(next);
+                await appearance.ApplyAsync(next, palette);
+                if (ready && pendingAppearance is null) UpdateTaskbarPreview(next);
                 if (previousError is not null && StatusText.Text == previousError)
                     Status("Настройки оформления сохранены.");
             }
@@ -473,7 +509,7 @@ public partial class MainWindow : Window
             {
                 if (pendingAppearance is null)
                 {
-                    FillAppearance();
+                    if (ready) FillAppearance();
                     Status(error.Message, true);
                 }
             }
@@ -494,14 +530,19 @@ public partial class MainWindow : Window
         fillingAppearance = false;
         QueueAppearance();
     }
-    private void ColorClick(object sender, RoutedEventArgs e) => PickTaskbarColor(ColorValue);
-    private void GlassColorClick(object sender, RoutedEventArgs e) => PickTaskbarColor(GlassColorValue);
-    private void PickTaskbarColor(TextBlock value)
+    private void ColorClick(object sender, RoutedEventArgs e) => PickTaskbarColor(second: false);
+    private void GlassColorClick(object sender, RoutedEventArgs e) => PickTaskbarColor(second: true);
+    private void PickTaskbarColor(bool second)
     {
-        var dialog = new Views.ColorPicker(value.Text) { Owner = this };
+        var dialog = new Views.ColorPicker(second ? glassColor : taskbarColor) { Owner = this };
         TrackWindowFrame(dialog);
         if (dialog.ShowDialog() != true) return;
-        value.Text = dialog.SelectedColor;
+        SetTaskbarColor(dialog.SelectedColor, second);
+    }
+    internal void SetTaskbarColor(string color, bool second)
+    {
+        if (second) glassColor = color;
+        else taskbarColor = color;
         QueueAppearance();
     }
     private async void ApplyLegacyClick(object sender, RoutedEventArgs e) => await RunAsync(async () =>

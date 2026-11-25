@@ -12,7 +12,8 @@ internal sealed class WallpaperService : IDisposable
     private readonly Dispatcher dispatcher;
     private readonly DispatcherTimer health;
     private nint window, worker;
-    private RenderSurface? surface;
+    private RenderSurface? surface, paletteSurface;
+    private Task<WallpaperColors>? paletteTask;
     private CancellationTokenSource? recovery;
     private bool locked, sleeping, disposed, recovering;
     private int generation;
@@ -21,6 +22,35 @@ internal sealed class WallpaperService : IDisposable
     public string? PauseReason { get; private set; }
     public event Action<string, bool>? Status;
     public event Action? Changed;
+    public event Action? PaletteSourceChanged;
+
+    public async Task<WallpaperColors?> ReadColorsAsync()
+    {
+        var current = surface;
+        if (current is null) return null;
+        if (!ReferenceEquals(paletteSurface, current) || paletteTask is null || paletteTask.IsFaulted)
+        {
+            paletteSurface = current;
+            paletteTask = SampleAsync(current);
+        }
+        try
+        {
+            var palette = await paletteTask.WaitAsync(TimeSpan.FromSeconds(2));
+            return ReferenceEquals(surface, current) ? palette : null;
+        }
+        catch (Exception error) when (error is TimeoutException or ObjectDisposedException or IOException or InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    private static async Task<WallpaperColors> SampleAsync(RenderSurface renderer)
+    {
+        // A thin band from the lower part of the wallpaper gives both sides
+        // a representative tint without reading the entire desktop-sized frame.
+        var pixels = await renderer.CaptureAsync(captureRows: 12).ConfigureAwait(false);
+        return WallpaperColors.FromRgba(pixels.Rgba, pixels.Width, pixels.Height);
+    }
     internal string DiagnosticReport()
     {
         var monitor = Win32.PrimaryMonitor().Monitor;
@@ -49,9 +79,12 @@ internal sealed class WallpaperService : IDisposable
     private void DisplayChanged(object? sender, EventArgs e) => Post(() => ScheduleRecovery());
     private void Destroy()
     {
+        paletteSurface = null;
+        paletteTask = null;
         surface?.Dispose(); surface = null;
         if (window != 0) { Win32.DestroyWindow(window); window = 0; }
         worker = 0; RunningId = null; Changed?.Invoke();
+        if (!disposed && library.State.ActiveId is null) PaletteSourceChanged?.Invoke();
     }
     private void CancelRecovery() { generation++; recovery?.Cancel(); recovery?.Dispose(); recovery = null; recovering = false; }
     public async Task ApplyAsync(string id)
@@ -71,7 +104,7 @@ internal sealed class WallpaperService : IDisposable
             candidate = 0; renderer = null; RunningId = id; previousMonitor = Win32.PrimaryMonitor().Monitor.Area;
             surface.Error += message => Post(() => Status?.Invoke(message, true));
             surface.Recovered += message => Post(() => Status?.Invoke(message, false));
-            health.Start(); Refresh(); Changed?.Invoke(); Status?.Invoke("На рабочем столе: " + item.Name, false);
+            health.Start(); Refresh(); Changed?.Invoke(); PaletteSourceChanged?.Invoke(); Status?.Invoke("На рабочем столе: " + item.Name, false);
         }
         finally { renderer?.Dispose(); if (candidate != 0) Win32.DestroyWindow(candidate); }
     }
@@ -124,7 +157,7 @@ internal sealed class WallpaperService : IDisposable
                     Destroy(); window = candidate; worker = parent; surface = renderer; candidate = 0; renderer = null; RunningId = id;
                     surface.Error += message => Post(() => Status?.Invoke(message, true));
                     surface.Recovered += message => Post(() => Status?.Invoke(message, false));
-                    previousMonitor = Win32.PrimaryMonitor().Monitor.Area; recovering = false; health.Start(); Refresh(); Changed?.Invoke(); return;
+                    previousMonitor = Win32.PrimaryMonitor().Monitor.Area; recovering = false; health.Start(); Refresh(); Changed?.Invoke(); PaletteSourceChanged?.Invoke(); return;
                 }
                 catch (InvalidDataException error) { Status?.Invoke(error.Message, true); health.Stop(); return; }
                 catch (Exception error) { if (attempt == 19) { health.Stop(); Status?.Invoke("Не удалось восстановить обои: " + error.Message + " Повторите «На рабочий стол».", true); return; } }

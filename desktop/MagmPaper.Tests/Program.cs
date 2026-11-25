@@ -102,6 +102,24 @@ tests.Add(("glass settings preserve legacy data and encode a second tint", () =>
     Throws(() => (glass with { GlassColor = "#GGCCAA" }).Validate());
 }));
 
+tests.Add(("taskbar palette follows the two sides of a wallpaper", () =>
+{
+    byte[] rgba =
+    [
+        180, 41, 55, 255, 174, 38, 52, 255, 14, 180, 43, 255,
+        38, 92, 201, 255, 42, 88, 207, 255, 252, 224, 106, 255
+    ];
+    var colors = WallpaperColors.FromRgba(rgba, 6, 1);
+    Check(colors == new WallpaperColors("#B12735", "#285ACC"), "wrong dominant wallpaper colors");
+    var manual = new AppearanceSettings { Glass = true, Color = "#123456", GlassColor = "#ABCDEF" };
+    var automatic = manual with { MatchWallpaperColors = true };
+    var resolved = automatic.WithWallpaperColors(colors);
+    Check(resolved.Color == colors.First && resolved.GlassColor == colors.Second, "automatic hue was not applied");
+    Check(automatic.Color == manual.Color && automatic.WithWallpaperColors(null) == automatic, "manual fallback colors changed");
+    Check(manual.WithWallpaperColors(colors) == manual, "manual mode used the wallpaper");
+    Throws(() => WallpaperColors.FromRgba(rgba, 2, 2));
+}));
+
 tests.Add(("cursor packs match Windows states and PNG conversion preserves the hotspot", () =>
 {
     var names = new[] { "Pointer.cur", "Work.ani", "Dgn1.cur", "Diagonal_2.CUR", "Text.cur", "Zoom-out.cur", "uninstall.bat" };

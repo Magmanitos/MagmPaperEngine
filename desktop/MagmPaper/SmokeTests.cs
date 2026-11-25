@@ -108,6 +108,12 @@ internal static class SmokeTests
         await surface.LoadAsync(Red); var red = await surface.CaptureAsync();
         int center = (red.Width * (red.Height / 2) + red.Width / 2) * 4;
         Assert(red.Rgba[center] > 240 && red.Rgba[center + 1] < 10, "ANGLE did not produce actual GLSL pixels");
+        await surface.LoadAsync("precision mediump float; uniform vec2 resolution; void main(){gl_FragColor=gl_FragCoord.x<resolution.x*0.5 ? vec4(1.0,0.0,0.0,1.0) : vec4(0.0,0.0,1.0,1.0);}");
+        var strip = await surface.CaptureAsync(captureRows: 12);
+        Assert(strip.Width == red.Width && strip.Height == Math.Min(12, red.Height) &&
+            WallpaperColors.FromRgba(strip.Rgba, strip.Width, strip.Height) == new WallpaperColors("#FF0000", "#0000FF"),
+            "wallpaper palette was not extracted from the GLSL frame");
+        await surface.LoadAsync(Red);
         bool rejected = false;
         try { await surface.LoadAsync("bad shader"); } catch (InvalidDataException) { rejected = true; }
         Assert(rejected, "invalid GLSL was accepted");
@@ -319,7 +325,7 @@ internal static class SmokeTests
         var draft = DataFiles.Read<AppearanceSettings>(Path.Combine(window.Library.DirectoryPath, "taskbar-appearance.json"));
         Assert(!draft.Enabled && draft.Height == 38 && draft.Icon == 30 && draft.Button == 54 && draft.Opacity == 43,
             "automatic appearance settings did not persist the last slider values");
-        window.GlassColorValue.Text = "#ABCDEF";
+        window.SetTaskbarColor("#ABCDEF", second: true);
         window.GlassInput.IsChecked = true;
         window.GlassInput.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));
         Assert(window.TaskbarSample.Background is LinearGradientBrush glass &&
@@ -328,6 +334,15 @@ internal static class SmokeTests
         await window.FinishTaskbarUpdatesAsync();
         draft = DataFiles.Read<AppearanceSettings>(Path.Combine(window.Library.DirectoryPath, "taskbar-appearance.json"));
         Assert(draft.Glass && draft.GlassColor == "#ABCDEF", "glass settings were not saved");
+        window.WallpaperColorsInput.IsChecked = true;
+        window.WallpaperColorsInput.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));
+        await window.FinishTaskbarUpdatesAsync();
+        draft = DataFiles.Read<AppearanceSettings>(Path.Combine(window.Library.DirectoryPath, "taskbar-appearance.json"));
+        Assert(draft.MatchWallpaperColors && draft.GlassColor == "#ABCDEF" && window.GlassColorButton.IsEnabled,
+            "wallpaper matching did not preserve the manual fallback");
+        window.WallpaperColorsInput.IsChecked = false;
+        window.WallpaperColorsInput.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));
+        await window.FinishTaskbarUpdatesAsync();
         window.AlignmentInput.IsDropDownOpen = true;
         await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
         var dropdown = (System.Windows.Controls.Primitives.Popup)window.AlignmentInput.Template.FindName("PART_Popup", window.AlignmentInput);
@@ -401,6 +416,18 @@ internal static class SmokeTests
         window.ShowUpdateNotesInput.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));
         using var preferences = JsonDocument.Parse(File.ReadAllText(Path.Combine(window.Library.DirectoryPath, "ui.json")));
         Assert(!preferences.RootElement.GetProperty("showUpdateNotesOnStartup").GetBoolean(), "changelog preference was not saved");
+        window.ThemeInput.IsChecked = false;
+        window.ThemeInput.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));
+        await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+        Assert(window.Background is SolidColorBrush light && Luminance(light.Color) > .75, "light theme did not update the window");
+        AssertReadable(window.Foreground, window.Background, "light window");
+        AssertReadable(window.AddWallpaperButton.Foreground, window.AddWallpaperButton.Background, "light primary button");
+        using (var themePreference = JsonDocument.Parse(File.ReadAllText(Path.Combine(window.Library.DirectoryPath, "ui.json"))))
+            Assert(themePreference.RootElement.GetProperty("lightTheme").GetBoolean(), "theme preference was not saved");
+        window.ThemeInput.IsChecked = true;
+        window.ThemeInput.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));
+        await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+        Assert(window.Background is SolidColorBrush dark && Luminance(dark.Color) < .05, "dark theme did not return");
         CheckRoundedFrameBlur();
         await CheckToggleMotion(window.WindowBlurInput);
         window.WindowBlurInput.IsChecked = true;
@@ -432,7 +459,7 @@ internal static class SmokeTests
         await Task.Delay(3000); // Let startup compilation, layout and deferred GPU release settle.
         var process = Process.GetCurrentProcess(); var startCpu = process.TotalProcessorTime; var clockIdle = Stopwatch.StartNew(); await Task.Delay(5000); process.Refresh();
         var report = new { passed = true, version = typeof(App).Assembly.GetName().Version?.ToString(), nativeUi = "WPF", gpuTests = "ANGLE D3D11 WARP", composedDesktopPixels = composedPixels, workingSetBytes = process.WorkingSet64, idleCpuMilliseconds = (process.TotalProcessorTime - startCpu).TotalMilliseconds, idleSampleMilliseconds = clockIdle.Elapsed.TotalMilliseconds,
-            tests = new[] { "real GLSL pixels", "late GLSL extension compatibility", "compile error preserves program", "backbuffer", "quality fills window", "pause stops frames", "physical monitor geometry", "24H2 child layer order and opaque composition", "native window coverage/minimize/transparent overlay", "click-through and real cursor uniforms", "mouse toggle", "six GPU resets with active and paused second context", "Windows autostart and StartupApproved", "WPF editor/save/navigation", "native preview visibility and scroll clipping", "smooth scrolling over inputs and repeated wheel events", "inactive and disabled control colors", "stable collection after activation/navigation", "HSV and HEX color picker", "live taskbar preview and automatic slider persistence", "glass gradient settings", "cursor catalogue caption, scroll and PNG hotspot", "changelog positioning and preference", "window blur toggle, rounded contour and settings", "animated toggles", "settings", "WPF theme contrast", "hidden preview" } };
+            tests = new[] { "real GLSL pixels", "late GLSL extension compatibility", "compile error preserves program", "backbuffer", "quality fills window", "pause stops frames", "physical monitor geometry", "24H2 child layer order and opaque composition", "native window coverage/minimize/transparent overlay", "click-through and real cursor uniforms", "mouse toggle", "six GPU resets with active and paused second context", "Windows autostart and StartupApproved", "WPF editor/save/navigation", "native preview visibility and scroll clipping", "smooth scrolling over inputs and repeated wheel events", "inactive and disabled control colors", "stable collection after activation/navigation", "HSV and HEX color picker", "live taskbar preview and automatic slider persistence", "glass gradient settings and wallpaper palette", "light and dark themes", "cursor catalogue caption, scroll and PNG hotspot", "changelog positioning and preference", "window blur toggle, rounded contour and settings", "animated toggles", "settings", "WPF theme contrast", "hidden preview" } };
         File.WriteAllText(Path.Combine(output, "report.json"), JsonSerializer.Serialize(report, DataFiles.Json));
     }
     private static RenderTargetBitmap WindowBitmap(Window window)

@@ -136,18 +136,18 @@ internal sealed class ShaderContext : IDisposable
         Gpu.DrawArrays(4, 0, 6);
         Gpu.DisableVertexAttribArray((uint)location);
     }
-    public PixelFrame? Draw(int outputWidth, int outputHeight, double quality, double seconds, double x, double y, bool capture = false)
+    public PixelFrame? Draw(int outputWidth, int outputHeight, double quality, double seconds, double x, double y, bool capture = false, int captureRows = 0)
     {
         lock (AngleDevice.GraphicsGate)
         {
             // Explicitly hand off the shared D3D11 device between EGL contexts.
             // No context stays current after releasing the submission gate.
             Bind();
-            try { return DrawCore(outputWidth, outputHeight, quality, seconds, x, y, capture); }
+            try { return DrawCore(outputWidth, outputHeight, quality, seconds, x, y, capture, captureRows); }
             finally { Gpu.EglMakeCurrent(display, 0, 0, 0); }
         }
     }
-    private PixelFrame? DrawCore(int outputWidth, int outputHeight, double quality, double seconds, double x, double y, bool capture)
+    private PixelFrame? DrawCore(int outputWidth, int outputHeight, double quality, double seconds, double x, double y, bool capture, int captureRows)
     {
         if (program == 0) return null;
         Resize(Math.Max(1, outputWidth), Math.Max(1, outputHeight), quality);
@@ -164,7 +164,14 @@ internal sealed class ShaderContext : IDisposable
             Gpu.Uniform1i(Gpu.GetUniformLocation(copy, "image"), 0); Quad(copy); read = write;
         }
         PixelFrame? pixels = null;
-        if (capture) { var bytes = new byte[checked(outputWidth * outputHeight * 4)]; Gpu.ReadPixels(0, 0, outputWidth, outputHeight, 0x1908, 0x1401, bytes); pixels = new(outputWidth, outputHeight, bytes); }
+        if (capture)
+        {
+            int rows = captureRows > 0 ? Math.Min(outputHeight, captureRows) : outputHeight;
+            int bottom = (outputHeight - rows) / 6;
+            var bytes = new byte[checked(outputWidth * rows * 4)];
+            Gpu.ReadPixels(0, bottom, outputWidth, rows, 0x1908, 0x1401, bytes);
+            pixels = new(outputWidth, rows, bytes);
+        }
         var error = Gpu.GetError();
         if (error == 0x507) throw new DeviceLostException("Видеодрайвер восстанавливает устройство.");
         if (error != 0) throw new IOException($"Ошибка рендера OpenGL ES: 0x{error:X}.");

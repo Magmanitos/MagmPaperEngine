@@ -50,10 +50,11 @@ internal sealed class RenderSurface : IDisposable
         if (string.IsNullOrWhiteSpace(code) || code.Length > 100000) return Task.FromException(new InvalidDataException("Вставьте GLSL-код, не более 100 000 символов."));
         return Submit(context => { context.Load(code); source = code; seconds = 0; return true; });
     }
-    public Task<PixelFrame> CaptureAsync() => Submit(context =>
+    public Task<PixelFrame> CaptureAsync(int captureRows = 0) => Submit(context =>
     {
         if (!Win32.GetClientRect(window, out var rect)) throw new IOException("Окно предпросмотра закрыто.");
-        return context.Draw(Math.Max(1, rect.Width), Math.Max(1, rect.Height), options.Quality, seconds, mouseX, mouseY, true)
+        if (!context.Loaded && source is { } code) context.Load(code);
+        return context.Draw(Math.Max(1, rect.Width), Math.Max(1, rect.Height), options.Quality, seconds, mouseX, mouseY, true, captureRows)
             ?? throw new InvalidOperationException("Сначала загрузите шейдер.");
     });
     private void Loop()

@@ -7,7 +7,7 @@
     <TextBlock Text="Точка клика" FontSize="22" FontWeight="SemiBold"/>
     <TextBlock Text="Нажмите на пиксель, которым курсор должен указывать на экран."
                Style="{StaticResource Muted}" Margin="0,8,0,12"/>
-    <Border Background="{StaticResource InputBrush}" CornerRadius="8" Padding="12">
+    <Border Background="{DynamicResource InputBrush}" CornerRadius="8" Padding="12">
       <Grid x:Name="Surface" ClipToBounds="True" Cursor="Cross" MouseLeftButtonDown="PickPixel" HorizontalAlignment="Center">
         <Image x:Name="Picture" Stretch="Fill" RenderOptions.BitmapScalingMode="NearestNeighbor"/>
         <Canvas IsHitTestVisible="False">

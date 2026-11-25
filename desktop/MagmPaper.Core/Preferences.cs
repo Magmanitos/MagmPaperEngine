@@ -33,6 +33,11 @@ public sealed record AppearanceSettings
     public int Radius { get; init; }
     public bool Glass { get; init; }
     public string GlassColor { get; init; } = "#715CD4";
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool MatchWallpaperColors { get; init; }
+    public bool UsesWallpaperColors() => Glass && MatchWallpaperColors;
+    public AppearanceSettings WithWallpaperColors(WallpaperColors? palette) =>
+        UsesWallpaperColors() && palette is not null ? this with { Color = palette.First, GlassColor = palette.Second } : this;
     public AppearanceSettings Validate()
     {
         if (Height is < 32 or > 96 || Icon is < 16 or > 64 || Button is < 28 or > 100 ||

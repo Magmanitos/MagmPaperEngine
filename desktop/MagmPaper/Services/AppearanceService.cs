@@ -17,6 +17,7 @@ internal sealed class AppearanceService : IAsyncDisposable
     private string? loadError;
     private volatile bool terminating;
     public AppearanceSettings Settings { get; private set; } = new();
+    public WallpaperColors? MatchedColors { get; private set; }
     public bool Active { get; private set; }
     public string? Error { get; private set; }
     public event Action? Changed;
@@ -123,14 +124,18 @@ internal sealed class AppearanceService : IAsyncDisposable
         }
         finally { pending.TryRemove(id, out _); }
     }
-    public async Task ApplyAsync(AppearanceSettings next)
+    public async Task ApplyAsync(AppearanceSettings next, WallpaperColors? palette = null)
     {
-        next.Validate(); await serial.WaitAsync(); var previous = Settings; bool wasRunning = process is not null;
+        next.Validate();
+        await serial.WaitAsync();
+        var previous = Settings.WithWallpaperColors(MatchedColors);
+        bool wasRunning = process is not null;
         try
         {
             if (loadError is not null) throw new InvalidDataException(loadError);
-            if (next.Enabled || process is not null) await SendAsync(next);
-            DataFiles.Write(file, next); Settings = next; Error = null; Changed?.Invoke();
+            if (next.Enabled || process is not null) await SendAsync(next.WithWallpaperColors(palette));
+            if (Settings != next || !File.Exists(file)) DataFiles.Write(file, next);
+            Settings = next; MatchedColors = palette; Error = null; Changed?.Invoke();
         }
         catch (Exception failure)
         {
