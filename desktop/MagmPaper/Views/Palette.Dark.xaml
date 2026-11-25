@@ -18,7 +18,6 @@
   <SolidColorBrush x:Key="CloseHoverBrush" Color="#5A2937"/>
   <SolidColorBrush x:Key="CloseTextBrush" Color="#FFE0E6"/>
   <SolidColorBrush x:Key="SelectionBrush" Color="#30283F"/>
-  <SolidColorBrush x:Key="SelectionBorderBrush" Color="#54416F"/>
   <SolidColorBrush x:Key="TextSelectionBrush" Color="#655082"/>
   <SolidColorBrush x:Key="TrackBrush" Color="#393C50"/>
   <SolidColorBrush x:Key="SwitchOffBrush" Color="#F5F2FF"/>

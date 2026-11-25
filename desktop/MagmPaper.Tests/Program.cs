@@ -102,6 +102,28 @@ tests.Add(("glass settings preserve legacy data and encode a second tint", () =>
     Throws(() => (glass with { GlassColor = "#GGCCAA" }).Validate());
 }));
 
+tests.Add(("release notes snap to a nearby edge and respect the work area", () =>
+{
+    var work = new Area(-1920, 0, 0, 1080);
+    var owner = new Area(-1500, 300, -500, 800);
+    NotesDock? Find(Area window) => NotesDock.Find(owner, window, work, 10, 27, 52);
+    var nearRight = new Area(-476, 366, -196, 566);
+    var nearLeft = new Area(-1798, 350, -1518, 550);
+    var nearTop = new Area(-1300, 82, -1020, 282);
+    var nearBottom = new Area(-1300, 822, -1020, 1022);
+    Check(Find(nearRight) == new NotesDock(NotesEdge.Right, 66), "right edge not selected");
+    Check(Find(nearLeft) == new NotesDock(NotesEdge.Left, 50), "left edge not selected");
+    Check(Find(nearTop) == new NotesDock(NotesEdge.Top, 200), "top edge not selected");
+    Check(Find(nearBottom) == new NotesDock(NotesEdge.Bottom, 200), "bottom edge not selected");
+    Check(Find(new(-330, 366, -50, 566)) is null, "notes snapped outside the magnetic zone");
+    Check(Find(new(-495, 17, -215, 217)) is null, "notes snapped without an overlapping edge");
+    Check(NotesDock.Find(owner, nearRight, work with { Right = -250 }, 10, 27, 52) is null,
+        "notes snapped outside the work area");
+    var moved = new Area(-1400, 400, -400, 900);
+    Check(Find(nearRight)!.Value.Place(moved, nearRight, work, 10) == new Area(-390, 466, -110, 666),
+        "docked notes lost their offset when the main window moved");
+}));
+
 tests.Add(("taskbar palette follows the two sides of a wallpaper", () =>
 {
     byte[] rgba =

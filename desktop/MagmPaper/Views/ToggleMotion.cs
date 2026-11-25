@@ -9,6 +9,12 @@ public static class ToggleMotion
     public static readonly DependencyProperty OffsetProperty = DependencyProperty.RegisterAttached(
         "Offset", typeof(double), typeof(ToggleMotion), new PropertyMetadata(0.0, OffsetChanged));
 
+    public static readonly DependencyProperty FadeProperty = DependencyProperty.RegisterAttached(
+        "Fade", typeof(double), typeof(ToggleMotion), new PropertyMetadata(0.0, FadeChanged));
+
+    public static double GetFade(DependencyObject element) => (double)element.GetValue(FadeProperty);
+    public static void SetFade(DependencyObject element, double value) => element.SetValue(FadeProperty, value);
+
     public static double GetOffset(DependencyObject element) => (double)element.GetValue(OffsetProperty);
     public static void SetOffset(DependencyObject element, double value) => element.SetValue(OffsetProperty, value);
 
@@ -24,18 +30,25 @@ public static class ToggleMotion
         double current = slide.X;
         double target = (double)e.NewValue;
         slide.X = target;
-        if (!knob.IsLoaded || !knob.IsVisible || !SystemParameters.ClientAreaAnimation || current == target)
-        {
-            slide.BeginAnimation(TranslateTransform.XProperty, null);
-            return;
-        }
-
-        // Read the animated position before changing the destination so a
-        // second toggle can reverse immediately without jumping to an endpoint.
-        slide.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(current, target, TimeSpan.FromMilliseconds(160))
-        {
-            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
-            FillBehavior = FillBehavior.Stop
-        });
+        // Start at the current animated value so rapid changes reverse without a jump.
+        slide.BeginAnimation(TranslateTransform.XProperty, Transition(knob, current, target));
     }
+
+    private static void FadeChanged(DependencyObject element, DependencyPropertyChangedEventArgs e)
+    {
+        if (element is not FrameworkElement visual) return;
+        double current = visual.Opacity;
+        double target = (double)e.NewValue;
+        visual.Opacity = target;
+        visual.BeginAnimation(UIElement.OpacityProperty, Transition(visual, current, target));
+    }
+
+    private static DoubleAnimation? Transition(FrameworkElement element, double from, double to) =>
+        element.IsLoaded && element.IsVisible && SystemParameters.ClientAreaAnimation && from != to
+            ? new DoubleAnimation(from, to, TimeSpan.FromMilliseconds(160))
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+                FillBehavior = FillBehavior.Stop
+            }
+            : null;
 }

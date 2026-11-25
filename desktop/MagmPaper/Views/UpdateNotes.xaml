@@ -9,10 +9,14 @@
       <DockPanel DockPanel.Dock="Top" Margin="0,0,0,12">
         <Button x:Name="DismissButton" DockPanel.Dock="Right" Style="{StaticResource CloseCaptionButton}" Content="&#xE8BB;"
                 Width="30" Height="30" ToolTip="Закрыть" AutomationProperties.Name="Закрыть список изменений" Click="DismissClick"/>
-        <StackPanel VerticalAlignment="Center">
-          <TextBlock Text="Что нового" FontSize="21" FontWeight="SemiBold"/>
-          <TextBlock x:Name="VersionText" Foreground="{DynamicResource AccentBrush}" FontSize="12" Margin="0,4,0,0"/>
-        </StackPanel>
+        <Border x:Name="DragGrip" Background="Transparent" Cursor="SizeAll"
+                MouseLeftButtonDown="StartDrag" MouseMove="DragMoved" MouseLeftButtonUp="FinishDrag"
+                LostMouseCapture="DragCaptureLost">
+          <StackPanel VerticalAlignment="Center">
+            <TextBlock Text="Что нового" FontSize="21" FontWeight="SemiBold"/>
+            <TextBlock x:Name="VersionText" Foreground="{DynamicResource AccentBrush}" FontSize="12" Margin="0,4,0,0"/>
+          </StackPanel>
+        </Border>
       </DockPanel>
       <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="310">
         <ItemsControl x:Name="Changes">

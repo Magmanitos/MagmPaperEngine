@@ -101,16 +101,21 @@
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="RadioButton">
-          <Border x:Name="Border" CornerRadius="9" Background="Transparent" Padding="{TemplateBinding Padding}" BorderThickness="1" BorderBrush="Transparent">
-            <ContentPresenter/>
-          </Border>
+          <Grid Background="Transparent" ClipToBounds="True">
+            <Border x:Name="Hover" Background="{DynamicResource HoverOverlayBrush}" CornerRadius="9"
+                    Visibility="Collapsed" IsHitTestVisible="False"/>
+            <Border x:Name="Selection" Background="{DynamicResource SelectionBrush}" CornerRadius="9"
+                    Opacity="0" views:ToggleMotion.Offset="-4" IsHitTestVisible="False">
+              <Border Width="3" Height="16" HorizontalAlignment="Left" Margin="6,0,0,0"
+                      Background="{DynamicResource AccentBrush}" CornerRadius="2"/>
+            </Border>
+            <ContentPresenter Margin="{TemplateBinding Padding}"/>
+          </Grid>
           <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Hover" Property="Visibility" Value="Visible"/></Trigger>
             <Trigger Property="IsChecked" Value="True">
-              <Setter TargetName="Border" Property="Background" Value="{DynamicResource SelectionBrush}"/>
-              <Setter TargetName="Border" Property="BorderBrush" Value="{DynamicResource SelectionBorderBrush}"/>
-            </Trigger>
-            <Trigger Property="IsMouseOver" Value="True">
-              <Setter TargetName="Border" Property="Opacity" Value="0.7"/>
+              <Setter TargetName="Selection" Property="views:ToggleMotion.Fade" Value="1"/>
+              <Setter TargetName="Selection" Property="views:ToggleMotion.Offset" Value="0"/>
             </Trigger>
           </ControlTemplate.Triggers>
         </ControlTemplate>
@@ -118,6 +123,7 @@
     </Setter>
   </Style>
   <Style TargetType="TextBox">
+    <Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocus}"/>
     <Setter Property="Background" Value="{DynamicResource InputBrush}"/>
     <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
     <Setter Property="CaretBrush" Value="{DynamicResource TextBrush}"/>
@@ -132,7 +138,6 @@
             <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" Focusable="False" views:SmoothScroll.Enabled="False" HorizontalScrollBarVisibility="{TemplateBinding ScrollViewer.HorizontalScrollBarVisibility}" VerticalScrollBarVisibility="{TemplateBinding ScrollViewer.VerticalScrollBarVisibility}"/>
           </Border>
           <ControlTemplate.Triggers>
-            <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/></Trigger>
             <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Chrome" Property="Opacity" Value="0.65"/></Trigger>
             <Trigger Property="Validation.HasError" Value="True"><Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource ErrorBrush}"/></Trigger>
           </ControlTemplate.Triggers>
@@ -223,6 +228,7 @@
     </Setter>
   </Style>
   <Style x:Key="SettingsSlider" TargetType="Slider">
+    <Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocus}"/>
     <Setter Property="TickFrequency" Value="1"/>
     <Setter Property="IsSnapToTickEnabled" Value="True"/>
     <Setter Property="SmallChange" Value="1"/>
@@ -259,7 +265,7 @@
                     <Thumb Width="18" Height="18" Cursor="Hand">
                       <Thumb.Template>
                         <ControlTemplate TargetType="Thumb">
-                          <Border x:Name="Handle" Background="{DynamicResource ThumbBrush}" BorderBrush="{DynamicResource AccentBrush}" BorderThickness="2" CornerRadius="9"/>
+                          <Border x:Name="Handle" Background="{DynamicResource ThumbBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" CornerRadius="9"/>
                           <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Handle" Property="Background" Value="{DynamicResource AccentBrush}"/></Trigger>
                             <Trigger Property="IsDragging" Value="True"><Setter TargetName="Handle" Property="Background" Value="{DynamicResource ThumbPressedBrush}"/></Trigger>
@@ -276,7 +282,6 @@
             </StackPanel>
           </Border>
           <ControlTemplate.Triggers>
-            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="SliderChrome" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/></Trigger>
             <Trigger Property="IsEnabled" Value="False"><Setter TargetName="SliderChrome" Property="Opacity" Value="0.65"/></Trigger>
           </ControlTemplate.Triggers>
         </ControlTemplate>
@@ -368,6 +373,7 @@
     </Setter>
   </Style>
   <Style TargetType="ComboBox">
+    <Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocus}"/>
     <Setter Property="views:DropDownAnchor.Enabled" Value="True"/>
     <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
     <Setter Property="Background" Value="{DynamicResource InputBrush}"/>
@@ -384,14 +390,17 @@
               <ToggleButton.Template>
                 <ControlTemplate TargetType="ToggleButton">
                   <Border x:Name="Chrome" Background="{Binding Background, RelativeSource={RelativeSource AncestorType=ComboBox}}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" CornerRadius="8">
-                    <Path Data="M 0 0 L 4 4 L 8 0" Stroke="{DynamicResource MutedBrush}" StrokeThickness="1.5" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="12"/>
+                    <Grid>
+                      <Border x:Name="Hover" CornerRadius="7" Background="{DynamicResource HoverOverlayBrush}" Visibility="Collapsed"/>
+                      <Path Data="M 0 0 L 4 4 L 8 0" Stroke="{DynamicResource MutedBrush}" StrokeThickness="1.5" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="12"/>
+                    </Grid>
                   </Border>
                   <ControlTemplate.Triggers>
                     <Trigger Property="IsMouseOver" Value="True">
-                      <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                      <Setter TargetName="Hover" Property="Visibility" Value="Visible"/>
                     </Trigger>
                     <Trigger Property="IsChecked" Value="True">
-                      <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                      <Setter TargetName="Hover" Property="Visibility" Value="Visible"/>
                     </Trigger>
                   </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -462,6 +471,7 @@
     </Setter>
   </Style>
   <Style TargetType="ListBoxItem">
+    <Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocus}"/>
     <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
     <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
     <Setter Property="Margin" Value="0,3"/>
@@ -475,7 +485,6 @@
           <ControlTemplate.Triggers>
             <Trigger Property="IsSelected" Value="True">
               <Setter TargetName="Border" Property="Background" Value="{DynamicResource SelectionBrush}"/>
-              <Setter TargetName="Border" Property="BorderBrush" Value="{DynamicResource SelectionBorderBrush}"/>
             </Trigger>
             <Trigger Property="IsMouseOver" Value="True">
               <Setter TargetName="Border" Property="Opacity" Value="0.8"/>

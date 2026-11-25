@@ -419,7 +419,7 @@ internal static class SmokeTests
         window.ThemeInput.IsChecked = false;
         window.ThemeInput.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));
         await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
-        Assert(window.Background is SolidColorBrush light && Luminance(light.Color) > .75, "light theme did not update the window");
+        Assert(window.Background is SolidColorBrush light && Luminance(light.Color) is > .75 and < .85, "light theme did not update the window");
         AssertReadable(window.Foreground, window.Background, "light window");
         AssertReadable(window.AddWallpaperButton.Foreground, window.AddWallpaperButton.Background, "light primary button");
         using (var themePreference = JsonDocument.Parse(File.ReadAllText(Path.Combine(window.Library.DirectoryPath, "ui.json"))))
@@ -428,6 +428,15 @@ internal static class SmokeTests
         window.ThemeInput.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));
         await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
         Assert(window.Background is SolidColorBrush dark && Luminance(dark.Color) < .05, "dark theme did not return");
+        window.NavOverview.ApplyTemplate();
+        var selectedSurface = (FrameworkElement)window.NavOverview.Template.FindName("Selection", window.NavOverview);
+        window.Navigate("overview");
+        Assert(selectedSurface.HasAnimatedProperties == SystemParameters.ClientAreaAnimation,
+            "navigation did not respect the system animation preference");
+        await Until(() => selectedSurface.Opacity == 1 && selectedSurface.RenderTransform.Value.OffsetX == 0,
+            "current navigation item did not finish its transition");
+        window.Navigate("settings");
+        await Until(() => selectedSurface.Opacity == 0, "previous navigation item remained highlighted");
         CheckRoundedFrameBlur();
         await CheckToggleMotion(window.WindowBlurInput);
         window.WindowBlurInput.IsChecked = true;
@@ -459,7 +468,7 @@ internal static class SmokeTests
         await Task.Delay(3000); // Let startup compilation, layout and deferred GPU release settle.
         var process = Process.GetCurrentProcess(); var startCpu = process.TotalProcessorTime; var clockIdle = Stopwatch.StartNew(); await Task.Delay(5000); process.Refresh();
         var report = new { passed = true, version = typeof(App).Assembly.GetName().Version?.ToString(), nativeUi = "WPF", gpuTests = "ANGLE D3D11 WARP", composedDesktopPixels = composedPixels, workingSetBytes = process.WorkingSet64, idleCpuMilliseconds = (process.TotalProcessorTime - startCpu).TotalMilliseconds, idleSampleMilliseconds = clockIdle.Elapsed.TotalMilliseconds,
-            tests = new[] { "real GLSL pixels", "late GLSL extension compatibility", "compile error preserves program", "backbuffer", "quality fills window", "pause stops frames", "physical monitor geometry", "24H2 child layer order and opaque composition", "native window coverage/minimize/transparent overlay", "click-through and real cursor uniforms", "mouse toggle", "six GPU resets with active and paused second context", "Windows autostart and StartupApproved", "WPF editor/save/navigation", "native preview visibility and scroll clipping", "smooth scrolling over inputs and repeated wheel events", "inactive and disabled control colors", "stable collection after activation/navigation", "HSV and HEX color picker", "live taskbar preview and automatic slider persistence", "glass gradient settings and wallpaper palette", "light and dark themes", "cursor catalogue caption, scroll and PNG hotspot", "changelog positioning and preference", "window blur toggle, rounded contour and settings", "animated toggles", "settings", "WPF theme contrast", "hidden preview" } };
+            tests = new[] { "real GLSL pixels", "late GLSL extension compatibility", "compile error preserves program", "backbuffer", "quality fills window", "pause stops frames", "physical monitor geometry", "24H2 child layer order and opaque composition", "native window coverage/minimize/transparent overlay", "click-through and real cursor uniforms", "mouse toggle", "six GPU resets with active and paused second context", "Windows autostart and StartupApproved", "WPF editor/save/navigation", "native preview visibility and scroll clipping", "smooth scrolling over inputs and repeated wheel events", "inactive and disabled control colors", "stable collection after activation/navigation", "HSV and HEX color picker", "live taskbar preview and automatic slider persistence", "glass gradient settings and wallpaper palette", "light and dark themes", "cursor catalogue caption, scroll and PNG hotspot", "changelog positioning and preference", "window blur toggle, rounded contour and settings", "animated toggles and navigation", "settings", "WPF theme contrast", "hidden preview" } };
         File.WriteAllText(Path.Combine(output, "report.json"), JsonSerializer.Serialize(report, DataFiles.Json));
     }
     private static RenderTargetBitmap WindowBitmap(Window window)

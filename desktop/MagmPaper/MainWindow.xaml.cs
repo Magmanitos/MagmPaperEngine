@@ -92,7 +92,7 @@ public partial class MainWindow : Window
         };
         ContentRendered += ShowStartupNotes;
         StateChanged += (_, _) => { SyncPreview(); updateNotes?.PlaceNextToOwner(); };
-        IsVisibleChanged += (_, _) => { SyncPreview(); if (!IsVisible && !Quitting) updateNotes?.Close(); };
+        IsVisibleChanged += (_, _) => { SyncPreview(); if (!IsVisible && !Quitting && updateNotes is { IsDocked: true } notes) notes.Close(); };
         LocationChanged += (_, _) => updateNotes?.PlaceNextToOwner();
         SizeChanged += (_, _) => updateNotes?.PlaceNextToOwner();
         Activated += async (_, _) => { if (ready && !busy && !editing && route == "wallpapers") await RunAsync(() => RefreshLibraryAsync(selected?.Id)); };
@@ -213,7 +213,12 @@ public partial class MainWindow : Window
     private void OpenUpdateNotesClick(object sender, RoutedEventArgs e) => OpenUpdateNotes();
     private void OpenUpdateNotes()
     {
-        if (updateNotes is not null || Quitting || !IsVisible) return;
+        if (Quitting || !IsVisible) return;
+        if (updateNotes is { } existing)
+        {
+            existing.Activate();
+            return;
+        }
         try
         {
             updateNotes = new Views.UpdateNotes { Owner = this };
