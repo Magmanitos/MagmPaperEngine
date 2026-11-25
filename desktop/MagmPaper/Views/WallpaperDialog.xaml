@@ -21,7 +21,7 @@
         <Button Content="MP4 · выбрать видео" Tag="Mp4" Click="Choose"/>
       </StackPanel>
       <StackPanel x:Name="NamePanel" Visibility="Collapsed">
-        <Label Content="Название обоев" Padding="0" Target="{Binding ElementName=NameInput}"/>
+        <Label Content="Название обоев" Foreground="{DynamicResource TextBrush}" Padding="0" Target="{Binding ElementName=NameInput}"/>
         <TextBox x:Name="NameInput" MaxLength="80" TextChanged="NameChanged" Margin="0,6,0,0"/>
       </StackPanel>
       <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">

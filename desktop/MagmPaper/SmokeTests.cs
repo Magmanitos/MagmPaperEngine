@@ -109,6 +109,13 @@ internal static class SmokeTests
         await interaction;
     }
 
+    private static void CheckWallpaperNameLabel(Views.WallpaperDialog dialog)
+    {
+        dialog.UpdateLayout();
+        var label = TextElements(dialog.NamePanel).Single(text => text.Text == "Название обоев");
+        AssertReadable(label.Foreground, dialog.DialogCard.Background, "wallpaper name label");
+    }
+
     private static async Task CheckMediaAsync(MainWindow window)
     {
         foreach (var (extension, format) in new[] { ("gif", WallpaperFormat.Gif), ("mp4", WallpaperFormat.Mp4) })
@@ -122,6 +129,7 @@ internal static class SmokeTests
             await UseWallpaperDialogAsync(window, window.AddWallpaperButton, dialog =>
             {
                 dialog.ChooseMedia(file, format);
+                CheckWallpaperNameLabel(dialog);
                 Assert(dialog.NameInput.Text == "preview" && dialog.NamePanel.Visibility == Visibility.Visible,
                     "media file did not open a name field with the suggested name");
                 dialog.NameInput.Text = "   ";
@@ -528,6 +536,10 @@ internal static class SmokeTests
         Assert(window.Background is SolidColorBrush light && Luminance(light.Color) is > .75 and < .85, "light theme did not update the window");
         AssertReadable(window.Foreground, window.Background, "light window");
         AssertReadable(window.AddWallpaperButton.Foreground, window.AddWallpaperButton.Background, "light primary button");
+        var lightNameDialog = new Views.WallpaperDialog("Обои") { Owner = window };
+        lightNameDialog.Show();
+        try { CheckWallpaperNameLabel(lightNameDialog); }
+        finally { lightNameDialog.Close(); }
         using (var themePreference = JsonDocument.Parse(File.ReadAllText(Path.Combine(window.Library.DirectoryPath, "ui.json"))))
             Assert(themePreference.RootElement.GetProperty("lightTheme").GetBoolean(), "theme preference was not saved");
         window.ThemeInput.IsChecked = true;
