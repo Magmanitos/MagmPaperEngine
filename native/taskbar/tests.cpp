@@ -60,6 +60,7 @@ struct Host {
 int main() try {
     Settings settings{};settings.sequence=1;require(valid(settings),"valid default settings");
     settings.icon=64;require(!valid(settings),"reject oversized icon");settings.icon=24;
+    settings.animateIcons=2;require(!valid(settings),"reject invalid animation flag");settings.animateIcons=0;
     RECT monitor{-1920,0,0,1080};auto rect=barRect(monitor,144,64);
     require(rect.top==984&&rect.left==-1920&&rect.right==0,"physical geometry and negative monitor origin");
     WINDOWPOS proposed{};proposed.flags=SWP_NOMOVE;proposed.x=123;proposed.y=456;proposed.cx=1920;proposed.cy=48;
@@ -189,7 +190,7 @@ int main() try {
     }
     std::cout<<"PASS: direct XAML styling and restoration. Starting helper attachment."<<std::endl;
     {
-        Host host;host.send("1 1 64 40 52 1193046 25 1 8 0 0\n");host.applied(1);
+        Host host;host.send("1 1 64 40 52 1193046 25 1 8 0 0 0\n");host.applied(1);
         require(frame.Height()==64&&icon.Width()==40,"external module changed real XAML elements");
         require(background.Fill().as<xaml::Media::SolidColorBrush>().Color().A==64,"external module background alpha");
         RECT actual{};GetWindowRect(window,&actual);require(actual.bottom-actual.top==MulDiv(64,GetDpiForWindow(window),96),"native taskbar window resized");
@@ -197,7 +198,7 @@ int main() try {
         deferResizeAtHeight=actual.bottom-actual.top;
         for(auto sizes:std::vector<std::pair<int,int>>{{80,48},{40,24},{96,64},{64,40}}) {
             sequence++;
-            auto command=std::to_string(sequence)+" 1 "+std::to_string(sizes.first)+" "+std::to_string(sizes.second)+" "+std::to_string(std::max(52,sizes.second))+" 1193046 25 1 8 0 0\n";
+            auto command=std::to_string(sequence)+" 1 "+std::to_string(sizes.first)+" "+std::to_string(sizes.second)+" "+std::to_string(std::max(52,sizes.second))+" 1193046 25 1 8 0 0 0\n";
             host.send(command.c_str());host.applied(sequence);
             require(deferResizeAtHeight==0,"the simulated shell layout did not defer the resize");
             MONITORINFO screen{sizeof(screen)};GetMonitorInfoW(MonitorFromWindow(window,MONITOR_DEFAULTTONEAREST),&screen);GetWindowRect(window,&actual);
@@ -208,19 +209,19 @@ int main() try {
             require(!(sizeOnly.flags&SWP_NOMOVE)&&sizeOnly.y+sizeOnly.cy==screen.rcMonitor.bottom,
                 "hook failed to anchor a native size-only request at the screen bottom");
         }
-        host.send("6 1 64 40 52 1193046 25 1 8 1 11259375\n");host.applied(6);
+        host.send("6 1 64 40 52 1193046 25 1 8 1 11259375 0\n");host.applied(6);
         auto gradient=background.Fill().as<xaml::Media::LinearGradientBrush>().GradientStops();
         auto last=gradient.GetAt(2).Color();
         require(gradient.Size()==3&&gradient.GetAt(0).Color().A==64&&last.A==42&&last.R==0xab&&last.G==0xcd&&last.B==0xef,
             "native glass gradient preserves both the tint and the opacity");
-        host.send("7 0 64 40 52 1193046 25 1 8 0 0\n");host.applied(7);
+        host.send("7 0 64 40 52 1193046 25 1 8 0 0 0\n");host.applied(7);
         require(frame.Height()==48&&icon.Width()==24&&widgets.Visibility()==xaml::Visibility::Visible,"disable restores native XAML");
-        host.send("8 1 64 40 52 1193046 25 1 8 0 0\n");host.applied(8);host.crash();
+        host.send("8 1 64 40 52 1193046 25 1 8 0 0 0\n");host.applied(8);host.crash();
         until([&]{return frame.Height()==48&&icon.Width()==24;},"host crash did not restore XAML");
         std::cout<<"PASS: helper attachment and crash restoration."<<std::endl;
     }
     {
-        Host restarted;restarted.send("1 1 60 32 48 3355443 50 0 0 0 0\n");restarted.applied(1);
+        Host restarted;restarted.send("1 1 60 32 48 3355443 50 0 0 0 0 0\n");restarted.applied(1);
         require(frame.Height()==60&&icon.Width()==32,"reconnect after host termination");
         // A running application can recreate its icon before the template has
         // assigned its name. Discover it after that first diagnostic callback.
@@ -247,11 +248,71 @@ int main() try {
         auto layout=frame.RegisterPropertyChangedCallback(xaml::FrameworkElement::HeightProperty(),[&](auto const&,auto const&){
             if(frame.Height()==48) {icon.Width(24);icon.Height(24);}
         });
-        Host dependent;dependent.send("1 1 72 48 56 3355443 50 0 0 0 0\n");dependent.applied(1);
+        Host dependent;dependent.send("1 1 72 48 56 3355443 50 0 0 0 0 0\n");dependent.applied(1);
         icon.Width(32);icon.Height(32);dependent.close();
         until([&]{return frame.Height()==48&&icon.Width()==24&&icon.Height()==24;},"container restoration overwrote Explorer's recalculated icon size");
         frame.UnregisterPropertyChangedCallback(xaml::FrameworkElement::HeightProperty(),layout);
         std::cout<<"PASS: dependent icon layout restoration."<<std::endl;
+    }
+    {
+        // Two full-width hit targets, with an existing native transform on one image.
+        xaml::Controls::Grid left,right;
+        xaml::Controls::Image first,second;
+        xaml::Media::TranslateTransform originalMove;originalMove.X(2);
+        first.RenderTransform(originalMove);
+        auto addButton=[&](xaml::Controls::Grid const& cell,xaml::Controls::Image const& image,double x) {
+            cell.Name(L"MagmPaper.Test.Button");cell.Width(44);
+            cell.HorizontalAlignment(xaml::HorizontalAlignment::Left);cell.Margin({x,0,0,0});
+            cell.Background(xaml::Media::SolidColorBrush(Windows::UI::Color{}));
+            image.Name(L"Icon");image.Width(24);image.Height(24);
+            cell.Children().Append(image);frame.Children().Append(cell);
+        };
+        addButton(left,first,20);addButton(right,second,90);
+        root.UpdateLayout();
+        RECT originalBounds{};GetWindowRect(window,&originalBounds);
+        POINT cursor{};GetCursorPos(&cursor);
+        SetWindowPos(window,HWND_TOPMOST,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_SHOWWINDOW);
+        SetForegroundWindow(window);
+        auto pointAt=[&](LONG x) {
+            POINT point{MulDiv(x,GetDpiForWindow(island),96),MulDiv(24,GetDpiForWindow(island),96)};
+            ClientToScreen(island,&point);
+            require(SetCursorPos(point.x,point.y)!=FALSE,"move the cursor across taskbar test buttons");
+        };
+        auto offset=[](xaml::Controls::Image const& image) {
+            auto transforms=image.RenderTransform().as<xaml::Media::TransformGroup>().Children();
+            return transforms.GetAt(transforms.Size()-1).as<xaml::Media::TranslateTransform>().Y();
+        };
+        pointAt(170);
+        Host animated;animated.send("1 0 48 24 44 3355443 50 0 0 0 0 1\n");animated.applied(1);
+        until([&]{return first.RenderTransform().try_as<xaml::Media::TransformGroup>() &&
+            second.RenderTransform().try_as<xaml::Media::TransformGroup>();},"animation-only mode did not attach to both images");
+        require(first.RenderTransform().as<xaml::Media::TransformGroup>().Children().GetAt(0)==originalMove,
+            "hover transform must retain the original transform");
+        RECT sameBounds{};GetWindowRect(window,&sameBounds);
+        require(EqualRect(&originalBounds,&sameBounds)&&frame.Height()==48&&left.ActualWidth()==44&&background.Fill()==original,
+            "animation alone must keep native taskbar geometry and colors");
+        pointAt(32);
+        BOOL motion=TRUE;SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION,0,&motion,0);
+        if(motion) until([&]{const auto y=offset(first);return y<0&&y>-5;},"hover must interpolate instead of jumping");
+        else until([&]{return offset(first)==-5;},"reduced motion should lift without interpolation");
+        require(offset(second)==0,"the neighboring icon lifted before entering its button");
+        pointAt(103);
+        until([&]{return offset(first)==0&&offset(second)==-5;},"hover transfer did not lower the first icon and lift the next one");
+        pointAt(170);
+        until([&]{return offset(second)==0;},"leaving the buttons did not lower the icon");
+
+        xaml::Media::ScaleTransform shellMove;shellMove.ScaleX(1.1);
+        first.RenderTransform(shellMove);
+        animated.send("2 0 48 24 44 3355443 50 0 0 0 0 0\n");animated.applied(2);
+        require(first.RenderTransform()==shellMove&&!second.RenderTransform().try_as<xaml::Media::TransformGroup>(),
+            "disabling animation must restore the latest native transform");
+        animated.close();
+        SetCursorPos(cursor.x,cursor.y);
+        SetWindowPos(window,HWND_NOTOPMOST,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE);
+        for(auto cell:{left,right}) {
+            uint32_t index=0;require(frame.Children().IndexOf(cell,index),"find animation test button");frame.Children().RemoveAt(index);
+        }
+        std::cout<<"PASS: taskbar hover motion, adjacent button transfer and cleanup."<<std::endl;
     }
     source.Close();DestroyWindow(window);manager.Close();
     std::cout<<"PASS: native XAML sizes, color, opacity, visibility, shell reset and restoration; DPI geometry; IPC validation."<<std::endl;

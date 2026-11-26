@@ -19,6 +19,7 @@ namespace magm {
 namespace xaml=winrt::Windows::UI::Xaml;
 enum class Kind { None, Frame, Content, Tray, Background, Stroke, Icon, Button, Widgets };
 Kind classify(const std::wstring& type,const std::wstring& name,bool inTaskbar);
+struct IconLift;
 class StyledElement {
     struct Property {
         xaml::DependencyProperty key{nullptr};
@@ -30,6 +31,7 @@ class StyledElement {
     struct State {
         winrt::weak_ref<xaml::FrameworkElement> target;
         std::vector<std::shared_ptr<Property>> properties;
+        std::shared_ptr<IconLift> lift;
         std::shared_ptr<bool> writing=std::make_shared<bool>(false);
         explicit State(xaml::FrameworkElement const& element):target(element){}
     };
@@ -45,6 +47,7 @@ public:
     StyledElement(xaml::FrameworkElement const& element,Kind type);
     ~StyledElement();
     void apply(const Settings&);
+    void updateIconLift(const Settings&);
     void stopObserving() noexcept;
     bool restore() noexcept;
 };

@@ -1,8 +1,113 @@
 #include "styles.h"
+#include <winrt/Windows.Devices.Input.h>
+#include <winrt/Windows.UI.Xaml.Input.h>
+#include <winrt/Windows.UI.Xaml.Media.Animation.h>
+#include <chrono>
 #include <cmath>
 #include <limits>
 namespace magm {
 using namespace winrt;
+namespace media=xaml::Media;
+namespace animation=media::Animation;
+
+// Hover belongs to the stable button. Only its image moves, so the
+// button never moves away from the pointer that triggered the animation.
+struct IconLift {
+    weak_ref<xaml::FrameworkElement> image, button;
+    media::TranslateTransform offset;
+    media::TransformGroup transform{nullptr};
+    animation::Storyboard transition{nullptr};
+    Windows::Foundation::IInspectable original{nullptr};
+    xaml::Data::BindingBase binding{nullptr};
+    event_token entered{}, moved{}, exited{}, unloaded{};
+    int64_t transformChanged=0;
+    bool observesTransform=false, hovered=false;
+    double distance=5, destination=0;
+
+    IconLift(xaml::FrameworkElement const& icon,xaml::FrameworkElement const& owner):image(icon),button(owner) {}
+
+    void attach(const std::shared_ptr<IconLift>& self) {
+        auto icon=image.get(), owner=button.get();
+        if(!icon||!owner) return;
+        std::weak_ptr<IconLift> weak=self;
+        auto enter=[weak](auto const&,xaml::Input::PointerRoutedEventArgs const& args) {
+            if(auto lift=weak.lock();lift&&args.Pointer().PointerDeviceType()==Windows::Devices::Input::PointerDeviceType::Mouse)
+                lift->setHovered(true);
+        };
+        entered=owner.PointerEntered(enter);
+        moved=owner.PointerMoved(enter); // Also handles a template replaced under a stationary button.
+        exited=owner.PointerExited([weak](auto const&,auto const&) {if(auto lift=weak.lock()) lift->setHovered(false);});
+        unloaded=icon.Unloaded([weak](auto const&,auto const&) {if(auto lift=weak.lock()) lift->setHovered(false,false);});
+        transformChanged=icon.RegisterPropertyChangedCallback(xaml::UIElement::RenderTransformProperty(),[weak](auto const&,auto const&) {
+            if(auto lift=weak.lock()) try { lift->attachTransform(); } catch(...) {}
+        });
+        observesTransform=true;
+        attachTransform();
+    }
+
+    void attachTransform() {
+        auto icon=image.get();if(!icon) return;
+        auto native=icon.RenderTransform();
+        if(transform&&native==transform) return;
+        auto key=xaml::UIElement::RenderTransformProperty();
+        original=icon.ReadLocalValue(key);
+        auto expression=icon.GetBindingExpression(key);
+        binding=expression?expression.ParentBinding():nullptr;
+        transform=media::TransformGroup();
+        if(native) transform.Children().Append(native);
+        transform.Children().Append(offset);
+        icon.RenderTransform(transform);
+    }
+
+    void setHovered(bool over,bool animate=true) noexcept {
+        hovered=over;
+        double target=over?-distance:0.0;
+        if(destination==target&&animate) return;
+        destination=target;
+        try {
+            double before=offset.Y();
+            if(transition) {transition.Stop();transition=nullptr;}
+            offset.Y(target);
+            BOOL motion=TRUE;
+            SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION,0,&motion,0);
+            if(!animate||!motion||before==target) return;
+
+            animation::DoubleAnimation change;
+            change.From(before);
+            change.To(target);
+            change.Duration(xaml::DurationHelper::FromTimeSpan(std::chrono::milliseconds(over?120:170)));
+            change.FillBehavior(animation::FillBehavior::Stop);
+            change.EnableDependentAnimation(true);
+            animation::CubicEase ease;
+            ease.EasingMode(animation::EasingMode::EaseOut);
+            change.EasingFunction(ease);
+            animation::Storyboard::SetTarget(change,offset);
+            animation::Storyboard::SetTargetProperty(change,L"Y");
+            transition=animation::Storyboard();
+            transition.Children().Append(change);
+            transition.Begin();
+        } catch(...) { try {offset.Y(target);} catch(...) {} }
+    }
+
+    ~IconLift() noexcept {
+        if(auto owner=button.get()) try {
+            if(entered.value) owner.PointerEntered(entered);
+            if(moved.value) owner.PointerMoved(moved);
+            if(exited.value) owner.PointerExited(exited);
+        } catch(...) {}
+        if(auto icon=image.get()) try {
+            if(unloaded.value) icon.Unloaded(unloaded);
+            auto key=xaml::UIElement::RenderTransformProperty();
+            if(observesTransform) icon.UnregisterPropertyChangedCallback(key,transformChanged);
+            if(transition) transition.Stop();
+            if(!transform||icon.RenderTransform()!=transform) return;
+            if(binding) xaml::Data::BindingOperations::SetBinding(icon,key,binding);
+            else if(original==xaml::DependencyProperty::UnsetValue()) icon.ClearValue(key);
+            else icon.SetValue(key,original);
+        } catch(...) {}
+    }
+};
+
 static bool sameLocalValue(xaml::DependencyProperty const& key,Windows::Foundation::IInspectable const& first,Windows::Foundation::IInspectable const& second) {
     if(first==second) return true;
     if(!first||!second) return false;
@@ -144,6 +249,33 @@ void StyledElement::apply(const Settings& settings) {
     default:break;
     }
 }
+void StyledElement::updateIconLift(const Settings& settings) {
+    if(kind!=Kind::Icon) return;
+    if(!settings.animateIcons) {state->lift.reset();return;}
+    auto icon=state->target.get();
+    auto parent=icon;
+    for(int depth=0;parent&&depth<24;depth++) {
+        parent=media::VisualTreeHelper::GetParent(parent).try_as<xaml::FrameworkElement>();
+        if(!parent) break;
+        auto type=get_class_name(parent);
+        auto parentKind=classify(std::wstring(type),std::wstring(parent.Name()),true);
+        if(parentKind==Kind::Icon) break; // Avoid translating a nested image twice.
+        if(parentKind!=Kind::Button) continue;
+        if(!state->lift||state->lift->button.get()!=parent) {
+            state->lift.reset();
+            auto lift=std::make_shared<IconLift>(icon,parent);
+            lift->attach(lift);
+            state->lift=std::move(lift);
+        }
+        double distance=settings.enabled?std::clamp((settings.height-settings.icon)/2.0-1.0,2.0,5.0):5.0;
+        if(state->lift->distance!=distance) {
+            state->lift->distance=distance;
+            state->lift->setHovered(state->lift->hovered);
+        }
+        return;
+    }
+    state->lift.reset();
+}
 void StyledElement::stopObserving() noexcept {
     *state->writing=true;
     if(auto element=state->target.get()) for(auto& p:state->properties) {
@@ -174,6 +306,7 @@ bool StyledElement::restore() noexcept {
 }
 StyledElement::~StyledElement() {
     if(state.use_count()!=1) return;
+    state->lift.reset();
     restore();
     auto& values=registry();auto found=values.find(identity);
     if(found!=values.end()&&found->second.lock()==state) values.erase(found);

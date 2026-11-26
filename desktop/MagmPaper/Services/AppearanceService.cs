@@ -19,6 +19,7 @@ internal sealed class AppearanceService : IAsyncDisposable
     public AppearanceSettings Settings { get; private set; } = new();
     public WallpaperColors? MatchedColors { get; private set; }
     public bool Active { get; private set; }
+    public bool AnimationActive { get; private set; }
     public string? Error { get; private set; }
     public event Action? Changed;
     public bool Available => OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000) &&
@@ -106,7 +107,7 @@ internal sealed class AppearanceService : IAsyncDisposable
         finally
         {
             foreach (var entry in pending.ToArray()) if (pending.TryRemove(entry.Key, out var request)) request.TrySetException(new IOException(Error ?? "Модуль панели завершился до подтверждения настроек."));
-            if (ReferenceEquals(process, child)) { process = null; Active = false; Changed?.Invoke(); }
+            if (ReferenceEquals(process, child)) { process = null; Active = AnimationActive = false; Changed?.Invoke(); }
         }
     }
     private async Task SendAsync(AppearanceSettings settings)
@@ -120,9 +121,12 @@ internal sealed class AppearanceService : IAsyncDisposable
             await child.StandardInput.WriteLineAsync(settings.Encode(id));
             await child.StandardInput.FlushAsync();
             var result = await request.Task.WaitAsync(TimeSpan.FromSeconds(20));
-            if (result.GetProperty("errors").GetInt32() != 0 || (settings.Enabled && new[] { "frames", "icons", "backgrounds" }.Any(key => !result.TryGetProperty(key, out var count) || count.GetInt32() < 1)))
+            if (result.GetProperty("errors").GetInt32() != 0 || ((settings.Enabled || settings.AnimateIcons) &&
+                result.GetProperty("icons").GetInt32() < 1) || (settings.Enabled &&
+                (result.GetProperty("frames").GetInt32() < 1 || result.GetProperty("backgrounds").GetInt32() < 1)))
                 throw new IOException("Модуль не подтвердил все элементы оформления панели.");
             Active = settings.Enabled;
+            AnimationActive = settings.AnimateIcons;
         }
         finally { pending.TryRemove(id, out _); }
     }
@@ -136,7 +140,9 @@ internal sealed class AppearanceService : IAsyncDisposable
         {
             if (loadError is not null) throw new InvalidDataException(loadError);
             var effective = next.WithWallpaperColors(palette);
-            if (next.Enabled != Active || (next.Enabled && (!wasRunning || effective != previous || Error is not null)))
+            if (next.Enabled != Active || next.AnimateIcons != AnimationActive ||
+                ((next.Enabled || next.AnimateIcons) && (!wasRunning || Error is not null)) ||
+                (next.Enabled && effective != previous))
                 await SendAsync(effective);
             if (Settings != next || !File.Exists(file)) await Task.Run(() => DataFiles.Write(file, next));
             Settings = next; MatchedColors = palette; Error = null; Changed?.Invoke();
@@ -149,7 +155,7 @@ internal sealed class AppearanceService : IAsyncDisposable
         }
         finally { serial.Release(); }
     }
-    public async Task RestoreOnStartAsync() { if (Settings.Enabled && loadError is null) try { await ApplyAsync(Settings); } catch { } }
+    public async Task RestoreOnStartAsync() { if ((Settings.Enabled || Settings.AnimateIcons) && loadError is null) try { await ApplyAsync(Settings); } catch { } }
     public async Task ShutdownAsync(bool final = false)
     {
         if (final) terminating = true;
@@ -162,7 +168,7 @@ internal sealed class AppearanceService : IAsyncDisposable
             catch (TimeoutException) { child.Kill(); await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(2)); }
         }
         catch (InvalidOperationException) { }
-        finally { if (ReferenceEquals(process, child)) process = null; Active = false; Changed?.Invoke(); }
+        finally { if (ReferenceEquals(process, child)) process = null; Active = AnimationActive = false; Changed?.Invoke(); }
     }
     public async ValueTask DisposeAsync() { await ShutdownAsync(final: true); }
 }

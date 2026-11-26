@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using MagmPaper.Graphics;
 using MagmPaper.Services;
@@ -60,6 +61,11 @@ public partial class MainWindow : Window
         Gallery.ApplyRequested += ApplyWallpaperAsync;
         Gallery.StopRequested += item => StopWallpaperAsync(item.Id);
         Gallery.DeleteRequested += DeleteWallpaperAsync;
+        foreach (Border button in TaskbarSampleIcons.Children)
+        {
+            button.MouseEnter += (_, _) => LiftTaskbarSampleIcon(button, true);
+            button.MouseLeave += (_, _) => LiftTaskbarSampleIcon(button, false);
+        }
         Closed += (_, _) => { Gallery.Dispose(); MediaPreview.Dispose(); };
         MediaPreview.Error += message => Status(message, true);
         AppVersionLabel.Text = Views.UpdateNotes.VersionLabel;
@@ -611,7 +617,9 @@ public partial class MainWindow : Window
     private void UpdateAppearanceStatus()
     {
         AppearanceStatus.Text = pendingAppearance is not null ? "Обновление оформления…"
-            : appearance.Error ?? (appearance.Active ? "Оформление MagmPaper включено."
+            : appearance.Error ?? (appearance.Active && appearance.AnimationActive ? "Оформление и анимация значков включены."
+            : appearance.Active ? "Оформление MagmPaper включено."
+            : appearance.AnimationActive ? "Анимация значков включена."
             : appearance.Available ? "Оформление MagmPaper выключено." : "Нужна полная сборка для Windows 11 x64 с модулем панели.");
     }
     private void FillAppearance()
@@ -619,6 +627,7 @@ public partial class MainWindow : Window
         var value = appearance.Settings;
         fillingAppearance = true;
         AppearanceEnabled.IsChecked = value.Enabled;
+        AnimateIconsInput.IsChecked = value.AnimateIcons;
         SetAppearanceSizes(value.Height, value.Icon, value.Button);
         taskbarColor = value.Color;
         GlassInput.IsChecked = value.Glass;
@@ -676,13 +685,41 @@ public partial class MainWindow : Window
         foreach (Border button in TaskbarSampleIcons.Children)
         {
             button.Width = value.Button;
-            if (button.Child is Border icon) icon.Width = icon.Height = value.Icon;
+            if (button.Child is Border icon)
+            {
+                icon.Width = icon.Height = value.Icon;
+                LiftTaskbarSampleIcon(button, button.IsMouseOver);
+            }
         }
+    }
+
+    private void LiftTaskbarSampleIcon(Border button, bool hovered)
+    {
+        if (button.Child is not Border icon) return;
+        bool enabled = AnimateIconsInput.IsChecked == true;
+        double distance = AppearanceEnabled.IsChecked == true ? Math.Clamp((TaskbarSample.Height - icon.Height) / 2 - 1, 2, 5) : 5;
+        double target = enabled && hovered ? -distance : 0;
+        if (icon.RenderTransform is not TranslateTransform move)
+        {
+            if (target == 0) return;
+            icon.RenderTransform = move = new TranslateTransform();
+        }
+        if (Equals(move.GetAnimationBaseValue(TranslateTransform.YProperty), target) && (enabled || !move.HasAnimatedProperties)) return;
+        double before = move.Y;
+        move.Y = target;
+        move.BeginAnimation(TranslateTransform.YProperty, enabled && SystemParameters.ClientAreaAnimation && before != target
+            ? new DoubleAnimation(before, target, TimeSpan.FromMilliseconds(hovered ? 120 : 170))
+            {
+                FillBehavior = System.Windows.Media.Animation.FillBehavior.Stop,
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            }
+            : null);
     }
     private static int Number(Slider input) => (int)Math.Round(input.Value);
     private AppearanceSettings ReadAppearance() => new()
     {
         Enabled = AppearanceEnabled.IsChecked == true,
+        AnimateIcons = AnimateIconsInput.IsChecked == true,
         Height = Number(HeightInput),
         Icon = Number(IconInput),
         Button = Number(ButtonInput),
@@ -724,7 +761,8 @@ public partial class MainWindow : Window
             pendingAppearance = null;
             var palette = next.UsesWallpaperColors() ? await wallpapers.ReadColorsAsync() : null;
             if (pendingAppearance is not null) continue;
-            if (next == appearance.Settings && palette == appearance.MatchedColors && appearance.Error is null && next.Enabled == appearance.Active)
+            if (next == appearance.Settings && palette == appearance.MatchedColors && appearance.Error is null &&
+                next.Enabled == appearance.Active && next.AnimateIcons == appearance.AnimationActive)
             {
                 UpdateAppearanceStatus();
                 continue;

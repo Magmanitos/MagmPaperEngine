@@ -30,6 +30,8 @@ public sealed record AppearanceSettings
     public string Color { get; init; } = "#171923";
     public int Opacity { get; init; } = 80;
     public bool HideWidgets { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool AnimateIcons { get; init; }
     public int Radius { get; init; }
     public bool Glass { get; init; }
     public string GlassColor { get; init; } = "#715CD4";
@@ -50,7 +52,7 @@ public sealed record AppearanceSettings
     public string Encode(int sequence)
     {
         Validate();
-        return FormattableString.Invariant($"{sequence} {(Enabled ? 1 : 0)} {Height} {Icon} {Button} {Convert.ToInt32(Color[1..], 16)} {Opacity} {(HideWidgets ? 1 : 0)} {Radius} {(Glass ? 1 : 0)} {Convert.ToInt32(GlassColor[1..], 16)}");
+        return FormattableString.Invariant($"{sequence} {(Enabled ? 1 : 0)} {Height} {Icon} {Button} {Convert.ToInt32(Color[1..], 16)} {Opacity} {(HideWidgets ? 1 : 0)} {Radius} {(Glass ? 1 : 0)} {Convert.ToInt32(GlassColor[1..], 16)} {(AnimateIcons ? 1 : 0)}");
     }
 }
 

@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
@@ -427,6 +428,19 @@ internal static class SmokeTests
             window.Navigate("taskbar"); window.TaskbarPage.ScrollToTop();
             await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
         }
+        // Exercise the preview without sending a request to the real Explorer.
+        var previewButton = (Border)window.TaskbarSampleIcons.Children[0];
+        var previewIcon = (Border)previewButton.Child;
+        window.AnimateIconsInput.IsChecked = true;
+        previewButton.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, Environment.TickCount) { RoutedEvent = Mouse.MouseEnterEvent });
+        var previewLift = previewIcon.RenderTransform as TranslateTransform;
+        Assert(previewLift is not null && previewLift.HasAnimatedProperties == SystemParameters.ClientAreaAnimation,
+            "taskbar preview did not start the expected hover animation");
+        await Until(() => previewLift!.Y == -5, "taskbar preview icon did not lift");
+        previewButton.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, Environment.TickCount) { RoutedEvent = Mouse.MouseLeaveEvent });
+        await Until(() => previewLift!.Y == 0, "taskbar preview icon did not return to rest");
+        window.AnimateIconsInput.IsChecked = false;
+
         // Change the draft with styling disabled so the smoke test never touches Explorer.
         window.HeightInput.Value = 72;
         window.IconInput.Value = 54;
