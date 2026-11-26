@@ -49,7 +49,7 @@ public:
     Kind kind;
     StyledElement(xaml::FrameworkElement const& element,Kind type);
     ~StyledElement();
-    void apply(const Settings&,bool hostBackdrop=false);
+    void apply(const Settings&);
     void updateIconLift(const Settings&);
     void stopObserving() noexcept;
     bool restore() noexcept;

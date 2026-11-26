@@ -274,7 +274,7 @@ void StyledElement::dimension(xaml::DependencyProperty const& minimum,xaml::Depe
     set(maximum,box_value(value));
     set(minimum,box_value(value));
 }
-void StyledElement::apply(const Settings& settings,bool hostBackdrop) {
+void StyledElement::apply(const Settings& settings) {
     if(!settings.enabled) {if(!restore()) throw hresult_error(E_FAIL);return;}
     const double height=static_cast<double>(settings.height);
     switch(kind) {
@@ -296,7 +296,7 @@ void StyledElement::apply(const Settings& settings,bool hostBackdrop) {
                     if(auto target=state->target.get()) state->glass=GlassVisual::create(target);
                     set(xaml::Shapes::Shape::FillProperty(),xaml::Media::SolidColorBrush(Windows::UI::Color{}));
                 }
-                if(state->glass) state->glass->apply(settings,hostBackdrop);
+                if(state->glass) state->glass->apply(settings);
             } catch(...) {state->glass.reset();}
         } else state->glass.reset();
         if(settings.glass&&settings.opacity&&!state->glass) {

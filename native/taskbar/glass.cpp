@@ -5,6 +5,7 @@
 #include <winrt/Windows.UI.Xaml.Hosting.h>
 #include <array>
 #include <cmath>
+#include <string_view>
 
 namespace magm {
 using namespace winrt;
@@ -24,13 +25,25 @@ struct EffectNode:implements<EffectNode,effects::IGraphicsEffect,effects::IGraph
     std::vector<IInspectable> values;
     effects::IGraphicsEffectSource source;
     hstring name;
-    EffectNode(GUID type,std::vector<IInspectable> properties,effects::IGraphicsEffectSource const& input)
-        :id(type),values(std::move(properties)),source(input) {}
+    EffectNode(GUID type,wchar_t const* label,std::vector<IInspectable> properties,effects::IGraphicsEffectSource const& input)
+        :id(type),values(std::move(properties)),source(input),name(label) {}
 
     hstring Name() const {return name;}
     void Name(hstring const& value) {name=value;}
     HRESULT __stdcall GetEffectId(GUID* result) noexcept override {*result=id;return S_OK;}
-    HRESULT __stdcall GetNamedPropertyMapping(LPCWSTR,UINT*,interop::GRAPHICS_EFFECT_PROPERTY_MAPPING*) noexcept override {return E_INVALIDARG;}
+    HRESULT __stdcall GetNamedPropertyMapping(LPCWSTR property,UINT* index,interop::GRAPHICS_EFFECT_PROPERTY_MAPPING* mapping) noexcept override {
+        if(!property||!index||!mapping) return E_INVALIDARG;
+        constexpr std::wstring_view blur[]{L"BlurAmount",L"Optimization",L"BorderMode"};
+        constexpr std::wstring_view transform[]{L"InterpolationMode",L"BorderMode",L"TransformMatrix",L"Sharpness"};
+        auto assign=[&](auto const& names) {
+            auto match=std::find(std::begin(names),std::end(names),std::wstring_view(property));
+            if(match==std::end(names)) return E_INVALIDARG;
+            *index=static_cast<UINT>(match-std::begin(names));
+            *mapping=interop::GRAPHICS_EFFECT_PROPERTY_MAPPING_DIRECT;
+            return S_OK;
+        };
+        return id==CLSID_D2D1GaussianBlur?assign(blur):assign(transform);
+    }
     HRESULT __stdcall GetPropertyCount(UINT* result) noexcept override {*result=static_cast<UINT>(values.size());return S_OK;}
     HRESULT __stdcall GetSourceCount(UINT* result) noexcept override {*result=1;return S_OK;}
     HRESULT __stdcall GetProperty(UINT index,ABI::Windows::Foundation::IPropertyValue** result) noexcept override {
@@ -58,13 +71,13 @@ composition::CompositionEffectBrush opticalBrush(composition::Compositor const& 
         // A small vertical magnification gives the material an optical offset
         // while keeping the sampling area around the actual taskbar strip.
         constexpr std::array<float,6> matrix{1.f,0.f,0.f,1.11f,0.f,-3.f};
-        auto transform=make<EffectNode>(CLSID_D2D12DAffineTransform,
+        auto transform=make<EffectNode>(CLSID_D2D12DAffineTransform,L"Lens",
             std::vector<IInspectable>{PropertyValue::CreateUInt32(D2D1_2DAFFINETRANSFORM_INTERPOLATION_MODE_LINEAR),
                 PropertyValue::CreateUInt32(D2D1_BORDER_MODE_HARD),PropertyValue::CreateSingleArray(matrix),
                 PropertyValue::CreateSingle(0.f)},input);
         input=transform.as<effects::IGraphicsEffectSource>();
     }
-    auto blur=make<EffectNode>(CLSID_D2D1GaussianBlur,
+    auto blur=make<EffectNode>(CLSID_D2D1GaussianBlur,L"Blur",
         std::vector<IInspectable>{PropertyValue::CreateSingle(8.f),PropertyValue::CreateUInt32(D2D1_GAUSSIANBLUR_OPTIMIZATION_BALANCED),
             PropertyValue::CreateUInt32(D2D1_BORDER_MODE_HARD)},input);
     auto brush=compositor.CreateEffectFactory(blur).CreateBrush();
@@ -119,6 +132,7 @@ GlassVisual::GlassVisual(xaml::FrameworkElement const& target):element(target) {
     innerRim=addRim(innerEdge,.65f);
     previous=ElementCompositionPreview::GetElementChildVisual(target);
     ElementCompositionPreview::SetElementChildVisual(target,root);
+    useBackdrop();
 }
 
 std::shared_ptr<GlassVisual> GlassVisual::create(xaml::FrameworkElement const& target) {
@@ -143,24 +157,21 @@ void GlassVisual::arrange() {
     inset(edge,.8f);inset(innerEdge,2.15f);
 }
 
-void GlassVisual::useBackdrop(bool host) {
-    backdrop.Brush(nullptr);
+void GlassVisual::useBackdrop() {
     try {
-#ifdef MAGM_HARNESS
-        // The fixture draws its backdrop inside the same XAML island.
-        static_cast<void>(host);
+        // The native taskbar is transparent beneath the XAML layer, so its
+        // local composition backdrop contains the desktop behind the strip.
         auto source=compositor.CreateBackdropBrush();
-#else
-        if(!host) return;
-        auto source=compositor.CreateHostBackdropBrush();
-#endif
         try {backdrop.Brush(opticalBrush(compositor,source,true));}
-        catch(...) {try {backdrop.Brush(opticalBrush(compositor,source,false));} catch(...) {backdrop.Brush(source);}}
+        catch(hresult_error const& lens) {
+            backdrop.Comment(L"Lens HRESULT " + std::to_wstring(lens.code().value));
+            try {backdrop.Brush(opticalBrush(compositor,source,false));}
+            catch(...) {backdrop.Brush(source);}
+        }
     } catch(...) {}
 }
 
-void GlassVisual::apply(Settings const& settings,bool host) {
-    if(firstAppearance||hostBackdrop!=host) {useBackdrop(host);hostBackdrop=host;firstAppearance=false;}
+void GlassVisual::apply(Settings const& settings) {
     if(opacity!=settings.opacity) {opacity=settings.opacity;root.Opacity(opacity/100.0f);}
     if(radius!=settings.radius) {radius=settings.radius;arrange();}
     if(color==settings.color&&endColor==settings.glassColor) return;

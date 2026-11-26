@@ -231,15 +231,17 @@ int main() try {
         for(auto child:glass.Children()) {
             if(auto sprite=child.try_as<composition::SpriteVisual>()) {
                 auto brush=sprite.Brush();
+                if(!sprite.Comment().empty()) std::wcout<<sprite.Comment().c_str()<<std::endl;
                 lens|=brush&&brush.Comment()==L"MagmPaper.Glass.Lens"&&brush.try_as<composition::CompositionEffectBrush>()!=nullptr;
                 if(auto tint=brush.try_as<composition::CompositionLinearGradientBrush>();tint&&tint.ColorStops().Size()==5) {
-                    auto color=tint.ColorStops().GetAt(3).Color();
-                    secondTint|=color.R==0xab&&color.G==0xcd&&color.B==0xef;
+                    auto sampledTint=tint.ColorStops().GetAt(3).Color();
+                    secondTint|=sampledTint.R==0xab&&sampledTint.G==0xcd&&sampledTint.B==0xef;
                 }
             }
             if(auto shape=child.try_as<composition::ShapeVisual>()) bevel|=shape.Shapes().Size()==2;
         }
-        require(lens&&secondTint&&bevel,"glass must provide a blurred, displaced backdrop with both tints and two reflective rims");
+        require(lens,"glass did not create the blurred lens brush");
+        require(secondTint&&bevel,"glass did not preserve the two tints and two reflective rims");
         host.send("7 1 64 40 52 1193046 0 1 0 1 11259375 0\n");host.applied(7);
         require(!xaml::Hosting::ElementCompositionPreview::GetElementChildVisual(background)&&
             background.Fill().as<xaml::Media::SolidColorBrush>().Color().A==0&&std::abs(background.RadiusX()-27.52)<.01,

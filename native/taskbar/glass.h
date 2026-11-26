@@ -16,14 +16,13 @@ class GlassVisual {
     composition::CompositionLinearGradientBrush tint{nullptr}, sheen{nullptr}, rim{nullptr}, innerRim{nullptr};
     winrt::event_token sizeChanged{};
     UINT color=UINT_MAX, endColor=UINT_MAX, opacity=UINT_MAX, radius=UINT_MAX;
-    bool hostBackdrop=false, firstAppearance=true;
 
     explicit GlassVisual(xaml::FrameworkElement const& target);
     void arrange();
-    void useBackdrop(bool host);
+    void useBackdrop();
 public:
     static std::shared_ptr<GlassVisual> create(xaml::FrameworkElement const& target);
-    void apply(Settings const&,bool host);
+    void apply(Settings const&);
     ~GlassVisual() noexcept;
 };
 
