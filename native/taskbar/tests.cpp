@@ -1,5 +1,6 @@
 #include "styles.h"
 #include <winrt/Windows.UI.Xaml.Hosting.h>
+#include <winrt/Windows.UI.Xaml.Input.h>
 #include <winrt/Windows.UI.Xaml.Media.Animation.h>
 #include <winrt/Windows.UI.Xaml.Media.Imaging.h>
 #include <windows.ui.xaml.hosting.desktopwindowxamlsource.h>
