@@ -57,15 +57,15 @@ composition::CompositionEffectBrush opticalBrush(composition::Compositor const& 
     if(lens) {
         // A small vertical magnification gives the material an optical offset
         // while keeping the sampling area around the actual taskbar strip.
-        constexpr std::array<float,6> matrix{1,0,0,1.11f,0,-3};
+        constexpr std::array<float,6> matrix{1.f,0.f,0.f,1.11f,0.f,-3.f};
         auto transform=make<EffectNode>(CLSID_D2D12DAffineTransform,
             std::vector<IInspectable>{PropertyValue::CreateUInt32(D2D1_2DAFFINETRANSFORM_INTERPOLATION_MODE_LINEAR),
                 PropertyValue::CreateUInt32(D2D1_BORDER_MODE_HARD),PropertyValue::CreateSingleArray(matrix),
-                PropertyValue::CreateSingle(0)},input);
+                PropertyValue::CreateSingle(0.f)},input);
         input=transform.as<effects::IGraphicsEffectSource>();
     }
     auto blur=make<EffectNode>(CLSID_D2D1GaussianBlur,
-        std::vector<IInspectable>{PropertyValue::CreateSingle(8),PropertyValue::CreateUInt32(D2D1_GAUSSIANBLUR_OPTIMIZATION_BALANCED),
+        std::vector<IInspectable>{PropertyValue::CreateSingle(8.f),PropertyValue::CreateUInt32(D2D1_GAUSSIANBLUR_OPTIMIZATION_BALANCED),
             PropertyValue::CreateUInt32(D2D1_BORDER_MODE_HARD)},input);
     auto brush=compositor.CreateEffectFactory(blur).CreateBrush();
     brush.Comment(lens?L"MagmPaper.Glass.Lens":L"MagmPaper.Glass.Blur");
@@ -148,6 +148,7 @@ void GlassVisual::useBackdrop(bool host) {
     try {
 #ifdef MAGM_HARNESS
         // The fixture draws its backdrop inside the same XAML island.
+        static_cast<void>(host);
         auto source=compositor.CreateBackdropBrush();
 #else
         if(!host) return;
@@ -164,14 +165,14 @@ void GlassVisual::apply(Settings const& settings,bool host) {
     if(radius!=settings.radius) {radius=settings.radius;arrange();}
     if(color==settings.color&&endColor==settings.glassColor) return;
     color=settings.color;endColor=settings.glassColor;
-    setStops(compositor,tint,{{0,glint(color,.18f,115)},{.23f,tintFrom(color,127)},
-        {.52f,tintFrom(color,78)},{.81f,tintFrom(endColor,104)},{1,glint(endColor,.1f,113)}});
-    setStops(compositor,sheen,{{0,glint(color,.82f,58)},{.11f,glint(color,.45f,22)},
-        {.34f,glint(color,.45f,0)},{.70f,tintFrom(0x111020,0)},{.94f,tintFrom(0x111020,59)},{1,glint(endColor,.38f,23)}});
-    setStops(compositor,rim,{{0,glint(color,.95f,223)},{.20f,glint(color,.76f,148)},
-        {.49f,glint(color,.55f,70)},{.68f,glint(endColor,.56f,98)},{1,glint(endColor,.96f,208)}});
-    setStops(compositor,innerRim,{{0,glint(color,.84f,83)},{.43f,glint(color,.8f,18)},
-        {.73f,glint(endColor,.36f,32)},{1,glint(endColor,.89f,106)}});
+    setStops(compositor,tint,{{0.f,glint(color,.18f,115)},{.23f,tintFrom(color,127)},
+        {.52f,tintFrom(color,78)},{.81f,tintFrom(endColor,104)},{1.f,glint(endColor,.1f,113)}});
+    setStops(compositor,sheen,{{0.f,glint(color,.82f,58)},{.11f,glint(color,.45f,22)},
+        {.34f,glint(color,.45f,0)},{.70f,tintFrom(0x111020,0)},{.94f,tintFrom(0x111020,59)},{1.f,glint(endColor,.38f,23)}});
+    setStops(compositor,rim,{{0.f,glint(color,.95f,223)},{.20f,glint(color,.76f,148)},
+        {.49f,glint(color,.55f,70)},{.68f,glint(endColor,.56f,98)},{1.f,glint(endColor,.96f,208)}});
+    setStops(compositor,innerRim,{{0.f,glint(color,.84f,83)},{.43f,glint(color,.8f,18)},
+        {.73f,glint(endColor,.36f,32)},{1.f,glint(endColor,.89f,106)}});
 }
 
 GlassVisual::~GlassVisual() noexcept {

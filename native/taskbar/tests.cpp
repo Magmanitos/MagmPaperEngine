@@ -226,7 +226,7 @@ int main() try {
         require(glass.Opacity()==.25f&&glass.Children().Count()==4&&background.Fill().as<xaml::Media::SolidColorBrush>().Color().A==0,
             "glass must layer the material and leave the underlying XAML shape transparent");
         auto clip=glass.Clip().as<composition::CompositionGeometricClip>().Geometry().as<composition::CompositionRoundedRectangleGeometry>();
-        require(clip.CornerRadius().X==8.f,"glass clip did not follow the configured rounding");
+        require(clip.CornerRadius().x==8.f,"glass clip did not follow the configured rounding");
         bool lens=false,secondTint=false,bevel=false;
         for(auto child:glass.Children()) {
             if(auto sprite=child.try_as<composition::SpriteVisual>()) {
