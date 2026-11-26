@@ -9,10 +9,12 @@ public sealed class TaskbarGlassPreview : FrameworkElement
     private Brush? tint, sheen;
     private Pen? edge, innerEdge;
     private double rounding;
+    private bool showOutline;
 
-    internal void Configure(Color first, Color second, double radius)
+    internal void Configure(Color first, Color second, double radius, bool outline)
     {
-        if (colors != (first, second))
+        bool recolor = colors != (first, second);
+        if (recolor)
         {
             colors = (first, second);
             tint = Gradient(new(0, .12), new(1, .82), (0, Glint(first, .18, 115)), (.23, Alpha(first, 127)),
@@ -26,12 +28,11 @@ public sealed class TaskbarGlassPreview : FrameworkElement
                 (.73, Glint(second, .36, 32)), (1, Glint(second, .89, 106))), .65);
             edge.Freeze();
             innerEdge.Freeze();
-            rounding = radius;
-            InvalidateVisual();
         }
-        else if (rounding != radius)
+        if (recolor || rounding != radius || showOutline != outline)
         {
             rounding = radius;
+            showOutline = outline;
             InvalidateVisual();
         }
     }
@@ -42,8 +43,11 @@ public sealed class TaskbarGlassPreview : FrameworkElement
         if (rect.Width < 5 || rect.Height < 5 || tint is null) return;
         drawing.DrawRoundedRectangle(tint, null, rect, rounding, rounding);
         drawing.DrawRoundedRectangle(sheen, null, rect, rounding, rounding);
-        DrawEdge(drawing, rect, edge!, .8);
-        DrawEdge(drawing, rect, innerEdge!, 2.15);
+        if (showOutline)
+        {
+            DrawEdge(drawing, rect, edge!, .8);
+            DrawEdge(drawing, rect, innerEdge!, 2.15);
+        }
     }
 
     private void DrawEdge(DrawingContext drawing, Rect rect, Pen pen, double inset)

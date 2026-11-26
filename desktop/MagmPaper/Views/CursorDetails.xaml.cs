@@ -6,36 +6,44 @@ using MagmPaper.Windows;
 
 namespace MagmPaper.Views;
 
-public partial class CursorDetails : Window
+public partial class CursorDetails : UserControl
 {
     private readonly CursorSettings settings;
-    private readonly CursorPage.Tile tile;
+    private readonly string name;
     private readonly Func<Func<Task<string>>, Action<string, bool>, Task> runUpdate;
     private readonly Func<Task<Dictionary<string, CursorAsset>>>? loadPack;
     private IReadOnlyDictionary<string, string?> files;
+    private IReadOnlyList<CursorPreviewFrame> frames;
     private Dictionary<string, CursorAsset>? assets;
     private Cursor? cursor;
     private bool loading, closed;
+    internal event Action? BackRequested;
 
     internal CursorDetails(CursorPage.Tile tile, CursorSettings settings,
         Func<Func<Task<string>>, Action<string, bool>, Task> runUpdate,
         Func<Task<Dictionary<string, CursorAsset>>>? loadPack)
     {
-        this.tile = tile;
+        name = tile.Name;
         this.settings = settings;
         this.runUpdate = runUpdate;
         this.loadPack = loadPack;
         files = loadPack is null ? settings.Read() : new Dictionary<string, string?>();
+        frames = tile.Frames;
         InitializeComponent();
-        Title = tile.Name;
+        TitleText.Text = name;
         if (loadPack is not null)
         {
-            ChooseFileButton.Visibility = ResetButton.Visibility = FormatHint.Visibility = Visibility.Collapsed;
+            EditActions.Visibility = FormatHint.Visibility = Visibility.Collapsed;
             HoverArea.MouseEnter += LoadPackPreview;
         }
         Roles.ItemsSource = CursorFiles.Roles;
         Roles.SelectedIndex = 0;
-        Closed += (_, _) => { closed = true; ReleaseCursor(); };
+    }
+
+    internal void CloseDetails()
+    {
+        closed = true;
+        ReleaseCursor();
     }
 
     private async void LoadPackPreview(object sender, MouseEventArgs e)
@@ -61,16 +69,18 @@ public partial class CursorDetails : Window
         if (Roles.SelectedItem is not CursorRole role) return;
         ReleaseCursor();
         RoleTitle.Text = role.Label;
+        var frame = frames.FirstOrDefault(item => item.Label == role.Label);
+        RoleImage.Source = frame?.Picture;
+        RoleImage.Visibility = frame is null ? Visibility.Collapsed : Visibility.Visible;
+        RoleFile.ToolTip = null;
         if (loadPack is not null)
         {
-            var frame = tile.Frames.FirstOrDefault(item => item.Label == role.Label);
-            RoleImage.Source = frame?.Picture;
-            RoleImage.Visibility = frame is null ? Visibility.Collapsed : Visibility.Visible;
-            RoleFile.Text = tile.Name;
+            RoleFile.Text = name;
             HoverText.Text = frame is null ? "В наборе нет этого состояния" : loading ? "Загружаем указатель…" : "Наведите сюда курсор для проверки";
             if (assets is not null && assets.TryGetValue(role.Key, out var asset))
             {
                 RoleFile.Text = asset.Name;
+                RoleFile.ToolTip = asset.Name;
                 try
                 {
                     using var stream = new MemoryStream(asset.Bytes, writable: false);
@@ -98,7 +108,12 @@ public partial class CursorDetails : Window
         try
         {
             await runUpdate(operation, ShowFeedback);
-            if (!closed) { files = settings.Read(); ShowRole(); }
+            if (closed) return;
+            var snapshot = settings.Read();
+            bool changed = !files.SequenceEqual(snapshot);
+            files = snapshot;
+            if (changed) frames = await Task.Run(() => CursorArtwork.Current(snapshot));
+            if (!closed) ShowRole();
         }
         catch (Exception error) { ShowFeedback(error.Message, true); }
         finally { if (!closed) Editor.IsEnabled = true; }
@@ -106,9 +121,9 @@ public partial class CursorDetails : Window
 
     private async void ChooseFileClick(object sender, RoutedEventArgs e)
     {
-        if (Roles.SelectedItem is not CursorRole role) return;
+        if (Roles.SelectedItem is not CursorRole role || Window.GetWindow(this) is not MainWindow owner) return;
         var dialog = new OpenFileDialog { Title = role.Label, Filter = "Курсоры и PNG (*.cur;*.ani;*.png)|*.cur;*.ani;*.png" };
-        if (dialog.ShowDialog(this) != true) return;
+        if (dialog.ShowDialog(owner) != true) return;
         await ChangeAsync(async () =>
         {
             string name = Path.GetFileName(dialog.FileName);
@@ -116,8 +131,8 @@ public partial class CursorDetails : Window
             if (closed) return "Назначение курсора отменено.";
             if (Path.GetExtension(name).Equals(".png", StringComparison.OrdinalIgnoreCase))
             {
-                var picker = new CursorHotspot(bytes) { Owner = this };
-                if (Owner is MainWindow main) main.TrackWindowFrame(picker);
+                var picker = new CursorHotspot(bytes) { Owner = owner };
+                owner.TrackWindowFrame(picker);
                 if (picker.ShowDialog() != true) return "Назначение курсора отменено.";
                 bytes = picker.CursorBytes();
                 name = Path.ChangeExtension(name, ".cur");
@@ -146,5 +161,5 @@ public partial class CursorDetails : Window
     }
 
     private void RoleChanged(object sender, SelectionChangedEventArgs e) => ShowRole();
-    private void DragTitle(object sender, MouseButtonEventArgs e) { if (e.LeftButton == MouseButtonState.Pressed) DragMove(); }
+    private void BackClick(object sender, RoutedEventArgs e) => BackRequested?.Invoke();
 }

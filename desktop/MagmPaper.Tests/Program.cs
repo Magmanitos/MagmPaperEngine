@@ -146,7 +146,7 @@ Test("legacy directory migration preserves settings and refuses conflicts", (_, 
 tests.Add(("appearance wire protocol and motion are compatible", () =>
 {
     var style = new AppearanceSettings { Enabled = true, Color = "#123456", Height = 64, Icon = 40, Button = 52, Opacity = 25, HideWidgets = true, Radius = 8 };
-    Check(style.Encode(1) == "1 1 64 40 52 1193046 25 1 8 0 7429332 0", "native protocol defaults changed");
+    Check(style.Encode(1) == "1 1 64 40 52 1193046 25 1 8 0 7429332 0 1", "native protocol defaults changed");
     Throws(() => (style with { Color = "red" }).Validate()); Throws(() => (style with { Height = 32 }).Validate());
     var a = new MouseMotion(20); a.Target(1, 0, true); a.Advance(20);
     var b = new MouseMotion(20); b.Target(1, 0, true); b.Advance(10); b.Advance(10);
@@ -157,12 +157,16 @@ tests.Add(("appearance wire protocol and motion are compatible", () =>
     Check(new Area(-1920, 0, 0, 1080).Covers(new(-1920, 0, 0, 1032)), "coverage geometry");
 }));
 
-tests.Add(("glass settings preserve legacy data and encode a second tint", () =>
+tests.Add(("glass settings preserve legacy data, tint and outline", () =>
 {
     var old = JsonSerializer.Deserialize<AppearanceSettings>("""{"enabled":true,"color":"#123456","opacity":45}""", DataFiles.Json)!;
     Check(old.Validate().Enabled && !old.Glass && old.Color == "#123456" && old.Opacity == 45, "legacy appearance changed");
     var glass = old with { Glass = true, GlassColor = "#ABCDEF" };
-    Check(glass.Encode(2).EndsWith(" 1 11259375 0", StringComparison.Ordinal), "second tint missing from the wire protocol");
+    Check(glass.GlassOutline && glass.Encode(2).EndsWith(" 1 11259375 0 1", StringComparison.Ordinal),
+        "older settings must preserve the tint and show the outline");
+    var noOutline = glass with { GlassOutline = false };
+    Check(JsonSerializer.Deserialize<AppearanceSettings>(JsonSerializer.Serialize(noOutline, DataFiles.Json), DataFiles.Json) == noOutline
+        && noOutline.Encode(2).EndsWith(" 1 11259375 0 0", StringComparison.Ordinal), "hidden glass outline must persist");
     Check(old.Effect == TaskbarIconEffect.Off, "older settings without an effect must keep hover off");
     var legacyLift = JsonSerializer.Deserialize<AppearanceSettings>("""{"animateIcons":true}""", DataFiles.Json)!;
     Check(legacyLift.Effect == TaskbarIconEffect.Lift && (legacyLift with { IconEffect = TaskbarIconEffect.Off }).Effect == TaskbarIconEffect.Off,
@@ -171,7 +175,7 @@ tests.Add(("glass settings preserve legacy data and encode a second tint", () =>
     {
         var animate = new AppearanceSettings { IconEffect = effect };
         var roundtrip = JsonSerializer.Deserialize<AppearanceSettings>(JsonSerializer.Serialize(animate, DataFiles.Json), DataFiles.Json);
-        Check(roundtrip == animate && animate.Encode(3) == $"3 0 48 24 44 1513763 80 0 0 0 7429332 {(int)effect}",
+        Check(roundtrip == animate && animate.Encode(3) == $"3 0 48 24 44 1513763 80 0 0 0 7429332 {(int)effect} 1",
             "each effect must persist and work independently from appearance");
     }
     Throws(() => (glass with { IconEffect = (TaskbarIconEffect)4 }).Validate());

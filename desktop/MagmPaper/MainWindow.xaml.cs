@@ -632,6 +632,7 @@ public partial class MainWindow : Window
         SetAppearanceSizes(value.Height, value.Icon, value.Button);
         taskbarColor = value.Color;
         GlassInput.IsChecked = value.Glass;
+        GlassOutlineInput.IsChecked = value.GlassOutline;
         WallpaperColorsInput.IsChecked = value.MatchWallpaperColors;
         glassColor = value.GlassColor;
         OpacityInput.Value = value.Opacity;
@@ -676,7 +677,7 @@ public partial class MainWindow : Window
         {
             TaskbarSample.Background = Brushes.Transparent;
             TaskbarGlassArea.Opacity = value.Opacity / 100.0;
-            TaskbarGlassLayer.Configure(color, end, glassRadius);
+            TaskbarGlassLayer.Configure(color, end, glassRadius, value.GlassOutline);
             ClipTaskbarGlass();
         }
         else
@@ -765,6 +766,7 @@ public partial class MainWindow : Window
         Button = Number(ButtonInput),
         Color = taskbarColor,
         Glass = GlassInput.IsChecked == true,
+        GlassOutline = GlassOutlineInput.IsChecked == true,
         GlassColor = glassColor,
         MatchWallpaperColors = WallpaperColorsInput.IsChecked == true,
         Opacity = Number(OpacityInput),

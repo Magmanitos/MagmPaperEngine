@@ -65,8 +65,7 @@ public partial class CursorPage : UserControl
     private void GalleryResized(object sender, SizeChangedEventArgs e) => Gallery.Tag = e.NewSize.Width >= 745 ? 3 : 2;
 
     private static CursorTilePreview? PreviewOf(object sender) =>
-        sender is Border { Child: StackPanel tile } && tile.Children[0] is Button { Content: StackPanel card }
-            ? card.Children[0] as CursorTilePreview : null;
+        sender is Border { Child: Grid tile } ? tile.Children[0] as CursorTilePreview : null;
 
     private void TileEntered(object sender, MouseEventArgs e)
     {
@@ -94,15 +93,24 @@ public partial class CursorPage : UserControl
     private void OpenTileClick(object sender, RoutedEventArgs e)
     {
         if (settings is null || !update.IsCompleted || sender is not FrameworkElement { DataContext: Tile tile }) return;
-        if (Window.GetWindow(this) is not MainWindow owner) return;
         hovered?.Stop();
         hovered = null;
         Func<Task<Dictionary<string, CursorAsset>>>? load = tile.Pack is { } pack ? () => LoadPackAsync(pack) : null;
         try
         {
-            var dialog = new CursorDetails(tile, settings, Begin, load) { Owner = owner };
-            owner.TrackWindowFrame(dialog, dialog.Frame.CornerRadius.TopLeft);
-            dialog.ShowDialog();
+            var details = new CursorDetails(tile, settings, Begin, load);
+            details.BackRequested += () =>
+            {
+                details.CloseDetails();
+                DetailsHost.Content = null;
+                DetailsHost.Visibility = Visibility.Collapsed;
+                PageScroll.Visibility = Visibility.Visible;
+                if (sender is FrameworkElement opener) opener.Focus();
+            };
+            DetailsHost.Content = details;
+            PageScroll.Visibility = Visibility.Collapsed;
+            DetailsHost.Visibility = Visibility.Visible;
+            details.BackButton.Focus();
         }
         catch (Exception error) { ShowFeedback(error.Message, true); }
     }

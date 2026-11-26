@@ -71,6 +71,7 @@ int main() try {
     Settings settings{};settings.sequence=1;require(valid(settings),"valid default settings");
     settings.icon=64;require(!valid(settings),"reject oversized icon");settings.icon=24;
     settings.iconEffect=4;require(!valid(settings),"reject invalid animation flag");settings.iconEffect=0;
+    settings.glassOutline=2;require(!valid(settings),"reject invalid glass outline flag");settings.glassOutline=1;
     RECT monitor{-1920,0,0,1080};auto rect=barRect(monitor,144,64);
     require(rect.top==984&&rect.left==-1920&&rect.right==0,"physical geometry and negative monitor origin");
     WINDOWPOS proposed{};proposed.flags=SWP_NOMOVE;proposed.x=123;proposed.y=456;proposed.cx=1920;proposed.cy=48;
@@ -201,7 +202,7 @@ int main() try {
     }
     std::cout<<"PASS: direct XAML styling and restoration. Starting helper attachment."<<std::endl;
     {
-        Host host;host.send("1 1 64 40 52 1193046 25 1 8 0 0 0\n");host.applied(1);
+        Host host;host.send("1 1 64 40 52 1193046 25 1 8 0 0 0 1\n");host.applied(1);
         require(frame.Height()==64&&icon.Width()==40,"external module changed real XAML elements");
         require(background.Fill().as<xaml::Media::SolidColorBrush>().Color().A==64,"external module background alpha");
         RECT actual{};GetWindowRect(window,&actual);require(actual.bottom-actual.top==MulDiv(64,GetDpiForWindow(window),96),"native taskbar window resized");
@@ -209,7 +210,7 @@ int main() try {
         deferResizeAtHeight=actual.bottom-actual.top;
         for(auto sizes:std::vector<std::pair<int,int>>{{80,48},{40,24},{96,64},{64,40}}) {
             sequence++;
-            auto command=std::to_string(sequence)+" 1 "+std::to_string(sizes.first)+" "+std::to_string(sizes.second)+" "+std::to_string(std::max(52,sizes.second))+" 1193046 25 1 8 0 0 0\n";
+            auto command=std::to_string(sequence)+" 1 "+std::to_string(sizes.first)+" "+std::to_string(sizes.second)+" "+std::to_string(std::max(52,sizes.second))+" 1193046 25 1 8 0 0 0 1\n";
             host.send(command.c_str());host.applied(sequence);
             require(deferResizeAtHeight==0,"the simulated shell layout did not defer the resize");
             MONITORINFO screen{sizeof(screen)};GetMonitorInfoW(MonitorFromWindow(window,MONITOR_DEFAULTTONEAREST),&screen);GetWindowRect(window,&actual);
@@ -220,14 +221,15 @@ int main() try {
             require(!(sizeOnly.flags&SWP_NOMOVE)&&sizeOnly.y+sizeOnly.cy==screen.rcMonitor.bottom,
                 "hook failed to anchor a native size-only request at the screen bottom");
         }
-        host.send("6 1 64 40 52 1193046 25 1 8 1 11259375 0\n");host.applied(6);
+        host.send("6 1 64 40 52 1193046 25 1 8 1 11259375 0 1\n");host.applied(6);
         namespace composition=Windows::UI::Composition;
         auto glass=xaml::Hosting::ElementCompositionPreview::GetElementChildVisual(background).as<composition::ContainerVisual>();
         require(glass.Opacity()==.25f&&glass.Children().Count()==4&&background.Fill().as<xaml::Media::SolidColorBrush>().Color().A==0,
             "glass must layer the material and leave the underlying XAML shape transparent");
         auto clip=glass.Clip().as<composition::CompositionGeometricClip>().Geometry().as<composition::CompositionRoundedRectangleGeometry>();
         require(clip.CornerRadius().x==8.f,"glass clip did not follow the configured rounding");
-        bool lens=false,secondTint=false,bevel=false;
+        bool lens=false,secondTint=false;
+        composition::ShapeVisual rims{nullptr};
         for(auto child:glass.Children()) {
             if(auto sprite=child.try_as<composition::SpriteVisual>()) {
                 auto brush=sprite.Brush();
@@ -241,25 +243,30 @@ int main() try {
                     secondTint|=sampledTint.R==0xab&&sampledTint.G==0xcd&&sampledTint.B==0xef;
                 }
             }
-            if(auto shape=child.try_as<composition::ShapeVisual>()) bevel|=shape.Shapes().Size()==2;
+            if(auto shape=child.try_as<composition::ShapeVisual>()) rims=shape;
         }
         require(lens,"glass did not create the blurred lens brush");
-        require(secondTint&&bevel,"glass did not preserve the two tints and two reflective rims");
-        host.send("7 1 64 40 52 1193046 25 1 0 1 11259375 0\n");host.applied(7);
+        require(secondTint&&rims&&rims.Shapes().Size()==2&&rims.IsVisible(),"glass did not preserve the two tints and two reflective rims");
+        host.send("7 1 64 40 52 1193046 25 1 0 1 11259375 0 1\n");host.applied(7);
         require(clip.CornerRadius().x==0&&background.RadiusX()==0&&background.RadiusY()==0,
             "radius zero must make the glass and native rectangle square");
-        host.send("8 1 64 40 52 1193046 0 1 0 1 11259375 0\n");host.applied(8);
+        host.send("8 1 64 40 52 1193046 25 1 0 1 11259375 0 0\n");host.applied(8);
+        require(!rims.IsVisible()&&glass.Opacity()==.25f&&xaml::Hosting::ElementCompositionPreview::GetElementChildVisual(background)==glass,
+            "hiding the outline must preserve the glass material and opacity");
+        host.send("9 1 64 40 52 1193046 25 1 0 1 11259375 0 1\n");host.applied(9);
+        require(rims.IsVisible(),"the outline must reappear when enabled");
+        host.send("10 1 64 40 52 1193046 0 1 0 1 11259375 0 1\n");host.applied(10);
         require(!xaml::Hosting::ElementCompositionPreview::GetElementChildVisual(background)&&
             background.Fill().as<xaml::Media::SolidColorBrush>().Color().A==0,
             "zero opacity must remove the glass");
-        host.send("9 0 64 40 52 1193046 25 1 8 0 0 0\n");host.applied(9);
+        host.send("11 0 64 40 52 1193046 25 1 8 0 0 0 1\n");host.applied(11);
         require(frame.Height()==48&&icon.Width()==24&&widgets.Visibility()==xaml::Visibility::Visible,"disable restores native XAML");
-        host.send("10 1 64 40 52 1193046 25 1 8 0 0 0\n");host.applied(10);host.crash();
+        host.send("12 1 64 40 52 1193046 25 1 8 0 0 0 1\n");host.applied(12);host.crash();
         until([&]{return frame.Height()==48&&icon.Width()==24;},"host crash did not restore XAML");
         std::cout<<"PASS: helper attachment and crash restoration."<<std::endl;
     }
     {
-        Host restarted;restarted.send("1 1 60 32 48 3355443 50 0 0 0 0 0\n");restarted.applied(1);
+        Host restarted;restarted.send("1 1 60 32 48 3355443 50 0 0 0 0 0 1\n");restarted.applied(1);
         require(frame.Height()==60&&icon.Width()==32,"reconnect after host termination");
         // A running application can recreate its icon before the template has
         // assigned its name. Discover it after that first diagnostic callback.
@@ -286,7 +293,7 @@ int main() try {
         auto layout=frame.RegisterPropertyChangedCallback(xaml::FrameworkElement::HeightProperty(),[&](auto const&,auto const&){
             if(frame.Height()==48) {icon.Width(24);icon.Height(24);}
         });
-        Host dependent;dependent.send("1 1 72 48 56 3355443 50 0 0 0 0 0\n");dependent.applied(1);
+        Host dependent;dependent.send("1 1 72 48 56 3355443 50 0 0 0 0 0 1\n");dependent.applied(1);
         icon.Width(32);icon.Height(32);dependent.close();
         until([&]{return frame.Height()==48&&icon.Width()==24&&icon.Height()==24;},"container restoration overwrote Explorer's recalculated icon size");
         frame.UnregisterPropertyChangedCallback(xaml::FrameworkElement::HeightProperty(),layout);
@@ -331,7 +338,7 @@ int main() try {
         };
         auto offset=[&](xaml::Controls::Image const& image){return effect(image).TranslateY();};
         pointAt(170);
-        Host animated;animated.send("1 0 48 24 44 3355443 50 0 0 0 0 1\n");animated.applied(1);
+        Host animated;animated.send("1 0 48 24 44 3355443 50 0 0 0 0 1 1\n");animated.applied(1);
         until([&]{return first.RenderTransform().try_as<xaml::Media::TransformGroup>() &&
             second.RenderTransform().try_as<xaml::Media::TransformGroup>();},"animation-only mode did not attach to both images");
         require(first.RenderTransform().as<xaml::Media::TransformGroup>().Children().GetAt(0)==originalMove,
@@ -350,12 +357,12 @@ int main() try {
         pointAt(170);
         until([&]{return offset(second)==0;},"leaving the buttons did not lower the icon");
 
-        animated.send("2 0 48 24 44 3355443 50 0 0 0 0 2\n");animated.applied(2);
+        animated.send("2 0 48 24 44 3355443 50 0 0 0 0 2 1\n");animated.applied(2);
         pointAt(32);
         until([&]{return offset(first)==-5&&effect(second).Rotation()==-8;},"carousel did not tilt its right neighbor");
         pointAt(103);
         until([&]{return offset(second)==-5&&effect(first).Rotation()==8&&effect(second).Rotation()==0;},"carousel did not transfer to the neighboring icon");
-        animated.send("3 0 48 24 44 3355443 50 0 0 0 0 3\n");animated.applied(3);
+        animated.send("3 0 48 24 44 3355443 50 0 0 0 0 3 1\n");animated.applied(3);
         try {
             until([&]{return std::abs(effect(second).ScaleX()-1.14)<.001&&effect(first).ScaleX()==1&&effect(first).Rotation()==0&&offset(second)==0;},
                 "zoom changed a neighbor or did not reset the carousel pose");
@@ -367,7 +374,7 @@ int main() try {
 
         xaml::Media::ScaleTransform shellMove;shellMove.ScaleX(1.1);
         first.RenderTransform(shellMove);
-        animated.send("4 0 48 24 44 3355443 50 0 0 0 0 0\n");animated.applied(4);
+        animated.send("4 0 48 24 44 3355443 50 0 0 0 0 0 1\n");animated.applied(4);
         require(first.RenderTransform()==shellMove&&!second.RenderTransform().try_as<xaml::Media::TransformGroup>(),
             "disabling animation must restore the latest native transform");
         animated.close();

@@ -120,7 +120,7 @@ GlassVisual::GlassVisual(xaml::FrameworkElement const& target):element(target) {
     tint=addFilm(0,.12f,1,.82f);
     sheen=addFilm(0,0,0,1);
 
-    auto borders=compositor.CreateShapeVisual();borders.RelativeSizeAdjustment({1,1});root.Children().InsertAtTop(borders);
+    borders=compositor.CreateShapeVisual();borders.RelativeSizeAdjustment({1,1});root.Children().InsertAtTop(borders);
     auto addRim=[&](composition::CompositionRoundedRectangleGeometry& geometry,float width) {
         geometry=compositor.CreateRoundedRectangleGeometry();
         auto brush=compositor.CreateLinearGradientBrush();brush.StartPoint({0,.14f});brush.EndPoint({1,.86f});
@@ -182,6 +182,8 @@ void GlassVisual::useBackdrop() {
 void GlassVisual::apply(Settings const& settings) {
     if(opacity!=settings.opacity) {opacity=settings.opacity;root.Opacity(opacity/100.0f);}
     if(radius!=settings.radius) {radius=settings.radius;arrange();}
+    bool outlineVisible=settings.glassOutline!=0;
+    if(borders.IsVisible()!=outlineVisible) borders.IsVisible(outlineVisible);
     if(color==settings.color&&endColor==settings.glassColor) return;
     color=settings.color;endColor=settings.glassColor;
     setStops(compositor,tint,{{0.f,glint(color,.18f,115)},{.23f,tintFrom(color,127)},

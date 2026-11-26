@@ -14,6 +14,7 @@ class GlassVisual {
     composition::SpriteVisual backdrop{nullptr};
     composition::CompositionRoundedRectangleGeometry outline{nullptr}, edge{nullptr}, innerEdge{nullptr};
     composition::CompositionLinearGradientBrush tint{nullptr}, sheen{nullptr}, rim{nullptr}, innerRim{nullptr};
+    composition::ShapeVisual borders{nullptr};
     winrt::event_token sizeChanged{};
     UINT color=UINT_MAX, endColor=UINT_MAX, opacity=UINT_MAX, radius=UINT_MAX;
 

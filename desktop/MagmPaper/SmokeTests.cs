@@ -468,13 +468,17 @@ internal static class SmokeTests
             window.TaskbarSample.CornerRadius.TopLeft == 0 &&
             window.GlassSwatch.Background is SolidColorBrush endTint && endTint.Color == Color.FromRgb(0xAB, 0xCD, 0xEF),
             "glass preview does not reflect the selected tint, opacity and square corners");
+        window.GlassOutlineInput.IsChecked = false;
+        window.GlassOutlineInput.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));
+        Assert(window.TaskbarGlassArea.Visibility == Visibility.Visible && window.TaskbarGlassArea.Opacity == .43,
+            "hiding the outline changed the glass preview");
         window.OpacityInput.Value = 0;
         Assert(window.TaskbarGlassArea.Visibility == Visibility.Collapsed && window.TaskbarSample.Background == Brushes.Transparent,
             "zero opacity should hide the glass preview");
         window.OpacityInput.Value = 43;
         await window.FinishTaskbarUpdatesAsync();
         draft = DataFiles.Read<AppearanceSettings>(Path.Combine(window.Library.DirectoryPath, "taskbar-appearance.json"));
-        Assert(draft.Glass && draft.GlassColor == "#ABCDEF", "glass settings were not saved");
+        Assert(draft.Glass && draft.GlassColor == "#ABCDEF" && !draft.GlassOutline, "glass settings were not saved");
         window.WallpaperColorsInput.IsChecked = true;
         window.WallpaperColorsInput.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));
         await window.FinishTaskbarUpdatesAsync();
@@ -519,7 +523,7 @@ internal static class SmokeTests
         var container = (ContentPresenter)packs.ItemContainerGenerator.ContainerFromIndex(1);
         var tile = (Border)container.ContentTemplate.FindName("Tile", container);
         var openPack = (Button)container.ContentTemplate.FindName("Open", container);
-        var preview = (Views.CursorTilePreview)((StackPanel)openPack.Content).Children[0];
+        var preview = (Views.CursorTilePreview)container.ContentTemplate.FindName("Preview", container);
         Assert(preview.Caption.Text == "Основной указатель" && preview.Incoming.Source is not null, "cursor tile must start with its primary pointer");
         tile.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, Environment.TickCount) { RoutedEvent = Mouse.MouseEnterEvent });
         Assert(preview.Cycling && preview.Caption.Text == "Основной указатель", "cursor slideshow must wait before changing states");
@@ -533,20 +537,18 @@ internal static class SmokeTests
         var openCurrent = (Button)current.ContentTemplate.FindName("Open", current);
         foreach (var (button, isPack) in new[] { (openPack, true), (openCurrent, false) })
         {
-            var check = window.Dispatcher.InvokeAsync(() =>
-            {
-                var details = window.OwnedWindows.OfType<Views.CursorDetails>().Single(item => item.IsVisible);
-                try
-                {
-                    Assert(details.Roles.Items.Count == CursorFiles.Roles.Count, "cursor window did not expose all states");
-                    details.Roles.SelectedIndex = 1;
-                    Assert(details.RoleTitle.Text == CursorFiles.Roles[1].Label && (isPack ? details.RoleImage.Source is not null : details.ChooseFileButton.IsVisible),
-                        "cursor window did not show the selected role and its controls");
-                }
-                finally { details.Close(); }
-            }, DispatcherPriority.ApplicationIdle);
             button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            await check;
+            await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+            var details = cursorPage.DetailsHost.Content as Views.CursorDetails
+                ?? throw new InvalidOperationException("cursor tile did not open its details");
+            Assert(details.IsVisible && !cursorScroll.IsVisible && details.ActualWidth >= cursorPage.ActualWidth - 1 &&
+                details.Roles.Items.Count == CursorFiles.Roles.Count, "wide cursor details did not open with all states");
+            details.Roles.SelectedIndex = 1;
+            Assert(details.RoleTitle.Text == CursorFiles.Roles[1].Label &&
+                (isPack ? details.RoleImage.Source is not null : details.ChooseFileButton.IsVisible),
+                "cursor details did not show the selected role and its controls");
+            details.BackButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert(cursorScroll.IsVisible && cursorPage.DetailsHost.Content is null, "back button did not reopen the cursor gallery");
         }
         var source = BitmapSource.Create(2, 2, 96, 96, PixelFormats.Bgra32, null,
             new byte[] { 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255 }, 8);

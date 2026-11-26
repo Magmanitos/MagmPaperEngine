@@ -174,7 +174,9 @@ int wmain(int argc,wchar_t** argv) {
         while(std::getline(std::cin,line)) {
             if(line.size()>256) break;
             auto value=std::make_unique<Settings>();std::istringstream in(line);std::string extra;
-            if(!(in>>value->sequence>>value->enabled>>value->height>>value->icon>>value->button>>value->color>>value->opacity>>value->hideWidgets>>value->radius>>value->glass>>value->glassColor>>value->iconEffect)||in>>extra||!valid(*value)) break;
+            if(!(in>>value->sequence>>value->enabled>>value->height>>value->icon>>value->button>>value->color>>value->opacity
+                >>value->hideWidgets>>value->radius>>value->glass>>value->glassColor>>value->iconEffect>>value->glassOutline)
+                ||in>>extra||!valid(*value)) break;
             if(!PostMessageW(window,Configure,0,reinterpret_cast<LPARAM>(value.get()))) break;
             value.release();
         }

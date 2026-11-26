@@ -169,6 +169,7 @@
        </DockPanel>
        <CheckBox x:Name="GlassInput" Content="Объёмное стекло" Click="AppearanceChanged"/>
        <StackPanel x:Name="GlassColors" Visibility="Collapsed">
+        <CheckBox x:Name="GlassOutlineInput" Content="Обводка стекла" IsChecked="True" Click="AppearanceChanged"/>
         <CheckBox x:Name="WallpaperColorsInput" Content="Подбирать цвета под обои" Click="AppearanceChanged"/>
         <TextBlock x:Name="WallpaperColorsStatus" Style="{StaticResource Muted}" Visibility="Collapsed" FontSize="12" Margin="0,1,0,6"/>
         <DockPanel Margin="0,2,0,6">
