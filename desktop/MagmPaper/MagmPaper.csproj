@@ -25,6 +25,8 @@
     <Content Include="../ThirdParty/DOTNET-LICENSE.txt" Link="Licenses/DOTNET.txt" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../ThirdParty/DOTNET-NOTICES.txt" Link="Licenses/DOTNET-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../ThirdParty/WINDOWS-DESKTOP-LICENSE.txt" Link="Licenses/WINDOWS-DESKTOP.txt" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../ThirdParty/CURSOR-PREVIEWS*.txt" Link="Licenses/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <EmbeddedResource Include="Assets/CursorPreviews/*.png" LogicalName="MagmPaper.CursorPreviews.%(Filename)%(Extension)" />
     <EmbeddedResource Include="../../build/icon.ico" Link="Assets/icon.ico" />
     <EmbeddedResource Include="Assets/example.glsl" />
     <EmbeddedResource Include="../MagmPaper.Tests/Fixtures/sample.gif" LogicalName="MagmPaper.Smoke.sample.gif" />

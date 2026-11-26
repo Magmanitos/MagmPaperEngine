@@ -1,0 +1,13 @@
+The files in MagmPaper/Assets/CursorPreviews are previews derived from
+Bibata Modern Ice, Bibata Modern Classic, Bibata Modern Amber, and GoogleDot Black
+by ful1e5 and their contributors. The cursor artwork and these derived previews
+are distributed under GNU GPL version 3. See CURSOR-PREVIEWS-GPL-3.0.txt.
+
+The original artwork, sources, and release archives are available at:
+https://github.com/ful1e5/Bibata_Cursor/releases/tag/v2.0.7
+https://github.com/ful1e5/Google_Cursor/releases/tag/v2.0.0
+
+The preview images use the Regular variant. Each vertical 64-pixel cell is a
+static rendering of a CUR, or the first frame of an ANI, in CursorFiles.Roles
+order. A blank cell represents a state absent from that pack. The cursors are
+centered within their cells and limited to a size of 64×64 pixels.

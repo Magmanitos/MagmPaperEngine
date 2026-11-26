@@ -115,8 +115,12 @@
       </StackPanel></Border>
       <Border Grid.Column="2" Style="{StaticResource Card}"><StackPanel>
        <TextBlock Text="Оформление панели" FontSize="21"/><TextBlock x:Name="AppearanceStatus" Style="{StaticResource Muted}" Margin="0,12,0,12" AutomationProperties.LiveSetting="Polite"/><CheckBox x:Name="AppearanceEnabled" Click="AppearanceChanged" Content="Включить оформление MagmPaper"/>
-       <CheckBox x:Name="AnimateIconsInput" Click="AppearanceChanged" Content="Поднимать значки при наведении"
-                 ToolTip="Действует отдельно от оформления MagmPaper. Наведите курсор на значок в предпросмотре."/>
+       <TextBlock Text="Анимация значков" Margin="0,8,0,0"/>
+       <ComboBox x:Name="IconEffectInput" SelectedIndex="0" SelectionChanged="AppearanceChanged" AutomationProperties.Name="Анимация значков"
+                 ToolTip="Наведите курсор на цветные значки в предпросмотре.">
+        <ComboBoxItem Content="Выключена"/><ComboBoxItem Content="Подъём"/>
+        <ComboBoxItem Content="Карусель"/><ComboBoxItem Content="Мягкий масштаб"/>
+       </ComboBox>
        <Slider x:Name="HeightInput" Style="{StaticResource SettingsSlider}" AutomationProperties.Name="Высота панели, px" Minimum="32" Maximum="96" Value="48" ValueChanged="AppearanceChanged"/>
        <Slider x:Name="IconInput" Style="{StaticResource SettingsSlider}" AutomationProperties.Name="Размер значков, px" Minimum="16" Maximum="64" Value="24" ValueChanged="AppearanceChanged"/>
        <Slider x:Name="ButtonInput" Style="{StaticResource SettingsSlider}" AutomationProperties.Name="Ширина кнопок, px" Minimum="28" Maximum="100" Value="44" ValueChanged="AppearanceChanged"/>

@@ -32,6 +32,7 @@ public partial class MainWindow : Window
     private bool editing, dirty, filling, busy, ready;
     private bool fillingBehavior, fillingAppearance;
     private AppearanceSettings? pendingAppearance;
+    private Border? taskbarSampleHover;
     private string taskbarColor = "#171923", glassColor = "#715CD4";
     private Task appearanceUpdates = Task.CompletedTask;
     private Task behaviorUpdate = Task.CompletedTask;
@@ -63,8 +64,8 @@ public partial class MainWindow : Window
         Gallery.DeleteRequested += DeleteWallpaperAsync;
         foreach (Border button in TaskbarSampleIcons.Children)
         {
-            button.MouseEnter += (_, _) => LiftTaskbarSampleIcon(button, true);
-            button.MouseLeave += (_, _) => LiftTaskbarSampleIcon(button, false);
+            button.MouseEnter += (_, _) => SetTaskbarSampleHover(button);
+            button.MouseLeave += (_, _) => { if (ReferenceEquals(taskbarSampleHover, button)) SetTaskbarSampleHover(null); };
         }
         Closed += (_, _) => { Gallery.Dispose(); MediaPreview.Dispose(); };
         MediaPreview.Error += message => Status(message, true);
@@ -617,9 +618,9 @@ public partial class MainWindow : Window
     private void UpdateAppearanceStatus()
     {
         AppearanceStatus.Text = pendingAppearance is not null ? "Обновление оформления…"
-            : appearance.Error ?? (appearance.Active && appearance.AnimationActive ? "Оформление и анимация значков включены."
+            : appearance.Error ?? (appearance.Active && appearance.ActiveEffect != TaskbarIconEffect.Off ? "Оформление и анимация значков включены."
             : appearance.Active ? "Оформление MagmPaper включено."
-            : appearance.AnimationActive ? "Анимация значков включена."
+            : appearance.ActiveEffect != TaskbarIconEffect.Off ? "Анимация значков включена."
             : appearance.Available ? "Оформление MagmPaper выключено." : "Нужна полная сборка для Windows 11 x64 с модулем панели.");
     }
     private void FillAppearance()
@@ -627,7 +628,7 @@ public partial class MainWindow : Window
         var value = appearance.Settings;
         fillingAppearance = true;
         AppearanceEnabled.IsChecked = value.Enabled;
-        AnimateIconsInput.IsChecked = value.AnimateIcons;
+        IconEffectInput.SelectedIndex = (int)value.Effect;
         SetAppearanceSizes(value.Height, value.Icon, value.Button);
         taskbarColor = value.Color;
         GlassInput.IsChecked = value.Glass;
@@ -685,30 +686,59 @@ public partial class MainWindow : Window
         foreach (Border button in TaskbarSampleIcons.Children)
         {
             button.Width = value.Button;
-            if (button.Child is Border icon)
+            if (button.Child is Border icon) icon.Width = icon.Height = value.Icon;
+        }
+        UpdateTaskbarSampleEffects(value.Effect);
+    }
+
+    private void SetTaskbarSampleHover(Border? hovered)
+    {
+        taskbarSampleHover = hovered;
+        UpdateTaskbarSampleEffects(SelectedIconEffect);
+    }
+
+    private TaskbarIconEffect SelectedIconEffect => (TaskbarIconEffect)Math.Max(0, IconEffectInput.SelectedIndex);
+
+    internal void UpdateTaskbarSampleEffects(TaskbarIconEffect effect)
+    {
+        int hovered = taskbarSampleHover is null ? -1 : TaskbarSampleIcons.Children.IndexOf(taskbarSampleHover);
+        for (int index = 0; index < TaskbarSampleIcons.Children.Count; index++)
+        {
+            var icon = (Border)((Border)TaskbarSampleIcons.Children[index]).Child;
+            double distance = AppearanceEnabled.IsChecked == true ? Math.Clamp((TaskbarSample.Height - icon.Height) / 2 - 1, 2, 5) : 5;
+            bool selected = index == hovered;
+            bool adjacent = hovered >= 0 && Math.Abs(index - hovered) == 1;
+            (double scale, double angle, double y) = effect switch
             {
-                icon.Width = icon.Height = value.Icon;
-                LiftTaskbarSampleIcon(button, button.IsMouseOver);
+                TaskbarIconEffect.Lift when selected => (1, 0, -distance),
+                TaskbarIconEffect.Carousel when selected => (1, 0, -distance),
+                TaskbarIconEffect.Carousel when adjacent => (.97, index < hovered ? 8 : -8, -.36 * distance),
+                TaskbarIconEffect.Zoom when selected => (1.14, 0, 0),
+                _ => (1, 0, 0)
+            };
+            if (icon.RenderTransform is not TransformGroup transform)
+            {
+                if (scale == 1 && angle == 0 && y == 0) continue;
+                transform = new TransformGroup { Children = { new ScaleTransform(), new RotateTransform(), new TranslateTransform() } };
+                icon.RenderTransformOrigin = new Point(.5, .5);
+                icon.RenderTransform = transform;
             }
+            bool useMotion = effect != TaskbarIconEffect.Off && SystemParameters.ClientAreaAnimation;
+            int duration = selected || (effect == TaskbarIconEffect.Carousel && adjacent) ? 120 : 170;
+            AnimatePreviewProperty(transform.Children[0], ScaleTransform.ScaleXProperty, scale, duration, useMotion);
+            AnimatePreviewProperty(transform.Children[0], ScaleTransform.ScaleYProperty, scale, duration, useMotion);
+            AnimatePreviewProperty(transform.Children[1], RotateTransform.AngleProperty, angle, duration, useMotion);
+            AnimatePreviewProperty(transform.Children[2], TranslateTransform.YProperty, y, duration, useMotion);
         }
     }
 
-    private void LiftTaskbarSampleIcon(Border button, bool hovered)
+    private static void AnimatePreviewProperty(Transform target, DependencyProperty property, double value, int duration, bool animate)
     {
-        if (button.Child is not Border icon) return;
-        bool enabled = AnimateIconsInput.IsChecked == true;
-        double distance = AppearanceEnabled.IsChecked == true ? Math.Clamp((TaskbarSample.Height - icon.Height) / 2 - 1, 2, 5) : 5;
-        double target = enabled && hovered ? -distance : 0;
-        if (icon.RenderTransform is not TranslateTransform move)
-        {
-            if (target == 0) return;
-            icon.RenderTransform = move = new TranslateTransform();
-        }
-        if (Equals(move.GetAnimationBaseValue(TranslateTransform.YProperty), target) && (enabled || !move.HasAnimatedProperties)) return;
-        double before = move.Y;
-        move.Y = target;
-        move.BeginAnimation(TranslateTransform.YProperty, enabled && SystemParameters.ClientAreaAnimation && before != target
-            ? new DoubleAnimation(before, target, TimeSpan.FromMilliseconds(hovered ? 120 : 170))
+        if (Equals(target.GetAnimationBaseValue(property), value) && (animate || !target.HasAnimatedProperties)) return;
+        double before = (double)target.GetValue(property);
+        target.SetValue(property, value);
+        target.BeginAnimation(property, animate && before != value
+            ? new DoubleAnimation(before, value, TimeSpan.FromMilliseconds(duration))
             {
                 FillBehavior = System.Windows.Media.Animation.FillBehavior.Stop,
                 EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
@@ -719,7 +749,7 @@ public partial class MainWindow : Window
     private AppearanceSettings ReadAppearance() => new()
     {
         Enabled = AppearanceEnabled.IsChecked == true,
-        AnimateIcons = AnimateIconsInput.IsChecked == true,
+        IconEffect = SelectedIconEffect,
         Height = Number(HeightInput),
         Icon = Number(IconInput),
         Button = Number(ButtonInput),
@@ -762,7 +792,7 @@ public partial class MainWindow : Window
             var palette = next.UsesWallpaperColors() ? await wallpapers.ReadColorsAsync() : null;
             if (pendingAppearance is not null) continue;
             if (next == appearance.Settings && palette == appearance.MatchedColors && appearance.Error is null &&
-                next.Enabled == appearance.Active && next.AnimateIcons == appearance.AnimationActive)
+                next.Enabled == appearance.Active && next.Effect == appearance.ActiveEffect)
             {
                 UpdateAppearanceStatus();
                 continue;

@@ -20,6 +20,7 @@ namespace xaml=winrt::Windows::UI::Xaml;
 enum class Kind { None, Frame, Content, Tray, Background, Stroke, Icon, Button, Widgets };
 Kind classify(const std::wstring& type,const std::wstring& name,bool inTaskbar);
 struct IconLift;
+void refreshIconEffects();
 class StyledElement {
     struct Property {
         xaml::DependencyProperty key{nullptr};

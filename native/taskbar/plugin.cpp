@@ -171,7 +171,7 @@ LONG restoreElements(Context& ctx) {
 }
 void update(Context& ctx) {
     Settings value{};if(!shared||!read(shared,value)) return;
-    if(stopping) {value.enabled=0;value.animateIcons=0;}
+    if(stopping) {value.enabled=0;value.iconEffect=0;}
     if(ctx.settings.sequence!=value.sequence||ctx.settings.enabled!=value.enabled) {
         KillTimer(ctx.window,GeometryTimer);
         ctx.geometryDeadline=0;
@@ -185,6 +185,7 @@ void update(Context& ctx) {
     for(auto& [id,element]:ctx.elements) try {element->updateIconLift(value);} catch(...) {
         errors++;if(!code) {code=to_hresult();stage=1;}
     }
+    refreshIconEffects();
     LONG geometryError=0;errors+=resizeBars(ctx,value.enabled!=0,&geometryError);
     if(!code&&geometryError==ERROR_RETRY&&value.enabled) {
         auto now=GetTickCount64();

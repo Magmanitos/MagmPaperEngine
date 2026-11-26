@@ -20,6 +20,8 @@ public sealed record PlaybackSettings
     }
 }
 
+public enum TaskbarIconEffect { Off, Lift, Carousel, Zoom }
+
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record AppearanceSettings
 {
@@ -30,8 +32,12 @@ public sealed record AppearanceSettings
     public string Color { get; init; } = "#171923";
     public int Opacity { get; init; } = 80;
     public bool HideWidgets { get; init; }
+    [JsonPropertyName("animateIcons"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool LegacyAnimateIcons { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-    public bool AnimateIcons { get; init; }
+    public TaskbarIconEffect? IconEffect { get; init; }
+    [JsonIgnore]
+    public TaskbarIconEffect Effect => IconEffect ?? (LegacyAnimateIcons ? TaskbarIconEffect.Lift : TaskbarIconEffect.Off);
     public int Radius { get; init; }
     public bool Glass { get; init; }
     public string GlassColor { get; init; } = "#715CD4";
@@ -44,7 +50,7 @@ public sealed record AppearanceSettings
     {
         if (Height is < 32 or > 96 || Icon is < 16 or > 64 || Button is < 28 or > 100 ||
             Icon + 8 > Height || Button < Icon || Opacity is < 0 or > 100 || Radius is < 0 or > 24 ||
-            !ValidColor(Color) || !ValidColor(GlassColor))
+            !ValidColor(Color) || !ValidColor(GlassColor) || !Enum.IsDefined(Effect))
             throw new InvalidDataException("Проверьте размеры, цвет и прозрачность панели. Значки должны помещаться в панель и кнопки.");
         return this;
     }
@@ -52,7 +58,7 @@ public sealed record AppearanceSettings
     public string Encode(int sequence)
     {
         Validate();
-        return FormattableString.Invariant($"{sequence} {(Enabled ? 1 : 0)} {Height} {Icon} {Button} {Convert.ToInt32(Color[1..], 16)} {Opacity} {(HideWidgets ? 1 : 0)} {Radius} {(Glass ? 1 : 0)} {Convert.ToInt32(GlassColor[1..], 16)} {(AnimateIcons ? 1 : 0)}");
+        return FormattableString.Invariant($"{sequence} {(Enabled ? 1 : 0)} {Height} {Icon} {Button} {Convert.ToInt32(Color[1..], 16)} {Opacity} {(HideWidgets ? 1 : 0)} {Radius} {(Glass ? 1 : 0)} {Convert.ToInt32(GlassColor[1..], 16)} {(int)Effect}");
     }
 }
 

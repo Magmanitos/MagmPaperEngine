@@ -163,11 +163,18 @@ tests.Add(("glass settings preserve legacy data and encode a second tint", () =>
     Check(old.Validate().Enabled && !old.Glass && old.Color == "#123456" && old.Opacity == 45, "legacy appearance changed");
     var glass = old with { Glass = true, GlassColor = "#ABCDEF" };
     Check(glass.Encode(2).EndsWith(" 1 11259375 0", StringComparison.Ordinal), "second tint missing from the wire protocol");
-    Check(!old.AnimateIcons, "an older settings file must keep hover off by default");
-    var animate = new AppearanceSettings { AnimateIcons = true };
-    var roundtrip = JsonSerializer.Deserialize<AppearanceSettings>(JsonSerializer.Serialize(animate, DataFiles.Json), DataFiles.Json);
-    Check(roundtrip == animate && animate.Encode(3) == "3 0 48 24 44 1513763 80 0 0 0 7429332 1",
-        "hover animation must persist and work independently from appearance");
+    Check(old.Effect == TaskbarIconEffect.Off, "older settings without an effect must keep hover off");
+    var legacyLift = JsonSerializer.Deserialize<AppearanceSettings>("""{"animateIcons":true}""", DataFiles.Json)!;
+    Check(legacyLift.Effect == TaskbarIconEffect.Lift && (legacyLift with { IconEffect = TaskbarIconEffect.Off }).Effect == TaskbarIconEffect.Off,
+        "preserve the previous lift toggle unless an explicit effect has been chosen");
+    foreach (var effect in Enum.GetValues<TaskbarIconEffect>())
+    {
+        var animate = new AppearanceSettings { IconEffect = effect };
+        var roundtrip = JsonSerializer.Deserialize<AppearanceSettings>(JsonSerializer.Serialize(animate, DataFiles.Json), DataFiles.Json);
+        Check(roundtrip == animate && animate.Encode(3) == $"3 0 48 24 44 1513763 80 0 0 0 7429332 {(int)effect}",
+            "each effect must persist and work independently from appearance");
+    }
+    Throws(() => (glass with { IconEffect = (TaskbarIconEffect)4 }).Validate());
     Throws(() => (glass with { GlassColor = "#GGCCAA" }).Validate());
 }));
 

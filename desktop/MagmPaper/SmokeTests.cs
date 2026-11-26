@@ -431,15 +431,23 @@ internal static class SmokeTests
         // Exercise the preview without sending a request to the real Explorer.
         var previewButton = (Border)window.TaskbarSampleIcons.Children[0];
         var previewIcon = (Border)previewButton.Child;
-        window.AnimateIconsInput.IsChecked = true;
+        var neighborIcon = (Border)((Border)window.TaskbarSampleIcons.Children[1]).Child;
         previewButton.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, Environment.TickCount) { RoutedEvent = Mouse.MouseEnterEvent });
-        var previewLift = previewIcon.RenderTransform as TranslateTransform;
-        Assert(previewLift is not null && previewLift.HasAnimatedProperties == SystemParameters.ClientAreaAnimation,
+        window.UpdateTaskbarSampleEffects(TaskbarIconEffect.Lift);
+        var previewTransforms = (TransformGroup)previewIcon.RenderTransform;
+        var previewLift = (TranslateTransform)previewTransforms.Children[2];
+        Assert(previewLift.HasAnimatedProperties == SystemParameters.ClientAreaAnimation,
             "taskbar preview did not start the expected hover animation");
-        await Until(() => previewLift!.Y == -5, "taskbar preview icon did not lift");
+        await Until(() => previewLift.Y == -5, "taskbar preview icon did not lift");
+        window.UpdateTaskbarSampleEffects(TaskbarIconEffect.Carousel);
+        var neighborAngle = (RotateTransform)((TransformGroup)neighborIcon.RenderTransform).Children[1];
+        await Until(() => neighborAngle.Angle == -8, "carousel preview did not tilt the adjacent icon");
+        window.UpdateTaskbarSampleEffects(TaskbarIconEffect.Zoom);
+        var previewScale = (ScaleTransform)previewTransforms.Children[0];
+        await Until(() => previewScale.ScaleX == 1.14 && neighborAngle.Angle == 0 && previewLift.Y == 0,
+            "zoom preview did not enlarge just the selected icon");
         previewButton.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, Environment.TickCount) { RoutedEvent = Mouse.MouseLeaveEvent });
-        await Until(() => previewLift!.Y == 0, "taskbar preview icon did not return to rest");
-        window.AnimateIconsInput.IsChecked = false;
+        Assert(previewScale.ScaleX == 1, "taskbar preview icon did not return to rest");
 
         // Change the draft with styling disabled so the smoke test never touches Explorer.
         window.HeightInput.Value = 72;
@@ -498,20 +506,24 @@ internal static class SmokeTests
         window.Height = window.MinHeight;
         window.Navigate("cursors");
         await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
-        var packs = window.CursorsPage.Packs;
-        Assert(TextElements(packs).Any(text => text.Text == "Bibata Modern Ice"), "selected cursor pack was not displayed by name");
+        var cursorPage = window.CursorsPage;
+        var packs = cursorPage.Gallery;
+        await Until(() => cursorPage.Tiles[0].Frames.Count > 0, "current Windows cursor did not appear in the gallery");
+        Assert(packs.Items.Count == 5 && cursorPage.Tiles.Skip(1).All(tile => tile.Frames.Count >= 15) &&
+            TextElements(packs).Any(text => text.Text == "Bibata Modern Ice"), "offline cursor previews are missing from the gallery");
+        var container = (ContentPresenter)packs.ItemContainerGenerator.ContainerFromIndex(1);
+        var tile = (Border)container.ContentTemplate.FindName("Tile", container);
+        var preview = (Views.CursorTilePreview)((StackPanel)tile.Child).Children[0];
+        Assert(preview.Caption.Text == "Основной указатель" && preview.Incoming.Source is not null, "cursor tile must start with its primary pointer");
+        tile.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, Environment.TickCount) { RoutedEvent = Mouse.MouseEnterEvent });
+        Assert(preview.Cycling && preview.Caption.Text == "Основной указатель", "cursor slideshow must wait before changing states");
+        await Until(() => preview.Caption.Text == "Выбор справки", "cursor tile did not advance to a different state");
         var cursorScroll = window.CursorsPage.PageScroll;
-        if (cursorScroll.ScrollableHeight >= 2)
-        {
-            packs.IsDropDownOpen = true;
-            await Until(() => packs.IsDropDownOpen, "cursor catalogue did not open");
-            await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
-            cursorScroll.ScrollToVerticalOffset(Math.Min(40, cursorScroll.ScrollableHeight));
-            await Until(() => !packs.IsDropDownOpen, "cursor dropdown remained open after its anchor scrolled");
-        }
+        Assert(cursorScroll.ScrollableHeight >= 2, "cursor gallery and editor should share a scrollable page");
+        cursorScroll.ScrollToVerticalOffset(Math.Min(40, cursorScroll.ScrollableHeight));
+        await Until(() => !preview.Cycling && preview.Caption.Text == "Основной указатель", "scrolling should stop the cursor preview");
         window.Height = originalHeight;
-        Assert(window.CursorsPage.Roles.Items.Count == CursorFiles.Roles.Count && window.CursorsPage.Packs.Items.Count == 4,
-            "cursor page did not expose all roles and presets");
+        Assert(cursorPage.Roles.Items.Count == CursorFiles.Roles.Count, "cursor page did not expose all states for editing");
         var source = BitmapSource.Create(2, 2, 96, 96, PixelFormats.Bgra32, null,
             new byte[] { 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255 }, 8);
         var pngEncoder = new PngBitmapEncoder();

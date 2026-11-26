@@ -69,7 +69,7 @@ struct Host {
 int main() try {
     Settings settings{};settings.sequence=1;require(valid(settings),"valid default settings");
     settings.icon=64;require(!valid(settings),"reject oversized icon");settings.icon=24;
-    settings.animateIcons=2;require(!valid(settings),"reject invalid animation flag");settings.animateIcons=0;
+    settings.iconEffect=4;require(!valid(settings),"reject invalid animation flag");settings.iconEffect=0;
     RECT monitor{-1920,0,0,1080};auto rect=barRect(monitor,144,64);
     require(rect.top==984&&rect.left==-1920&&rect.right==0,"physical geometry and negative monitor origin");
     WINDOWPOS proposed{};proposed.flags=SWP_NOMOVE;proposed.x=123;proposed.y=456;proposed.cx=1920;proposed.cy=48;
@@ -297,10 +297,11 @@ int main() try {
             HWND at=WindowFromPoint(point);
             require(at==window||IsChild(window,at),"pointer target is outside the test XAML window");
         };
-        auto offset=[](xaml::Controls::Image const& image) {
+        auto effect=[](xaml::Controls::Image const& image) {
             auto transforms=image.RenderTransform().as<xaml::Media::TransformGroup>().Children();
-            return transforms.GetAt(transforms.Size()-1).as<xaml::Media::TranslateTransform>().Y();
+            return transforms.GetAt(transforms.Size()-1).as<xaml::Media::CompositeTransform>();
         };
+        auto offset=[&](xaml::Controls::Image const& image){return effect(image).TranslateY();};
         pointAt(170);
         Host animated;animated.send("1 0 48 24 44 3355443 50 0 0 0 0 1\n");animated.applied(1);
         until([&]{return first.RenderTransform().try_as<xaml::Media::TransformGroup>() &&
@@ -321,9 +322,18 @@ int main() try {
         pointAt(170);
         until([&]{return offset(second)==0;},"leaving the buttons did not lower the icon");
 
+        animated.send("2 0 48 24 44 3355443 50 0 0 0 0 2\n");animated.applied(2);
+        pointAt(32);
+        until([&]{return offset(first)==-5&&effect(second).Rotation()==-8;},"carousel did not tilt its right neighbor");
+        pointAt(103);
+        until([&]{return offset(second)==-5&&effect(first).Rotation()==8&&effect(second).Rotation()==0;},"carousel did not transfer to the neighboring icon");
+        animated.send("3 0 48 24 44 3355443 50 0 0 0 0 3\n");animated.applied(3);
+        until([&]{return effect(second).ScaleX()==1.14&&effect(first).ScaleX()==1&&effect(first).Rotation()==0&&offset(second)==0;},
+            "zoom changed a neighbor or did not reset the carousel pose");
+
         xaml::Media::ScaleTransform shellMove;shellMove.ScaleX(1.1);
         first.RenderTransform(shellMove);
-        animated.send("2 0 48 24 44 3355443 50 0 0 0 0 0\n");animated.applied(2);
+        animated.send("4 0 48 24 44 3355443 50 0 0 0 0 0\n");animated.applied(4);
         require(first.RenderTransform()==shellMove&&!second.RenderTransform().try_as<xaml::Media::TransformGroup>(),
             "disabling animation must restore the latest native transform");
         animated.close();

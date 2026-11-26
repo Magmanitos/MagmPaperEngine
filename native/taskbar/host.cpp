@@ -69,7 +69,7 @@ void attach() {
     shared=static_cast<Shared*>(MapViewOfFile(mapping,FILE_MAP_ALL_ACCESS,0,0,sizeof(Shared)));
     if(!shared) {event("error",desired.sequence,GetLastError());return;}
     new(shared) Shared{};shared->hostPid=GetCurrentProcessId();
-    auto probe=desired;probe.enabled=0;probe.animateIcons=0;probe.sequence=0;publish(shared,probe);
+    auto probe=desired;probe.enabled=0;probe.iconEffect=0;probe.sequence=0;publish(shared,probe);
     }
     hookBars();
     if(!shared->bars) {SetTimer(window,1,200,nullptr);return;}
@@ -103,7 +103,7 @@ void apply() {
 void stop() {
     if(closing) return;closing=true;
     KillTimer(window,1);KillTimer(window,2);KillTimer(window,3);
-    if(shared) {auto off=desired;off.enabled=0;off.animateIcons=0;off.sequence++;publish(shared,off);signal(stopMessage);}
+    if(shared) {auto off=desired;off.enabled=0;off.iconEffect=0;off.sequence++;publish(shared,off);signal(stopMessage);}
     // Wait asynchronously for UI threads to restore before the host exits.
     deadline=GetTickCount64()+4000;SetTimer(window,4,50,nullptr);
 }
@@ -174,7 +174,7 @@ int wmain(int argc,wchar_t** argv) {
         while(std::getline(std::cin,line)) {
             if(line.size()>256) break;
             auto value=std::make_unique<Settings>();std::istringstream in(line);std::string extra;
-            if(!(in>>value->sequence>>value->enabled>>value->height>>value->icon>>value->button>>value->color>>value->opacity>>value->hideWidgets>>value->radius>>value->glass>>value->glassColor>>value->animateIcons)||in>>extra||!valid(*value)) break;
+            if(!(in>>value->sequence>>value->enabled>>value->height>>value->icon>>value->button>>value->color>>value->opacity>>value->hideWidgets>>value->radius>>value->glass>>value->glassColor>>value->iconEffect)||in>>extra||!valid(*value)) break;
             if(!PostMessageW(window,Configure,0,reinterpret_cast<LPARAM>(value.get()))) break;
             value.release();
         }

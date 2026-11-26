@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -8,16 +9,20 @@ namespace MagmPaper.Views;
 
 public partial class CursorPage : UserControl
 {
+    internal sealed record Tile(string Name, CursorPack? Pack, IReadOnlyList<CursorPreviewFrame> Frames);
+    private readonly ObservableCollection<Tile> tiles = [new("Текущая схема", null, [])];
     private CursorSettings? settings;
     private Dictionary<string, string?> files = new();
     private Cursor? preview;
     private Task update = Task.CompletedTask;
+    private CursorTilePreview? hovered;
+    internal IReadOnlyList<Tile> Tiles => tiles;
 
     public CursorPage()
     {
         InitializeComponent();
-        Packs.ItemsSource = CursorSettings.Packs;
-        Packs.SelectedIndex = 0;
+        Gallery.Tag = 3;
+        Gallery.ItemsSource = tiles;
         Roles.ItemsSource = CursorFiles.Roles;
         Roles.SelectedIndex = 0;
     }
@@ -27,7 +32,12 @@ public partial class CursorPage : UserControl
     internal void Refresh()
     {
         if (settings is null || !update.IsCompleted) return;
-        try { ReadCurrent(); }
+        try
+        {
+            if (tiles.Count == 1)
+                foreach (var pack in CursorSettings.Packs) tiles.Add(new(pack.Name, pack, CursorArtwork.Pack(pack)));
+            ReadCurrent();
+        }
         catch (Exception error) { ShowFeedback(error.Message, true); }
     }
 
@@ -35,10 +45,55 @@ public partial class CursorPage : UserControl
 
     private void ReadCurrent()
     {
-        files = settings!.Read();
+        var snapshot = settings!.Read();
+        if (!files.SequenceEqual(snapshot))
+        {
+            files = snapshot;
+            _ = LoadCurrentPreviewAsync(snapshot);
+        }
         RestoreButton.IsEnabled = settings.CanRestore;
         UpdatePreview();
     }
+
+    private async Task LoadCurrentPreviewAsync(Dictionary<string, string?> snapshot)
+    {
+        try
+        {
+            var frames = await Task.Run(() => CursorArtwork.Current(snapshot));
+            if (ReferenceEquals(files, snapshot)) tiles[0] = tiles[0] with { Frames = frames };
+        }
+        catch (Exception error) { ShowFeedback(error.Message, true); }
+    }
+
+    private void GalleryResized(object sender, SizeChangedEventArgs e) => Gallery.Tag = e.NewSize.Width >= 745 ? 3 : 2;
+
+    private static CursorTilePreview? PreviewOf(object sender) =>
+        sender is Border { Child: StackPanel content } ? content.Children[0] as CursorTilePreview : null;
+
+    private void TileEntered(object sender, MouseEventArgs e)
+    {
+        var next = PreviewOf(sender);
+        if (ReferenceEquals(hovered, next)) return;
+        hovered?.Stop();
+        hovered = next;
+        hovered?.Start();
+    }
+
+    private void TileLeft(object sender, MouseEventArgs e)
+    {
+        if (!ReferenceEquals(hovered, PreviewOf(sender))) return;
+        hovered?.Stop();
+        hovered = null;
+    }
+
+    private void GalleryScrolled(object sender, ScrollChangedEventArgs e)
+    {
+        if (!ReferenceEquals(e.OriginalSource, PageScroll) || e.VerticalChange == 0) return;
+        hovered?.Stop();
+        hovered = null;
+    }
+
+    private void EditCurrentClick(object sender, RoutedEventArgs e) { Editor.BringIntoView(); Roles.Focus(); }
 
     private void ShowFeedback(string message, bool error = false)
     {
@@ -66,7 +121,7 @@ public partial class CursorPage : UserControl
 
     private void InstallPackClick(object sender, RoutedEventArgs e)
     {
-        if (Packs.SelectedItem is not CursorPack pack) return;
+        if (sender is not FrameworkElement { DataContext: Tile { Pack: { } pack } }) return;
         Begin(async () =>
         {
             var assets = await settings!.DownloadAsync(pack);
@@ -77,7 +132,7 @@ public partial class CursorPage : UserControl
 
     private void SourceClick(object sender, RoutedEventArgs e)
     {
-        if (Packs.SelectedItem is not CursorPack pack) return;
+        if (sender is not FrameworkElement { DataContext: Tile { Pack: { } pack } }) return;
         try { SystemSettings.Open(pack.Source); }
         catch (Exception error) { ShowFeedback(error.Message, true); }
     }
