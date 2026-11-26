@@ -232,7 +232,10 @@ int main() try {
             if(auto sprite=child.try_as<composition::SpriteVisual>()) {
                 auto brush=sprite.Brush();
                 if(!sprite.Comment().empty()) std::wcout<<sprite.Comment().c_str()<<std::endl;
-                lens|=brush&&brush.Comment()==L"MagmPaper.Glass.Lens"&&brush.try_as<composition::CompositionEffectBrush>()!=nullptr;
+                if(brush.try_as<composition::CompositionEffectBrush>()) {
+                    auto layer=brush.Comment();
+                    lens|=layer==L"MagmPaper.Glass.Lens"||(layer==L"MagmPaper.Glass.Blur"&&sprite.Scale().y>1);
+                }
                 if(auto tint=brush.try_as<composition::CompositionLinearGradientBrush>();tint&&tint.ColorStops().Size()==5) {
                     auto sampledTint=tint.ColorStops().GetAt(3).Color();
                     secondTint|=sampledTint.R==0xab&&sampledTint.G==0xcd&&sampledTint.B==0xef;

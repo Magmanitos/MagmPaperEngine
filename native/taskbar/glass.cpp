@@ -149,6 +149,7 @@ void GlassVisual::arrange() {
     float width=static_cast<float>(target.ActualWidth()),height=static_cast<float>(target.ActualHeight());
     float rounding=static_cast<float>(glassRadius(height,radius==UINT_MAX?0:radius));
     root.Size({width,height});outline.Size({width,height});outline.CornerRadius({rounding,rounding});
+    backdrop.CenterPoint({width/2,height/2,0});
     auto inset=[&](composition::CompositionRoundedRectangleGeometry const& geometry,float amount) {
         float corner=std::max(0.f,rounding-amount);
         geometry.Offset({amount,amount});geometry.Size({std::max(0.f,width-2*amount),std::max(0.f,height-2*amount)});
@@ -164,9 +165,16 @@ void GlassVisual::useBackdrop() {
         auto source=compositor.CreateBackdropBrush();
         try {backdrop.Brush(opticalBrush(compositor,source,true));}
         catch(hresult_error const& lens) {
-            backdrop.Comment(L"Lens HRESULT " + std::to_wstring(lens.code().value));
-            try {backdrop.Brush(opticalBrush(compositor,source,false));}
-            catch(...) {backdrop.Brush(source);}
+            try {
+                // Some compositions accept Gaussian blur but reject the D2D
+                // transform node. Magnify the already blurred visual in that case.
+                backdrop.Brush(opticalBrush(compositor,source,false));
+                backdrop.Scale({1.f,1.11f,1.f});
+            } catch(hresult_error const& blur) {
+                backdrop.Comment(L"Lens HRESULT " + std::to_wstring(lens.code().value) +
+                    L", blur HRESULT " + std::to_wstring(blur.code().value));
+                backdrop.Brush(source);
+            }
         }
     } catch(...) {}
 }
