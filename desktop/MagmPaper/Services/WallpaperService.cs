@@ -65,7 +65,7 @@ internal sealed class WallpaperService : IDisposable
     private void SessionSwitch(object sender, SessionSwitchEventArgs e) => Post(() => { if (e.Reason == SessionSwitchReason.SessionLock) locked = true; if (e.Reason == SessionSwitchReason.SessionUnlock) locked = false; Refresh(); });
     private void PowerChanged(object sender, PowerModeChangedEventArgs e) => Post(() =>
     {
-        if (e.Mode == PowerModes.Suspend) { sleeping = true; CancelRecovery(); Destroy(); }
+        if (e.Mode == PowerModes.Suspend) { sleeping = true; CancelRecovery(); Destroy(); Changed?.Invoke(); }
         if (e.Mode == PowerModes.Resume) { sleeping = false; ScheduleRecovery(); }
         Refresh();
     });
@@ -76,8 +76,7 @@ internal sealed class WallpaperService : IDisposable
         paletteTask = null;
         surface?.Dispose(); surface = null;
         if (window != 0) { Win32.DestroyWindow(window); window = 0; }
-        worker = 0; RunningId = null; Changed?.Invoke();
-        if (!disposed && library.State.ActiveId is null) PaletteSourceChanged?.Invoke();
+        worker = 0; RunningId = null; PauseReason = null;
     }
     private void CancelRecovery() { generation++; recovery?.Cancel(); recovery?.Dispose(); recovery = null; recovering = false; }
     public async Task ApplyAsync(string id)
@@ -94,13 +93,31 @@ internal sealed class WallpaperService : IDisposable
             // Fit again on the UI thread before recording the current monitor.
             DesktopHost.Fit(candidate, parent);
             renderer.Fit();
-            library.Activate(id); Destroy(); window = candidate; worker = parent; surface = renderer;
-            candidate = 0; renderer = null; RunningId = id; previousMonitor = Win32.PrimaryMonitor().Monitor.Area;
-            surface.Error += message => Post(() => Status?.Invoke(message, true));
-            if (surface is RenderSurface shader) shader.Recovered += message => Post(() => Status?.Invoke(message, false));
-            health.Start(); Refresh(); Changed?.Invoke(); PaletteSourceChanged?.Invoke(); Status?.Invoke("На рабочем столе: " + item.Name, false);
+            library.ActivateLoaded(item);
+            InstallSurface(id, candidate, parent, renderer);
+            candidate = 0; renderer = null;
+            SurfaceChanged();
+            Status?.Invoke("На рабочем столе: " + item.Name, false);
         }
         finally { renderer?.Dispose(); if (candidate != 0) Win32.DestroyWindow(candidate); }
+    }
+
+    private void InstallSurface(string id, nint target, nint parent, WallpaperSurface renderer)
+    {
+        var monitor = Win32.PrimaryMonitor().Monitor.Area;
+        Destroy();
+        window = target; worker = parent; surface = renderer; RunningId = id; previousMonitor = monitor;
+        renderer.Error += message => Post(() => { if (ReferenceEquals(surface, renderer)) Status?.Invoke(message, true); });
+        if (renderer is RenderSurface shader)
+            shader.Recovered += message => Post(() => { if (ReferenceEquals(surface, renderer)) Status?.Invoke(message, false); });
+    }
+
+    private void SurfaceChanged()
+    {
+        health.Start();
+        Refresh(notify: false);
+        Changed?.Invoke();
+        PaletteSourceChanged?.Invoke();
     }
     private static WallpaperSurface CreateRenderer(nint target, Wallpaper item) => item.Format == WallpaperFormat.Glsl
         ? new RenderSurface(target, true) : new DesktopMediaSurface(target);
@@ -109,13 +126,18 @@ internal sealed class WallpaperService : IDisposable
 
     public void Stop()
     {
-        CancelRecovery(); health.Stop(); library.Activate(null); Destroy(); PauseReason = null;
-        Changed?.Invoke(); Status?.Invoke("Обои остановлены.", false);
+        CancelRecovery(); health.Stop(); library.Activate(null); Destroy();
+        Changed?.Invoke(); PaletteSourceChanged?.Invoke(); Status?.Invoke("Обои остановлены.", false);
     }
-    public void Refresh()
+    public void Refresh(bool notify = true)
     {
         if (disposed || sleeping) return;
-        if (library.State.ActiveId is null) { if (window != 0) { CancelRecovery(); Destroy(); health.Stop(); } return; }
+        if (library.State.ActiveId is null)
+        {
+            if (window != 0) { CancelRecovery(); Destroy(); Changed?.Invoke(); PaletteSourceChanged?.Invoke(); }
+            health.Stop();
+            return;
+        }
         if (window == 0 || !Win32.IsWindow(window) || !Win32.IsWindow(worker) || Win32.GetParent(window) != worker) { ScheduleRecovery(); return; }
         try
         {
@@ -123,26 +145,29 @@ internal sealed class WallpaperService : IDisposable
             if (monitor != previousMonitor) { previousMonitor = monitor; ScheduleRecovery(); return; }
             if (!Win32.IsWindowVisible(window) || Win32.IsIconic(window)) Win32.ShowWindow(window, 4);
             DesktopHost.EnsureOrder(window, worker);
-            bool battery = System.Windows.Forms.SystemInformation.PowerStatus.PowerLineStatus == System.Windows.Forms.PowerLineStatus.Offline;
             var settings = library.State.Settings;
-            var reason = PlaybackPolicy.PauseReason(settings, locked, battery, settings.PauseWhenCovered && DesktopHost.Covered(window));
+            bool battery = !locked && settings.PauseOnBattery &&
+                System.Windows.Forms.SystemInformation.PowerStatus.PowerLineStatus == System.Windows.Forms.PowerLineStatus.Offline;
+            var reason = PlaybackPolicy.PauseReason(settings, locked, battery,
+                !locked && !battery && settings.PauseWhenCovered && DesktopHost.Covered(window));
             surface?.Configure(new(reason is not null, settings.Fps, settings.RenderScale, settings.MouseEnabled));
-            if (reason != PauseReason) { PauseReason = reason; Changed?.Invoke(); }
+            if (reason != PauseReason) { PauseReason = reason; if (notify) Changed?.Invoke(); }
         }
         catch (Exception error) { Status?.Invoke("Автопауза временно недоступна: " + error.Message, true); }
     }
-    public void RestoreOnStart() { if (library.State.ActiveId is not null) { health.Start(); ScheduleRecovery(); } }
-    private void ScheduleRecovery()
+    public void RestoreOnStart() { if (library.State.ActiveId is not null) { health.Start(); ScheduleRecovery(settleDisplay: false); } }
+    private void ScheduleRecovery(bool settleDisplay = true)
     {
         if (disposed || sleeping || library.State.ActiveId is null || recovering) return;
         recovering = true; int request = ++generation; recovery = new CancellationTokenSource();
-        _ = RecoverAsync(request, recovery.Token);
+        _ = RecoverAsync(request, recovery.Token, settleDisplay);
     }
-    private async Task RecoverAsync(int request, CancellationToken token)
+    private async Task RecoverAsync(int request, CancellationToken token, bool settleDisplay)
     {
         try
         {
-            await Task.Delay(600, token); // Coalesce display/DPI changes from exclusive games.
+            if (settleDisplay) await Task.Delay(600, token); // Coalesce display/DPI changes from exclusive games.
+            else await Task.Yield();
             for (int attempt = 0; attempt < 20; attempt++)
             {
                 if (token.IsCancellationRequested || request != generation || sleeping || library.State.ActiveId is not { } id) return;
@@ -155,10 +180,11 @@ internal sealed class WallpaperService : IDisposable
                     if (token.IsCancellationRequested || request != generation) return;
                     DesktopHost.Fit(candidate, parent);
                     renderer.Fit();
-                    Destroy(); window = candidate; worker = parent; surface = renderer; candidate = 0; renderer = null; RunningId = id;
-                    surface.Error += message => Post(() => Status?.Invoke(message, true));
-                    if (surface is RenderSurface shader) shader.Recovered += message => Post(() => Status?.Invoke(message, false));
-                    previousMonitor = Win32.PrimaryMonitor().Monitor.Area; recovering = false; health.Start(); Refresh(); Changed?.Invoke(); PaletteSourceChanged?.Invoke(); return;
+                    InstallSurface(id, candidate, parent, renderer);
+                    candidate = 0; renderer = null;
+                    recovering = false;
+                    SurfaceChanged();
+                    return;
                 }
                 catch (InvalidDataException error) { Status?.Invoke(error.Message, true); health.Stop(); return; }
                 catch (Exception error) { if (attempt == 19) { health.Stop(); Status?.Invoke("Не удалось восстановить обои: " + error.Message + " Повторите «На рабочий стол».", true); return; } }

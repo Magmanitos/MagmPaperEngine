@@ -77,7 +77,41 @@ internal sealed class SystemSettings
         }
         return JsonNode.DeepEquals(Read(key), expected);
     }
-    public string Apply(string key, JsonNode value)
+    public Task<string> ApplyAsync(string key, JsonNode value) => key == "autoHide" ?
+        RunOnShellApartmentAsync(() => Apply(key, value)) : Task.Run(() => Apply(key, value));
+
+    public Task<string> RestoreAsync() => RunOnShellApartmentAsync(Restore);
+
+    private static Task<string> RunOnShellApartmentAsync(Func<string> action)
+    {
+        var result = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var thread = new Thread(() =>
+        {
+            try { result.SetResult(action()); }
+            catch (Exception error) { result.SetException(error); }
+        }) { IsBackground = true, Name = "MagmPaper desktop layout" };
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        return result.Task;
+    }
+
+    private static void Change(string key, JsonNode? value)
+    {
+        using var layout = key == "autoHide" && value!.GetValue<bool>() ? DesktopIconLayout.Capture() : null;
+        var work = layout is null ? default : Win32.PrimaryMonitor().Work.Area;
+        Write(key, value);
+        if (!Confirm(key, value)) throw new IOException("Windows не подтвердила изменение.");
+        if (key != "autoHide") return;
+
+        // ABM_SETSTATE already notifies the shell. Notify its taskbars directly
+        // so the optional appearance module also drops its reserved work area.
+        foreach (string name in new[] { "Shell_TrayWnd", "Shell_SecondaryTrayWnd" })
+            for (nint bar = 0; (bar = Win32.FindWindowEx(0, bar, name, null)) != 0;)
+                Win32.Broadcast(bar, 0x1a, 0, "TraySettings", 2, 120, out _);
+        layout?.RestoreAfterLayout(work);
+    }
+
+    private string Apply(string key, JsonNode value)
     {
         var before = Read(key);
         var effective = before ?? JsonValue.Create(Keys[key].Default);
@@ -85,36 +119,42 @@ internal sealed class SystemSettings
 
         var original = backup["native"]!.AsObject();
         bool saved = original.ContainsKey(key);
-        if (!saved) original[key] = before?.DeepClone();
-        Persist();
+        if (!saved)
+        {
+            original[key] = before?.DeepClone();
+            try { Persist(); }
+            catch { original.Remove(key); throw; }
+        }
         try
         {
-            Write(key, value);
-            if (!Confirm(key, value)) throw new IOException("Windows не подтвердила изменение.");
+            Change(key, value);
         }
         catch (Exception error)
         {
             try
             {
-                if (!JsonNode.DeepEquals(Read(key), before)) Write(key, before);
+                if (!JsonNode.DeepEquals(Read(key), before)) Change(key, before);
                 if (!saved && Confirm(key, before)) original.Remove(key);
             }
             catch { /* Keep the backup if Explorer has not confirmed the rollback. */ }
             Persist();
             throw new IOException(Failure(key, error), error);
         }
-        Notify();
+        if (key != "autoHide") Notify();
         return "Настройка поведения сохранена. Некоторым изменениям нужен повторный вход в Windows.";
     }
-    public string Restore()
+    private string Restore()
     {
         var original = backup["native"]!.AsObject(); var failures = new List<string>(); bool changed = false;
         foreach (var item in original.ToArray())
         {
             try
             {
-                if (!JsonNode.DeepEquals(Read(item.Key), item.Value)) { Write(item.Key, item.Value); changed = true; }
-                if (!Confirm(item.Key, item.Value)) throw new IOException("Восстановление не подтверждено.");
+                if (!JsonNode.DeepEquals(Read(item.Key), item.Value))
+                {
+                    Change(item.Key, item.Value);
+                    changed |= item.Key != "autoHide";
+                }
                 original.Remove(item.Key);
             }
             catch (Exception error) { failures.Add(Failure(item.Key, error)); }

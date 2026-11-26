@@ -17,6 +17,8 @@ public sealed class MediaWallpaperView : FrameworkElement, IDisposable
     private GifClip? gif;
     private BitmapSource? frame;
     private bool videoReady, playing;
+    private int displayFps = 60;
+    private long nextRefreshRateCheck;
 
     internal event Action<string>? Error;
     internal long Frames { get; private set; }
@@ -124,7 +126,17 @@ public sealed class MediaWallpaperView : FrameworkElement, IDisposable
         if (gif is null || !playing) return;
         var next = gif.FrameAt(clock.ElapsedMilliseconds, out var untilNext);
         if (!ReferenceEquals(frame, next)) { frame = next; Frames++; InvalidateVisual(); }
-        int fps = options.Fps == 0 ? Win32.RefreshRate() : options.Fps;
+        int fps = options.Fps;
+        if (fps == 0)
+        {
+            long now = Environment.TickCount64;
+            if (now >= nextRefreshRateCheck)
+            {
+                displayFps = Win32.RefreshRate();
+                nextRefreshRateCheck = now + 1000;
+            }
+            fps = displayFps;
+        }
         timer.Interval = TimeSpan.FromMilliseconds(Math.Max(untilNext, 1000.0 / fps));
     }
 

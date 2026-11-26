@@ -238,6 +238,15 @@ public sealed class Library
         State = next with { Revision = revision };
         try { Recover(); } catch (IOException) { } catch (UnauthorizedAccessException) { }
     }
+
+    private void CommitMetadata(LibraryState next)
+    {
+        Recover();
+        string revision = Guid.NewGuid().ToString();
+        DataFiles.Replace(Manifest, Serialize(next, revision));
+        State = next with { Revision = revision };
+    }
+
     public LibraryState Refresh()
     {
         Recover(); var items = new List<Wallpaper>(); var known = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -256,14 +265,16 @@ public sealed class Library
                 ?? throw new IOException($"Файл исчез: {file}"));
         }
         var next = State with { Items = items, ActiveId = items.Any(i => i.Id == State.ActiveId) ? State.ActiveId : null };
-        if (!State.Items.Select(x => (x.Id, x.Name, x.File)).SequenceEqual(items.Select(x => (x.Id, x.Name, x.File))) || next.ActiveId != State.ActiveId) Commit(next);
-        else State = next;
+        if (!State.Items.Select(x => (x.Id, x.Name, x.File)).SequenceEqual(items.Select(x => (x.Id, x.Name, x.File))) || next.ActiveId != State.ActiveId)
+            CommitMetadata(next);
+        else if (!State.Items.SequenceEqual(items)) State = next;
         return State;
     }
     public Wallpaper Get(string id) => Refresh().Items.FirstOrDefault(x => x.Id == id) ?? throw new InvalidDataException("Обои не найдены.");
     public Wallpaper Save(string? id, string name, string code)
     {
-        name = name.Trim(); Validate(name, code); Refresh();
+        name = name.Trim(); Validate(name, code);
+        if (id is null) Refresh();
         var previous = id is null ? null : Get(id);
         if (previous is not null && previous.Format != WallpaperFormat.Glsl) throw new InvalidDataException("Код можно редактировать только у GLSL-обоев.");
         var file = previous?.Name == name ? previous.File : FileName(name, Occupied(previous?.File));
@@ -308,7 +319,7 @@ public sealed class Library
         if (previous.Format == WallpaperFormat.Glsl) throw new InvalidDataException("Измените название GLSL-обоев в редакторе.");
         if (name == previous.Name) return previous;
         var item = previous with { Name = name };
-        Commit(State with { Items = State.Items.Select(current => current.Id == id ? item : current).ToArray() });
+        CommitMetadata(State with { Items = State.Items.Select(current => current.Id == id ? item : current).ToArray() });
         return item;
     }
 
@@ -318,10 +329,30 @@ public sealed class Library
     }
     public void Activate(string? id)
     {
-        Refresh(); if (id is not null) Get(id);
-        if (State.ActiveId != id) Commit(State with { ActiveId = id });
+        if (id is null) Refresh();
+        else _ = Get(id);
+        SetActiveId(id);
     }
-    public void Configure(PlaybackSettings settings) { Refresh(); Commit(State with { Settings = settings.Validate() }); }
+
+    public void ActivateLoaded(Wallpaper loaded)
+    {
+        var item = State.Items.FirstOrDefault(current => current.Id == loaded.Id);
+        if (item is null || ReadItem(item, ShaderDirectory) is not { } current ||
+            current.File != loaded.File || current.Code != loaded.Code || current.MediaStamp != loaded.MediaStamp)
+            throw new IOException("Файл обоев изменился во время загрузки. Обновите коллекцию и повторите.");
+        SetActiveId(loaded.Id);
+    }
+
+    private void SetActiveId(string? id)
+    {
+        if (State.ActiveId != id) CommitMetadata(State with { ActiveId = id });
+    }
+
+    public void Configure(PlaybackSettings settings)
+    {
+        settings.Validate();
+        if (State.Settings != settings || State.Revision is null) CommitMetadata(State with { Settings = settings });
+    }
 
     public static string MigrateDataDirectory(string appData)
     {

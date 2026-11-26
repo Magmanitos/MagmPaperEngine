@@ -17,16 +17,23 @@ internal static class DesktopHost
     {
         var progman = Win32.FindWindow("Progman", null);
         if (progman == 0) throw new IOException("Рабочий стол Explorer ещё не готов.");
+        var parent = ExistingParent(progman);
+        if (parent != 0) return parent;
         Win32.SendMessageTimeout(progman, 0x052c, 0xd, 1, 2, 2000, out _);
+        parent = ExistingParent(progman);
+        if (parent != 0) return parent;
+        throw new IOException("Windows не предоставила слой обоев. Повторите установку обоев.");
+    }
+
+    private static nint ExistingParent(nint progman)
+    {
         // Windows 11 24H2/HDR desktops place DefView and WorkerW under a
         // non-redirected Progman. Our layered child belongs BETWEEN them,
         // not inside the opaque WorkerW which renders the static wallpaper.
         if (IsRaised(progman))
         {
-            if (Win32.FindWindowEx(progman, 0, "SHELLDLL_DefView", null) == 0 ||
-                Win32.FindWindowEx(progman, 0, "WorkerW", null) == 0)
-                throw new IOException("Windows ещё создаёт слои рабочего стола. Повторите установку обоев.");
-            return progman;
+            return Win32.FindWindowEx(progman, 0, "SHELLDLL_DefView", null) != 0 &&
+                Win32.FindWindowEx(progman, 0, "WorkerW", null) != 0 ? progman : 0;
         }
         nint worker = 0;
         Win32.EnumWindows((hwnd, _) =>
@@ -36,7 +43,6 @@ internal static class DesktopHost
             return worker == 0;
         }, 0);
         if (worker == 0) worker = Win32.FindWindowEx(progman, 0, "WorkerW", null);
-        if (worker == 0) throw new IOException("Windows не предоставила слой обоев WorkerW.");
         return worker;
     }
     public static void Fit(nint window, nint worker)
@@ -49,16 +55,20 @@ internal static class DesktopHost
     {
         var rect = Win32.PrimaryMonitor().Monitor;
         var style = (uint)Win32.GetWindowLongPtr(window, Win32.Style);
-        Win32.SetWindowLongPtr(window, Win32.Style, (nint)((style & ~(Win32.Popup | 0x00c40000)) | Win32.Child));
+        uint childStyle = (style & ~(Win32.Popup | 0x00c40000)) | Win32.Child;
+        if (style != childStyle) Win32.SetWindowLongPtr(window, Win32.Style, (nint)childStyle);
         if (Win32.GetParent(window) != worker) Win32.SetParent(window, worker);
         if (Win32.GetParent(window) != worker) throw new IOException("Не удалось прикрепить обои за значками рабочего стола.");
-        var point = new Win32.Point(rect.Left, rect.Top); Win32.MapWindowPoints(0, worker, ref point, 1);
-        if (!Win32.SetWindowPos(window, icons, point.X, point.Y, rect.Width, rect.Height, icons != 0 ? 0x0030u : 0x0034u)) throw new Win32Exception();
-        if (icons != 0)
+        if (!Win32.GetWindowRect(window, out var existing) || existing.Area != rect.Area ||
+            (icons != 0 && Win32.GetWindow(window, 3) != icons))
         {
-            if (background != 0) Win32.SetWindowPos(background, 1, 0, 0, 0, 0, 0x13);
+            var point = new Win32.Point(rect.Left, rect.Top);
+            Win32.MapWindowPoints(0, worker, ref point, 1);
+            if (!Win32.SetWindowPos(window, icons, point.X, point.Y, rect.Width, rect.Height, icons != 0 ? 0x0030u : 0x0034u)) throw new Win32Exception();
         }
-        Win32.ShowWindow(window, 4);
+        if (icons != 0 && background != 0 && Win32.GetWindow(background, 2) != 0)
+            Win32.SetWindowPos(background, 1, 0, 0, 0, 0, 0x13);
+        if (!Win32.IsWindowVisible(window) || Win32.IsIconic(window)) Win32.ShowWindow(window, 4);
     }
     private static bool IsRaised(nint parent) => ((uint)Win32.GetWindowLongPtr(parent, Win32.ExtendedStyle) & 0x00200000) != 0;
     internal static void EnsureOrder(nint window, nint parent)

@@ -49,6 +49,8 @@ public partial class WallpaperGallery : UserControl, IDisposable
     public double PreviewHeight { get => (double)GetValue(PreviewHeightProperty); private set => SetValue(PreviewHeightProperty, value); }
 
     private Tile[] tiles = [];
+    private IReadOnlyList<Wallpaper>? sourceItems;
+    private string? activeId;
     private readonly Dictionary<string, Tile> byId = new(StringComparer.Ordinal);
     private string? cacheDirectory;
     private Library? library;
@@ -70,17 +72,27 @@ public partial class WallpaperGallery : UserControl, IDisposable
 
     internal void UpdateItems(IReadOnlyList<Wallpaper> items, string? runningId)
     {
-        if (!tiles.Select(tile => tile.Item).SequenceEqual(items))
+        if (!ReferenceEquals(sourceItems, items))
         {
+            sourceItems = items;
             tiles = items.Select(item => byId.TryGetValue(item.Id, out var tile) && tile.Item == item ? tile : new Tile(item)).ToArray();
             if (hover is { } current && !tiles.Contains(current.Tile)) ClearHover();
             byId.Clear();
-            foreach (var tile in tiles) byId.Add(tile.Item.Id, tile);
+            foreach (var tile in tiles)
+            {
+                byId.Add(tile.Item.Id, tile);
+                tile.Active = tile.Item.Id == runningId;
+            }
             Tiles.ItemsSource = tiles;
+            Empty.Visibility = tiles.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+            ScheduleThumbnails();
         }
-        foreach (var tile in tiles) tile.Active = tile.Item.Id == runningId;
-        Empty.Visibility = tiles.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
-        ScheduleThumbnails();
+        else if (activeId != runningId)
+        {
+            if (activeId is not null && byId.TryGetValue(activeId, out var old)) old.Active = false;
+            if (runningId is not null && byId.TryGetValue(runningId, out var current)) current.Active = true;
+        }
+        activeId = runningId;
     }
 
     internal void SetActive(bool value)

@@ -91,7 +91,7 @@ public partial class MainWindow : Window
             ThemeInput.IsChecked = !lightTheme;
             if (lightTheme) ApplyTheme();
             FillWindowBlur();
-            Navigate(saved);
+            Navigate(saved, refreshWallpapers: false);
             await RunAsync(RefreshLibraryAsync);
         };
         ContentRendered += ShowStartupNotes;
@@ -137,7 +137,7 @@ public partial class MainWindow : Window
         RenameWallpaperButton.IsEnabled = canUse && media;
         StopWallpaperButton.IsEnabled = canUse && selected!.Id == wallpapers.RunningId;
     }
-    internal void Navigate(string destination)
+    internal void Navigate(string destination, bool refreshWallpapers = true)
     {
         if (destination is not ("overview" or "wallpapers" or "taskbar" or "cursors" or "settings")) destination = "overview";
         route = destination;
@@ -153,7 +153,7 @@ public partial class MainWindow : Window
         if (route == "taskbar") { FillBehavior(); UpdateAppearanceStatus(); }
         if (route == "settings") FillPreferences();
         if (route == "cursors") CursorsPage.Refresh();
-        if (route == "wallpapers" && !editing && !busy) _ = RunAsync(RefreshLibraryAsync);
+        if (refreshWallpapers && route == "wallpapers" && !editing && !busy) _ = RunAsync(RefreshLibraryAsync);
     }
     private void SaveWindowPreferences()
     {
@@ -594,11 +594,19 @@ public partial class MainWindow : Window
         if (value is null) return;
         behaviorUpdate = RunAsync(async () =>
         {
-            try { Status(await Task.Run(() => PlatformSettings.Apply(key, value))); }
+            try { Status(await PlatformSettings.ApplyAsync(key, value)); }
             finally { FillBehavior(); }
         });
     }
-    private async void RestoreBehaviorClick(object sender, RoutedEventArgs e) => await RunAsync(async () => { try { Status(await Task.Run(PlatformSettings.Restore)); } finally { FillBehavior(); } });
+    private void RestoreBehaviorClick(object sender, RoutedEventArgs e)
+    {
+        if (busy) return;
+        behaviorUpdate = RunAsync(async () =>
+        {
+            try { Status(await PlatformSettings.RestoreAsync()); }
+            finally { FillBehavior(); }
+        });
+    }
 
     private void UpdateAppearanceStatus()
     {
@@ -707,12 +715,12 @@ public partial class MainWindow : Window
     }
     private async Task ApplyAppearanceUpdatesAsync()
     {
+        // Let WPF finish the current input/layout update before sending its last value.
+        // Requests that arrive while Explorer is busy replace the pending value.
+        await Dispatcher.Yield(DispatcherPriority.Render);
         while (pendingAppearance is not null)
         {
-            // Sample the latest value during a drag, with at most one native
-            // request in flight. The final value is sent even when dragging stops.
-            await Task.Delay(40);
-            var next = pendingAppearance!;
+            var next = pendingAppearance;
             pendingAppearance = null;
             var palette = next.UsesWallpaperColors() ? await wallpapers.ReadColorsAsync() : null;
             if (pendingAppearance is not null) continue;

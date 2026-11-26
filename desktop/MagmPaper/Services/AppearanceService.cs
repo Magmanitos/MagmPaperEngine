@@ -64,7 +64,7 @@ internal sealed class AppearanceService : IAsyncDisposable
         }
         return Path.Combine(destination, names[0]);
     }
-    private void Start()
+    private async Task StartAsync()
     {
         if (terminating) throw new ObjectDisposedException(nameof(AppearanceService));
         if (process is not null) return;
@@ -74,7 +74,9 @@ internal sealed class AppearanceService : IAsyncDisposable
             using var key = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Windhawk\Engine\Mods\" + name);
             if (key?.GetValue("Disabled") is int value && value == 0) throw new IOException("Отключите моды размеров и оформления панели в Windhawk перед включением оформления MagmPaper.");
         }
-        var info = new ProcessStartInfo(Cache()) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, StandardInputEncoding = new UTF8Encoding(false) };
+        string executable = await Task.Run(Cache);
+        if (terminating) throw new ObjectDisposedException(nameof(AppearanceService));
+        var info = new ProcessStartInfo(executable) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, StandardInputEncoding = new UTF8Encoding(false) };
         info.ArgumentList.Add("--parent"); info.ArgumentList.Add(Environment.ProcessId.ToString());
         var child = Process.Start(info) ?? throw new IOException("Не удалось запустить модуль панели задач.");
         process = child; _ = ReadAsync(child); _ = child.StandardError.ReadToEndAsync();
@@ -109,7 +111,7 @@ internal sealed class AppearanceService : IAsyncDisposable
     }
     private async Task SendAsync(AppearanceSettings settings)
     {
-        Start();
+        await StartAsync();
         var child = process ?? throw new IOException("Модуль панели завершился до отправки настроек.");
         int id = Interlocked.Increment(ref sequence);
         var request = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously); pending[id] = request;
@@ -133,8 +135,10 @@ internal sealed class AppearanceService : IAsyncDisposable
         try
         {
             if (loadError is not null) throw new InvalidDataException(loadError);
-            if (next.Enabled || process is not null) await SendAsync(next.WithWallpaperColors(palette));
-            if (Settings != next || !File.Exists(file)) DataFiles.Write(file, next);
+            var effective = next.WithWallpaperColors(palette);
+            if (next.Enabled != Active || (next.Enabled && (!wasRunning || effective != previous || Error is not null)))
+                await SendAsync(effective);
+            if (Settings != next || !File.Exists(file)) await Task.Run(() => DataFiles.Write(file, next));
             Settings = next; MatchedColors = palette; Error = null; Changed?.Invoke();
         }
         catch (Exception failure)

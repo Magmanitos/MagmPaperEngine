@@ -97,7 +97,8 @@ void attach() {
 void apply() {
     if(!connected||!shared) return;
     publish(shared,desired);signal(updateMessage);
-    deadline=GetTickCount64()+5000;SetTimer(window,3,50,nullptr);
+    // Poll only while a request is in flight, at roughly one display frame.
+    deadline=GetTickCount64()+5000;SetTimer(window,3,16,nullptr);
 }
 void stop() {
     if(closing) return;closing=true;

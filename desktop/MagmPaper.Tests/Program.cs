@@ -67,6 +67,25 @@ Test("CRUD, activation, immutable settings and reload", (library, path) =>
     Check(!File.Exists(Path.Combine(library.ShaderDirectory, item.File)), "old filename remained");
     reload.Remove(item.Id); Check(new Library(path).State.Items.Count == 0 && reload.State.ActiveId is null, "delete active failed");
 });
+Test("wallpaper activation validates the loaded file and only commits metadata", (library, path) =>
+{
+    var first = library.Save(null, "First", Code);
+    var second = library.Save(null, "Second", Code);
+    var items = library.State.Items;
+    library.ActivateLoaded(first);
+    Check(ReferenceEquals(items, library.Refresh().Items) && library.State.ActiveId == first.Id,
+        "activation or an unchanged refresh replaced the collection");
+
+    string file = Path.Combine(library.ShaderDirectory, second.File);
+    File.WriteAllText(file, Code + "\n");
+    Throws(() => library.ActivateLoaded(second));
+    library.Configure(new() { Fps = 30 });
+    Check(File.ReadAllText(file) == Code + "\n" && !File.Exists(library.Manifest + ".journal"),
+        "applying playback settings rewrote an externally changed file");
+    var reloaded = new Library(path);
+    Check(reloaded.State.ActiveId == first.Id && reloaded.State.Settings.Fps == 30 && reloaded.Get(second.Id).Code == Code + "\n",
+        "metadata update did not preserve active wallpaper, settings, and external edit");
+});
 Test("Electron v1 JSON migrates to raw GLSL with original backups", (_, path) =>
 {
     string manifest = Path.Combine(path, "wallpapers.json");
