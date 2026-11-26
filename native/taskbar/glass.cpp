@@ -19,7 +19,7 @@ using xaml::Hosting::ElementCompositionPreview;
 namespace {
 // Composition's D2D effect metadata. These nodes only read the compositor's
 // backdrop and run in the composition engine, including for animated wallpapers.
-struct EffectNode final:implements<EffectNode,effects::IGraphicsEffect,effects::IGraphicsEffectSource,interop::IGraphicsEffectD2D1Interop> {
+struct EffectNode:implements<EffectNode,effects::IGraphicsEffect,effects::IGraphicsEffectSource,interop::IGraphicsEffectD2D1Interop> {
     GUID id;
     std::vector<IInspectable> values;
     effects::IGraphicsEffectSource source;
