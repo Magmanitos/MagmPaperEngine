@@ -4,7 +4,7 @@
   <ScrollViewer x:Name="PageScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" ScrollChanged="GalleryScrolled">
     <StackPanel>
       <TextBlock Text="Курсоры" Style="{StaticResource Title}"/>
-      <TextBlock Text="Наведите курсор на набор, чтобы посмотреть его состояния." Style="{StaticResource Muted}" Margin="0,0,0,12"/>
+      <TextBlock Text="Наведите курсор, чтобы увидеть состояния. Нажмите на плитку, чтобы открыть подробности." Style="{StaticResource Muted}" Margin="0,0,0,12"/>
       <WrapPanel Margin="0,0,0,15">
         <Button Content="Импорт ZIP" Click="ImportZipClick" Margin="0,0,8,4"/>
         <Button Content="Импорт папки" Click="ImportFolderClick" Margin="0,0,8,4"/>
@@ -19,9 +19,14 @@
             <Border x:Name="Tile" Style="{StaticResource Card}" Padding="9" Margin="0,0,12,12"
                     MouseEnter="TileEntered" MouseLeave="TileLeft">
               <StackPanel>
-                <views:CursorTilePreview Frames="{Binding Frames}"/>
-                <TextBlock Text="{Binding Name}" Margin="3,9,3,8" FontWeight="SemiBold"
-                           TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" ToolTip="{Binding Name}"/>
+                <Button x:Name="Open" Click="OpenTileClick" Background="Transparent" BorderThickness="0" Padding="0"
+                        HorizontalContentAlignment="Stretch" AutomationProperties.Name="{Binding Name}">
+                  <StackPanel>
+                    <views:CursorTilePreview Frames="{Binding Frames}"/>
+                    <TextBlock Text="{Binding Name}" Margin="3,9,3,8" FontWeight="SemiBold"
+                               TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
+                  </StackPanel>
+                </Button>
                 <WrapPanel x:Name="PackActions">
                   <Button Content="Установить" Style="{StaticResource Primary}" Click="InstallPackClick" FontSize="12" Padding="8,6"
                           Margin="0,0,5,2" AutomationProperties.Name="{Binding Name, StringFormat='Установить {0}'}"/>
@@ -29,7 +34,7 @@
                           ToolTip="Релиз автора · GNU GPL v3" AutomationProperties.Name="{Binding Name, StringFormat='Релиз автора {0}'}"/>
                 </WrapPanel>
                 <Button x:Name="Edit" Content="Настроить состояния" HorizontalAlignment="Left" FontSize="12" Padding="8,6"
-                        Click="EditCurrentClick" Visibility="Collapsed"/>
+                        Click="OpenTileClick" Visibility="Collapsed"/>
               </StackPanel>
             </Border>
             <DataTemplate.Triggers>
@@ -44,34 +49,6 @@
           </DataTemplate>
         </ItemsControl.ItemTemplate>
       </ItemsControl>
-      <Border x:Name="Editor" Style="{StaticResource Card}" Margin="0,4,12,0">
-        <Grid>
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*"/>
-            <ColumnDefinition Width="18"/>
-            <ColumnDefinition Width="*"/>
-          </Grid.ColumnDefinitions>
-          <ListBox x:Name="Roles" MaxHeight="365" VerticalAlignment="Top" DisplayMemberPath="Label"
-                   SelectionChanged="RoleChanged" AutomationProperties.Name="Состояния курсора"/>
-          <StackPanel Grid.Column="2">
-            <TextBlock x:Name="RoleTitle" FontSize="20" FontWeight="SemiBold"/>
-            <TextBlock x:Name="RoleFile" Style="{StaticResource Muted}" Margin="0,5,0,12"/>
-            <Border x:Name="HoverArea" Height="110" CornerRadius="10" Background="{DynamicResource InputBrush}"
-                    BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" Padding="14">
-              <TextBlock x:Name="HoverText" Text="Наведите сюда курсор для проверки" TextAlignment="Center" VerticalAlignment="Center"/>
-            </Border>
-            <Button Content="Выбрать файл…" Click="ChooseFileClick" Style="{StaticResource Primary}" Margin="0,12,0,8"/>
-            <Button x:Name="ResetButton" Content="Стандартный курсор для этого состояния" Click="ResetClick" IsEnabled="False"
-                    AutomationProperties.Name="Сбросить выбранное состояние">
-              <Button.ContentTemplate>
-                <DataTemplate><TextBlock Text="{Binding}" TextAlignment="Center" TextWrapping="Wrap"/></DataTemplate>
-              </Button.ContentTemplate>
-            </Button>
-            <TextBlock Text="CUR и ANI сохраняют свою точку клика. Для PNG до 256×256 её можно указать вручную."
-                       Style="{StaticResource Muted}" FontSize="12" Margin="0,12,0,0"/>
-          </StackPanel>
-        </Grid>
-      </Border>
     </StackPanel>
   </ScrollViewer>
 </UserControl>

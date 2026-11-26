@@ -13,7 +13,7 @@ public partial class CursorPage : UserControl
     private readonly ObservableCollection<Tile> tiles = [new("Текущая схема", null, [])];
     private CursorSettings? settings;
     private Dictionary<string, string?> files = new();
-    private Cursor? preview;
+    private readonly Dictionary<CursorPack, Task<Dictionary<string, CursorAsset>>> packs = new();
     private Task update = Task.CompletedTask;
     private CursorTilePreview? hovered;
     internal IReadOnlyList<Tile> Tiles => tiles;
@@ -23,8 +23,6 @@ public partial class CursorPage : UserControl
         InitializeComponent();
         Gallery.Tag = 3;
         Gallery.ItemsSource = tiles;
-        Roles.ItemsSource = CursorFiles.Roles;
-        Roles.SelectedIndex = 0;
     }
 
     internal void Initialize(string directory) => settings = new(directory);
@@ -52,7 +50,6 @@ public partial class CursorPage : UserControl
             _ = LoadCurrentPreviewAsync(snapshot);
         }
         RestoreButton.IsEnabled = settings.CanRestore;
-        UpdatePreview();
     }
 
     private async Task LoadCurrentPreviewAsync(Dictionary<string, string?> snapshot)
@@ -68,7 +65,8 @@ public partial class CursorPage : UserControl
     private void GalleryResized(object sender, SizeChangedEventArgs e) => Gallery.Tag = e.NewSize.Width >= 745 ? 3 : 2;
 
     private static CursorTilePreview? PreviewOf(object sender) =>
-        sender is Border { Child: StackPanel content } ? content.Children[0] as CursorTilePreview : null;
+        sender is Border { Child: StackPanel tile } && tile.Children[0] is Button { Content: StackPanel card }
+            ? card.Children[0] as CursorTilePreview : null;
 
     private void TileEntered(object sender, MouseEventArgs e)
     {
@@ -93,29 +91,56 @@ public partial class CursorPage : UserControl
         hovered = null;
     }
 
-    private void EditCurrentClick(object sender, RoutedEventArgs e) { Editor.BringIntoView(); Roles.Focus(); }
+    private void OpenTileClick(object sender, RoutedEventArgs e)
+    {
+        if (settings is null || !update.IsCompleted || sender is not FrameworkElement { DataContext: Tile tile }) return;
+        if (Window.GetWindow(this) is not MainWindow owner) return;
+        hovered?.Stop();
+        hovered = null;
+        Func<Task<Dictionary<string, CursorAsset>>>? load = tile.Pack is { } pack ? () => LoadPackAsync(pack) : null;
+        try
+        {
+            var dialog = new CursorDetails(tile, settings, Begin, load) { Owner = owner };
+            owner.TrackWindowFrame(dialog, dialog.Frame.CornerRadius.TopLeft);
+            dialog.ShowDialog();
+        }
+        catch (Exception error) { ShowFeedback(error.Message, true); }
+    }
+
+    private Task<Dictionary<string, CursorAsset>> LoadPackAsync(CursorPack pack)
+    {
+        if (!packs.TryGetValue(pack, out var pending) || pending.IsCompleted)
+            packs[pack] = pending = Task.Run(() => settings!.DownloadAsync(pack));
+        return pending;
+    }
 
     private void ShowFeedback(string message, bool error = false)
     {
         if (Window.GetWindow(this) is MainWindow owner) owner.Status(message, error);
     }
 
-    private void Begin(Func<Task<string>> operation)
+    private Task Begin(Func<Task<string>> operation, Action<string, bool>? feedback = null)
     {
-        if (settings is not null && update.IsCompleted) update = RunAsync(operation);
+        if (settings is not null && update.IsCompleted) update = RunAsync(operation, feedback);
+        return update;
     }
 
-    private async Task RunAsync(Func<Task<string>> operation)
+    private async Task RunAsync(Func<Task<string>> operation, Action<string, bool>? feedback)
     {
         IsEnabled = false;
+        void Report(string message, bool error = false)
+        {
+            ShowFeedback(message, error);
+            feedback?.Invoke(message, error);
+        }
         try
         {
-            ShowFeedback("Обновляем схему курсоров…");
+            Report("Обновляем схему курсоров…");
             string message = await operation();
             ReadCurrent();
-            ShowFeedback(message);
+            Report(message);
         }
-        catch (Exception error) { ShowFeedback(error.Message, true); }
+        catch (Exception error) { Report(error.Message, true); }
         finally { IsEnabled = true; }
     }
 
@@ -124,8 +149,8 @@ public partial class CursorPage : UserControl
         if (sender is not FrameworkElement { DataContext: Tile { Pack: { } pack } }) return;
         Begin(async () =>
         {
-            var assets = await settings!.DownloadAsync(pack);
-            int count = await Task.Run(() => settings.Apply(assets));
+            var assets = await LoadPackAsync(pack);
+            int count = await Task.Run(() => settings!.Apply(assets));
             return $"{pack.Name} · обновлено состояний: {count} из {CursorFiles.Roles.Count}.";
         });
     }
@@ -155,67 +180,10 @@ public partial class CursorPage : UserControl
         return $"Импорт завершён. Обновлено состояний: {count} из {CursorFiles.Roles.Count}.";
     });
 
-    private void ChooseFileClick(object sender, RoutedEventArgs e)
-    {
-        if (Roles.SelectedItem is not CursorRole role) return;
-        var owner = Window.GetWindow(this);
-        var dialog = new OpenFileDialog { Title = role.Label, Filter = "Курсоры и PNG (*.cur;*.ani;*.png)|*.cur;*.ani;*.png" };
-        if (dialog.ShowDialog(owner) != true) return;
-        Begin(async () =>
-        {
-            string name = Path.GetFileName(dialog.FileName);
-            byte[] bytes = await Task.Run(() => CursorSettings.ReadFile(dialog.FileName));
-            if (Path.GetExtension(name).Equals(".png", StringComparison.OrdinalIgnoreCase))
-            {
-                var picker = new CursorHotspot(bytes) { Owner = owner };
-                if (owner is MainWindow main) main.TrackWindowFrame(picker);
-                if (picker.ShowDialog() != true) return "Назначение курсора отменено.";
-                bytes = picker.CursorBytes();
-                name = Path.ChangeExtension(name, ".cur");
-            }
-            await Task.Run(() => settings!.Apply(new() { [role.Key] = new(name, bytes) }));
-            return $"Обновлено состояние «{role.Label}».";
-        });
-    }
-
     private void RestoreClick(object sender, RoutedEventArgs e) => Begin(async () =>
     {
         await Task.Run(settings!.Restore);
         return "Прежняя схема курсоров восстановлена.";
     });
 
-    private void ResetClick(object sender, RoutedEventArgs e)
-    {
-        if (Roles.SelectedItem is not CursorRole role) return;
-        Begin(async () =>
-        {
-            await Task.Run(() => settings!.Reset(role.Key));
-            return $"Возвращён стандартный курсор для состояния «{role.Label}».";
-        });
-    }
-
-    private void RoleChanged(object sender, SelectionChangedEventArgs e) => UpdatePreview();
-
-    private void UpdatePreview()
-    {
-        if (Roles.SelectedItem is not CursorRole role) return;
-        HoverArea.Cursor = null;
-        preview?.Dispose();
-        preview = null;
-        files.TryGetValue(role.Key, out var path);
-        RoleTitle.Text = role.Label;
-        bool custom = !string.IsNullOrEmpty(path);
-        ResetButton.IsEnabled = custom;
-        RoleFile.Text = custom ? Path.GetFileName(path) : "Стандартный курсор Windows";
-        RoleFile.ToolTip = path;
-        HoverText.Text = custom ? "Наведите сюда курсор для проверки" : "Используется стандартный курсор для этого состояния";
-        if (!custom) return;
-        try
-        {
-            if (!CursorFiles.IsCursor(path!)) return;
-            preview = new Cursor(path!, scaleWithDpi: true);
-            HoverArea.Cursor = preview;
-        }
-        catch { HoverText.Text = "Файл курсора недоступен. Выберите другой файл."; }
-    }
 }

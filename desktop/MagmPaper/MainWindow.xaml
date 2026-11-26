@@ -183,7 +183,7 @@
        </StackPanel>
        <Slider x:Name="OpacityInput" Style="{StaticResource SettingsSlider}" AutomationProperties.Name="Непрозрачность, %" Minimum="0" Maximum="100" Value="80" ValueChanged="AppearanceChanged"/>
        <Slider x:Name="RadiusInput" Style="{StaticResource SettingsSlider}" AutomationProperties.Name="Скругление фона, px" Minimum="0" Maximum="24" Value="0"
-               ToolTip="Для стекла 0 означает автоматическое скругление." ValueChanged="AppearanceChanged"/>
+               ValueChanged="AppearanceChanged"/>
        <CheckBox x:Name="HideWidgetsInput" Click="AppearanceChanged" Content="Скрыть кнопку виджетов"/>
        <UniformGrid Columns="3" Margin="0,10,0,12" TextElement.FontSize="12">
         <Button Content="Компактная" Tag="compact" Click="PresetClick" Padding="4,8" Margin="0,0,4,0"/>

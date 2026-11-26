@@ -465,9 +465,9 @@ internal static class SmokeTests
         window.GlassInput.IsChecked = true;
         window.GlassInput.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));
         Assert(window.TaskbarGlassArea.Visibility == Visibility.Visible && window.TaskbarGlassArea.Opacity == .43 &&
-            window.TaskbarSample.CornerRadius.TopLeft == 38 * .43 &&
+            window.TaskbarSample.CornerRadius.TopLeft == 0 &&
             window.GlassSwatch.Background is SolidColorBrush endTint && endTint.Color == Color.FromRgb(0xAB, 0xCD, 0xEF),
-            "glass preview does not reflect the selected tint, opacity and automatic rounding");
+            "glass preview does not reflect the selected tint, opacity and square corners");
         window.OpacityInput.Value = 0;
         Assert(window.TaskbarGlassArea.Visibility == Visibility.Collapsed && window.TaskbarSample.Background == Brushes.Transparent,
             "zero opacity should hide the glass preview");
@@ -518,17 +518,36 @@ internal static class SmokeTests
             TextElements(packs).Any(text => text.Text == "Bibata Modern Ice"), "offline cursor previews are missing from the gallery");
         var container = (ContentPresenter)packs.ItemContainerGenerator.ContainerFromIndex(1);
         var tile = (Border)container.ContentTemplate.FindName("Tile", container);
-        var preview = (Views.CursorTilePreview)((StackPanel)tile.Child).Children[0];
+        var openPack = (Button)container.ContentTemplate.FindName("Open", container);
+        var preview = (Views.CursorTilePreview)((StackPanel)openPack.Content).Children[0];
         Assert(preview.Caption.Text == "Основной указатель" && preview.Incoming.Source is not null, "cursor tile must start with its primary pointer");
         tile.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, Environment.TickCount) { RoutedEvent = Mouse.MouseEnterEvent });
         Assert(preview.Cycling && preview.Caption.Text == "Основной указатель", "cursor slideshow must wait before changing states");
         await Until(() => preview.Caption.Text == "Выбор справки", "cursor tile did not advance to a different state");
         var cursorScroll = window.CursorsPage.PageScroll;
-        Assert(cursorScroll.ScrollableHeight >= 2, "cursor gallery and editor should share a scrollable page");
-        cursorScroll.ScrollToVerticalOffset(Math.Min(40, cursorScroll.ScrollableHeight));
-        await Until(() => !preview.Cycling && preview.Caption.Text == "Основной указатель", "scrolling should stop the cursor preview");
+        if (cursorScroll.ScrollableHeight >= 2) cursorScroll.ScrollToVerticalOffset(2);
+        else tile.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, Environment.TickCount) { RoutedEvent = Mouse.MouseLeaveEvent });
+        await Until(() => !preview.Cycling && preview.Caption.Text == "Основной указатель", "the gallery should reset the cursor preview");
         window.Height = originalHeight;
-        Assert(cursorPage.Roles.Items.Count == CursorFiles.Roles.Count, "cursor page did not expose all states for editing");
+        var current = (ContentPresenter)packs.ItemContainerGenerator.ContainerFromIndex(0);
+        var openCurrent = (Button)current.ContentTemplate.FindName("Open", current);
+        foreach (var (button, isPack) in new[] { (openPack, true), (openCurrent, false) })
+        {
+            var check = window.Dispatcher.InvokeAsync(() =>
+            {
+                var details = window.OwnedWindows.OfType<Views.CursorDetails>().Single(item => item.IsVisible);
+                try
+                {
+                    Assert(details.Roles.Items.Count == CursorFiles.Roles.Count, "cursor window did not expose all states");
+                    details.Roles.SelectedIndex = 1;
+                    Assert(details.RoleTitle.Text == CursorFiles.Roles[1].Label && (isPack ? details.RoleImage.Source is not null : details.ChooseFileButton.IsVisible),
+                        "cursor window did not show the selected role and its controls");
+                }
+                finally { details.Close(); }
+            }, DispatcherPriority.ApplicationIdle);
+            button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            await check;
+        }
         var source = BitmapSource.Create(2, 2, 96, 96, PixelFormats.Bgra32, null,
             new byte[] { 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255 }, 8);
         var pngEncoder = new PngBitmapEncoder();

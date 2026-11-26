@@ -245,13 +245,16 @@ int main() try {
         }
         require(lens,"glass did not create the blurred lens brush");
         require(secondTint&&bevel,"glass did not preserve the two tints and two reflective rims");
-        host.send("7 1 64 40 52 1193046 0 1 0 1 11259375 0\n");host.applied(7);
+        host.send("7 1 64 40 52 1193046 25 1 0 1 11259375 0\n");host.applied(7);
+        require(clip.CornerRadius().x==0&&background.RadiusX()==0&&background.RadiusY()==0,
+            "radius zero must make the glass and native rectangle square");
+        host.send("8 1 64 40 52 1193046 0 1 0 1 11259375 0\n");host.applied(8);
         require(!xaml::Hosting::ElementCompositionPreview::GetElementChildVisual(background)&&
-            background.Fill().as<xaml::Media::SolidColorBrush>().Color().A==0&&std::abs(background.RadiusX()-27.52)<.01,
-            "zero opacity must remove the glass and rounding 0 must choose the automatic radius");
-        host.send("8 0 64 40 52 1193046 25 1 8 0 0 0\n");host.applied(8);
+            background.Fill().as<xaml::Media::SolidColorBrush>().Color().A==0,
+            "zero opacity must remove the glass");
+        host.send("9 0 64 40 52 1193046 25 1 8 0 0 0\n");host.applied(9);
         require(frame.Height()==48&&icon.Width()==24&&widgets.Visibility()==xaml::Visibility::Visible,"disable restores native XAML");
-        host.send("9 1 64 40 52 1193046 25 1 8 0 0 0\n");host.applied(9);host.crash();
+        host.send("10 1 64 40 52 1193046 25 1 8 0 0 0\n");host.applied(10);host.crash();
         until([&]{return frame.Height()==48&&icon.Width()==24;},"host crash did not restore XAML");
         std::cout<<"PASS: helper attachment and crash restoration."<<std::endl;
     }

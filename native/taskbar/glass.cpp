@@ -101,7 +101,7 @@ void setStops(composition::Compositor const& compositor,composition::Composition
 }
 }
 
-double glassRadius(double height,UINT radius) {return std::min(height/2,radius?static_cast<double>(radius):height*.43);}
+double glassRadius(double height,UINT radius) {return std::min(height/2,static_cast<double>(radius));}
 
 GlassVisual::GlassVisual(xaml::FrameworkElement const& target):element(target) {
     compositor=ElementCompositionPreview::GetElementVisual(target).Compositor();

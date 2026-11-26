@@ -1,0 +1,53 @@
+<Window x:Class="MagmPaper.Views.CursorDetails"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Style="{StaticResource AppWindow}" Width="660" SizeToContent="Height"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False" ResizeMode="NoResize"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent">
+  <Border x:Name="Frame" CornerRadius="14" Background="{DynamicResource BackgroundBrush}"
+          BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" Padding="22,14,22,18">
+    <Grid>
+      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+      <DockPanel Margin="0,0,0,14">
+        <Button DockPanel.Dock="Right" Style="{StaticResource CloseCaptionButton}" Content="&#xE8BB;"
+                Width="32" Height="32" IsCancel="True" AutomationProperties.Name="Закрыть"/>
+        <Border Background="Transparent" MouseLeftButtonDown="DragTitle">
+          <TextBlock Text="{Binding Title, RelativeSource={RelativeSource AncestorType=Window}}"
+                     VerticalAlignment="Center" FontSize="20" FontWeight="SemiBold"/>
+        </Border>
+      </DockPanel>
+      <Border x:Name="Editor" Grid.Row="1">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="18"/>
+            <ColumnDefinition Width="*"/>
+          </Grid.ColumnDefinitions>
+          <ListBox x:Name="Roles" Height="292" VerticalAlignment="Top" DisplayMemberPath="Label"
+                   SelectionChanged="RoleChanged" AutomationProperties.Name="Состояния курсора"/>
+          <StackPanel Grid.Column="2">
+            <TextBlock x:Name="RoleTitle" FontSize="20" FontWeight="SemiBold"/>
+            <TextBlock x:Name="RoleFile" Style="{StaticResource Muted}" Margin="0,5,0,12"/>
+            <Border x:Name="HoverArea" Height="110" CornerRadius="10" Background="{DynamicResource InputBrush}"
+                    BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" Padding="14">
+              <StackPanel VerticalAlignment="Center">
+                <Image x:Name="RoleImage" Width="52" Height="52" Visibility="Collapsed" Margin="0,0,0,5"/>
+                <TextBlock x:Name="HoverText" TextAlignment="Center" VerticalAlignment="Center"/>
+              </StackPanel>
+            </Border>
+            <Button x:Name="ChooseFileButton" Content="Выбрать файл…" Click="ChooseFileClick" Style="{StaticResource Primary}" Margin="0,12,0,8"/>
+            <Button x:Name="ResetButton" Content="Стандартный курсор для этого состояния" Click="ResetClick" IsEnabled="False"
+                    AutomationProperties.Name="Сбросить выбранное состояние">
+              <Button.ContentTemplate>
+                <DataTemplate><TextBlock Text="{Binding}" TextAlignment="Center" TextWrapping="Wrap"/></DataTemplate>
+              </Button.ContentTemplate>
+            </Button>
+            <TextBlock x:Name="FormatHint" Text="CUR и ANI сохраняют свою точку клика. Для PNG до 256×256 её можно указать вручную."
+                       Style="{StaticResource Muted}" FontSize="12" Margin="0,12,0,0"/>
+          </StackPanel>
+        </Grid>
+      </Border>
+      <TextBlock x:Name="Feedback" Grid.Row="2" Style="{StaticResource Muted}" Margin="0,10,0,0" Visibility="Collapsed"/>
+    </Grid>
+  </Border>
+</Window>

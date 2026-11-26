@@ -669,9 +669,8 @@ public partial class MainWindow : Window
         GlassSwatch.Background = new SolidColorBrush(end);
         GlassColors.Visibility = value.Glass ? Visibility.Visible : Visibility.Collapsed;
         TaskbarSample.Height = value.Height;
-        double radius = value.Glass && value.Radius == 0 ? value.Height * .43 : value.Radius;
-        double glassRadius = Math.Min(value.Height / 2.0, radius);
-        TaskbarSample.CornerRadius = new CornerRadius(value.Glass ? glassRadius : radius);
+        double glassRadius = Math.Min(value.Height / 2.0, value.Radius);
+        TaskbarSample.CornerRadius = new CornerRadius(value.Glass ? glassRadius : value.Radius);
         TaskbarGlassArea.Visibility = value.Glass && value.Opacity != 0 ? Visibility.Visible : Visibility.Collapsed;
         if (value.Glass)
         {
