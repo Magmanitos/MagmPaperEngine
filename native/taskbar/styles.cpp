@@ -1,4 +1,5 @@
 #include "styles.h"
+#include "glass.h"
 #include <winrt/Windows.Devices.Input.h>
 #include <winrt/Windows.UI.Xaml.Input.h>
 #include <winrt/Windows.UI.Xaml.Media.Animation.h>
@@ -273,7 +274,7 @@ void StyledElement::dimension(xaml::DependencyProperty const& minimum,xaml::Depe
     set(maximum,box_value(value));
     set(minimum,box_value(value));
 }
-void StyledElement::apply(const Settings& settings) {
+void StyledElement::apply(const Settings& settings,bool hostBackdrop) {
     if(!settings.enabled) {if(!restore()) throw hresult_error(E_FAIL);return;}
     const double height=static_cast<double>(settings.height);
     switch(kind) {
@@ -289,7 +290,18 @@ void StyledElement::apply(const Settings& settings) {
     case Kind::Background: {
         Windows::UI::Color color{static_cast<uint8_t>((settings.opacity*255+50)/100),
             static_cast<uint8_t>(settings.color>>16),static_cast<uint8_t>(settings.color>>8),static_cast<uint8_t>(settings.color)};
-        if(settings.glass) {
+        if(settings.glass&&settings.opacity) {
+            try {
+                if(!state->glass) {
+                    if(auto target=state->target.get()) state->glass=GlassVisual::create(target);
+                    set(xaml::Shapes::Shape::FillProperty(),xaml::Media::SolidColorBrush(Windows::UI::Color{}));
+                }
+                if(state->glass) state->glass->apply(settings,hostBackdrop);
+            } catch(...) {state->glass.reset();}
+        } else state->glass.reset();
+        if(settings.glass&&settings.opacity&&!state->glass) {
+            // The native rectangle still shows a translucent tint if this
+            // XAML template cannot host a composition visual.
             xaml::Media::LinearGradientBrush brush;
             brush.StartPoint({0,0});
             brush.EndPoint({0.85f,1});
@@ -306,9 +318,10 @@ void StyledElement::apply(const Settings& settings) {
             addStop(1,{static_cast<uint8_t>(color.A*2/3),static_cast<uint8_t>(settings.glassColor>>16),
                 static_cast<uint8_t>(settings.glassColor>>8),static_cast<uint8_t>(settings.glassColor)});
             set(xaml::Shapes::Shape::FillProperty(),brush);
-        } else set(xaml::Shapes::Shape::FillProperty(),xaml::Media::SolidColorBrush(color));
-        set(xaml::Shapes::Rectangle::RadiusXProperty(),box_value(static_cast<double>(settings.radius)));
-        set(xaml::Shapes::Rectangle::RadiusYProperty(),box_value(static_cast<double>(settings.radius)));break;
+        } else if(!state->glass) set(xaml::Shapes::Shape::FillProperty(),xaml::Media::SolidColorBrush(color));
+        double radius=settings.glass?glassRadius(height,settings.radius):settings.radius;
+        set(xaml::Shapes::Rectangle::RadiusXProperty(),box_value(radius));
+        set(xaml::Shapes::Rectangle::RadiusYProperty(),box_value(radius));break;
     }
     case Kind::Stroke:set(xaml::UIElement::OpacityProperty(),box_value(0.0));break;
     case Kind::Widgets:
@@ -351,6 +364,7 @@ void StyledElement::stopObserving() noexcept {
 }
 bool StyledElement::restore() noexcept {
     bool restored=true;
+    state->glass.reset();
     stopObserving();
     if(auto element=state->target.get()) {
       auto minimum=[](auto const& key){return key==xaml::FrameworkElement::MinWidthProperty()||key==xaml::FrameworkElement::MinHeightProperty();};

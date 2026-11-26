@@ -668,20 +668,23 @@ public partial class MainWindow : Window
         ColorSwatch.Background = new SolidColorBrush(color);
         GlassSwatch.Background = new SolidColorBrush(end);
         GlassColors.Visibility = value.Glass ? Visibility.Visible : Visibility.Collapsed;
-        color.A = (byte)((value.Opacity * 255 + 50) / 100);
+        TaskbarSample.Height = value.Height;
+        double radius = value.Glass && value.Radius == 0 ? value.Height * .43 : value.Radius;
+        double glassRadius = Math.Min(value.Height / 2.0, radius);
+        TaskbarSample.CornerRadius = new CornerRadius(value.Glass ? glassRadius : radius);
+        TaskbarGlassArea.Visibility = value.Glass && value.Opacity != 0 ? Visibility.Visible : Visibility.Collapsed;
         if (value.Glass)
         {
-            static byte Shine(byte channel) => (byte)((channel * 3 + 255) / 4);
-            var highlight = Color.FromArgb(color.A, Shine(color.R), Shine(color.G), Shine(color.B));
-            end.A = (byte)(color.A * 2 / 3);
-            color.A = (byte)(color.A * 3 / 4);
-            TaskbarSample.Background = new LinearGradientBrush(
-                new GradientStopCollection { new(highlight, 0), new(color, .38), new(end, 1) },
-                new Point(0, 0), new Point(.85, 1));
+            TaskbarSample.Background = Brushes.Transparent;
+            TaskbarGlassArea.Opacity = value.Opacity / 100.0;
+            TaskbarGlassLayer.Configure(color, end, glassRadius);
+            ClipTaskbarGlass();
         }
-        else TaskbarSample.Background = new SolidColorBrush(color);
-        TaskbarSample.Height = value.Height;
-        TaskbarSample.CornerRadius = new CornerRadius(value.Radius);
+        else
+        {
+            color.A = (byte)((value.Opacity * 255 + 50) / 100);
+            TaskbarSample.Background = new SolidColorBrush(color);
+        }
         WidgetsSample.Visibility = value.HideWidgets ? Visibility.Collapsed : Visibility.Visible;
         foreach (Border button in TaskbarSampleIcons.Children)
         {
@@ -689,6 +692,14 @@ public partial class MainWindow : Window
             if (button.Child is Border icon) icon.Width = icon.Height = value.Icon;
         }
         UpdateTaskbarSampleEffects(value.Effect);
+    }
+
+    private void TaskbarGlassSizeChanged(object sender, SizeChangedEventArgs e) => ClipTaskbarGlass();
+
+    private void ClipTaskbarGlass()
+    {
+        double radius = TaskbarSample.CornerRadius.TopLeft;
+        TaskbarGlassArea.Clip = new RectangleGeometry(new Rect(TaskbarGlassArea.RenderSize), radius, radius);
     }
 
     private void SetTaskbarSampleHover(Border? hovered)

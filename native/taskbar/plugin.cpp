@@ -1,6 +1,7 @@
 #include "styles.h"
 #include <commctrl.h>
 #include <shellapi.h>
+#include <dwmapi.h>
 #include <xamlom.h>
 #include <ocidl.h>
 #include <unordered_map>
@@ -31,7 +32,15 @@ struct __declspec(uuid("735941a2-3ee3-495a-8da9-972627003075")) DiagnosticsLifet
     virtual HRESULT STDMETHODCALLTYPE UnregisterInstance(InstanceHandle)=0;
     virtual HRESULT STDMETHODCALLTYPE TryGetDispatcherQueueForObject(InstanceHandle,void**)=0;
 };
-struct Bar { HWND window; RECT original; UINT originalDpi=96; bool resized=false; RECT writtenWork{}; bool changedWork=false; };
+struct Bar {
+    HWND window;
+    RECT original;
+    UINT originalDpi=96;
+    bool resized=false;
+    RECT writtenWork{};
+    bool changedWork=false,hostBackdrop=false;
+    BOOL previousBackdrop=FALSE;
+};
 struct PendingElement { weak_ref<xaml::FrameworkElement> element; ULONGLONG deadline; };
 struct Context {
     HWND window=nullptr;
@@ -41,7 +50,7 @@ struct Context {
     std::unordered_map<InstanceHandle,PendingElement> pending;
     Settings settings{};
     ULONGLONG geometryDeadline=0;
-    bool revisitQueued=false;
+    bool revisitQueued=false,hostBackdrop=false;
     com_ptr<DiagnosticsLifetime> lifetime;
     std::vector<InstanceHandle> releases;
 };
@@ -169,6 +178,24 @@ LONG restoreElements(Context& ctx) {
     }
     return errors;
 }
+bool updateHostBackdrop(Context& ctx,bool enabled) {
+    bool available=false;
+    for(auto& bar:ctx.bars) {
+        if(enabled&&!bar.hostBackdrop) {
+            BOOL flag=TRUE,original=FALSE;
+            DwmGetWindowAttribute(bar.window,DWMWA_USE_HOSTBACKDROPBRUSH,&original,sizeof(original));
+            if(SUCCEEDED(DwmSetWindowAttribute(bar.window,DWMWA_USE_HOSTBACKDROPBRUSH,&flag,sizeof(flag)))) {
+                bar.previousBackdrop=original;
+                bar.hostBackdrop=true;
+            }
+        } else if(!enabled&&bar.hostBackdrop) {
+            DwmSetWindowAttribute(bar.window,DWMWA_USE_HOSTBACKDROPBRUSH,&bar.previousBackdrop,sizeof(bar.previousBackdrop));
+            bar.hostBackdrop=false;
+        }
+        available|=bar.hostBackdrop;
+    }
+    return available;
+}
 void update(Context& ctx) {
     Settings value{};if(!shared||!read(shared,value)) return;
     if(stopping) {value.enabled=0;value.iconEffect=0;}
@@ -177,9 +204,10 @@ void update(Context& ctx) {
         ctx.geometryDeadline=0;
     }
     ctx.settings=value;
+    ctx.hostBackdrop=updateHostBackdrop(ctx,value.enabled&&value.glass&&value.opacity);
     LONG errors=0,code=0,stage=0;
     if(!value.enabled) {errors+=restoreElements(ctx);if(errors) {code=E_FAIL;stage=3;}}
-    else for(auto& [id,element]:ctx.elements) try {element->apply(value);} catch(...) {
+    else for(auto& [id,element]:ctx.elements) try {element->apply(value,ctx.hostBackdrop);} catch(...) {
         errors++;if(!code) {code=to_hresult();stage=1;}
     }
     for(auto& [id,element]:ctx.elements) try {element->updateIconLift(value);} catch(...) {
@@ -256,7 +284,7 @@ bool remember(Context& ctx,InstanceHandle id,xaml::FrameworkElement element,cons
     }
     if(added&&kind==Kind::Icon) InterlockedIncrement(&ctx.slot->icons);
     if(added&&kind==Kind::Background) InterlockedIncrement(&ctx.slot->backgrounds);
-    if(added&&ctx.settings.enabled) ctx.elements.at(id)->apply(ctx.settings);
+    if(added&&ctx.settings.enabled) ctx.elements.at(id)->apply(ctx.settings,ctx.hostBackdrop);
     return complete;
 }
 LRESULT CALLBACK contextProcedure(HWND window,UINT message,WPARAM wp,LPARAM lp) {
@@ -287,6 +315,7 @@ LRESULT CALLBACK contextProcedure(HWND window,UINT message,WPARAM wp,LPARAM lp) 
             KillTimer(window,GeometryTimer);
             ctx->settings.enabled=0;
             restoreElements(*ctx);
+            updateHostBackdrop(*ctx,false);
             resizeBars(*ctx,false);
             for(auto& bar:ctx->bars) RemoveWindowSubclass(bar.window,barProcedure,1);
             ctx->elements.clear();ctx->pending.clear();

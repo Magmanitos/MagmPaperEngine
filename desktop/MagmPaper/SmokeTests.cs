@@ -464,9 +464,14 @@ internal static class SmokeTests
         window.SetTaskbarColor("#ABCDEF", second: true);
         window.GlassInput.IsChecked = true;
         window.GlassInput.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));
-        Assert(window.TaskbarSample.Background is LinearGradientBrush glass &&
-            glass.GradientStops.Count == 3 && glass.GradientStops[2].Color == Color.FromArgb(73, 0xAB, 0xCD, 0xEF),
-            "glass preview does not reflect the selected tint and opacity");
+        Assert(window.TaskbarGlassArea.Visibility == Visibility.Visible && window.TaskbarGlassArea.Opacity == .43 &&
+            window.TaskbarSample.CornerRadius.TopLeft == 38 * .43 &&
+            window.GlassSwatch.Background is SolidColorBrush endTint && endTint.Color == Color.FromRgb(0xAB, 0xCD, 0xEF),
+            "glass preview does not reflect the selected tint, opacity and automatic rounding");
+        window.OpacityInput.Value = 0;
+        Assert(window.TaskbarGlassArea.Visibility == Visibility.Collapsed && window.TaskbarSample.Background == Brushes.Transparent,
+            "zero opacity should hide the glass preview");
+        window.OpacityInput.Value = 43;
         await window.FinishTaskbarUpdatesAsync();
         draft = DataFiles.Read<AppearanceSettings>(Path.Combine(window.Library.DirectoryPath, "taskbar-appearance.json"));
         Assert(draft.Glass && draft.GlassColor == "#ABCDEF", "glass settings were not saved");
@@ -559,8 +564,11 @@ internal static class SmokeTests
         window.ThemeInput.IsChecked = false;
         window.ThemeInput.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));
         await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
-        Assert(window.Background is SolidColorBrush light && Luminance(light.Color) is > .75 and < .85, "light theme did not update the window");
+        Assert(window.Background is SolidColorBrush light && Luminance(light.Color) is > .53 and < .65,
+            "light theme did not use the softer background");
         AssertReadable(window.Foreground, window.Background, "light window");
+        AssertReadable((Brush)window.FindResource("MutedBrush"), (Brush)window.FindResource("PanelBrush"), "light secondary text");
+        AssertReadable((Brush)window.FindResource("AccentBrush"), (Brush)window.FindResource("InputBrush"), "light accent labels");
         AssertReadable(window.AddWallpaperButton.Foreground, window.AddWallpaperButton.Background, "light primary button");
         var lightNameDialog = new Views.WallpaperDialog("Обои") { Owner = window };
         lightNameDialog.Show();

@@ -1,5 +1,6 @@
 #include "styles.h"
 #include <winrt/Windows.UI.Xaml.Hosting.h>
+#include <winrt/Windows.UI.Composition.h>
 #include <winrt/Windows.UI.Xaml.Input.h>
 #include <winrt/Windows.UI.Xaml.Media.Animation.h>
 #include <winrt/Windows.UI.Xaml.Media.Imaging.h>
@@ -220,13 +221,32 @@ int main() try {
                 "hook failed to anchor a native size-only request at the screen bottom");
         }
         host.send("6 1 64 40 52 1193046 25 1 8 1 11259375 0\n");host.applied(6);
-        auto gradient=background.Fill().as<xaml::Media::LinearGradientBrush>().GradientStops();
-        auto last=gradient.GetAt(2).Color();
-        require(gradient.Size()==3&&gradient.GetAt(0).Color().A==64&&last.A==42&&last.R==0xab&&last.G==0xcd&&last.B==0xef,
-            "native glass gradient preserves both the tint and the opacity");
-        host.send("7 0 64 40 52 1193046 25 1 8 0 0 0\n");host.applied(7);
+        namespace composition=Windows::UI::Composition;
+        auto glass=xaml::Hosting::ElementCompositionPreview::GetElementChildVisual(background).as<composition::ContainerVisual>();
+        require(glass.Opacity()==.25f&&glass.Children().Count()==4&&background.Fill().as<xaml::Media::SolidColorBrush>().Color().A==0,
+            "glass must layer the material and leave the underlying XAML shape transparent");
+        auto clip=glass.Clip().as<composition::CompositionGeometricClip>().Geometry().as<composition::CompositionRoundedRectangleGeometry>();
+        require(clip.CornerRadius().X==8.f,"glass clip did not follow the configured rounding");
+        bool lens=false,secondTint=false,bevel=false;
+        for(auto child:glass.Children()) {
+            if(auto sprite=child.try_as<composition::SpriteVisual>()) {
+                auto brush=sprite.Brush();
+                lens|=brush&&brush.Comment()==L"MagmPaper.Glass.Lens"&&brush.try_as<composition::CompositionEffectBrush>()!=nullptr;
+                if(auto tint=brush.try_as<composition::CompositionLinearGradientBrush>();tint&&tint.ColorStops().Size()==5) {
+                    auto color=tint.ColorStops().GetAt(3).Color();
+                    secondTint|=color.R==0xab&&color.G==0xcd&&color.B==0xef;
+                }
+            }
+            if(auto shape=child.try_as<composition::ShapeVisual>()) bevel|=shape.Shapes().Size()==2;
+        }
+        require(lens&&secondTint&&bevel,"glass must provide a blurred, displaced backdrop with both tints and two reflective rims");
+        host.send("7 1 64 40 52 1193046 0 1 0 1 11259375 0\n");host.applied(7);
+        require(!xaml::Hosting::ElementCompositionPreview::GetElementChildVisual(background)&&
+            background.Fill().as<xaml::Media::SolidColorBrush>().Color().A==0&&std::abs(background.RadiusX()-27.52)<.01,
+            "zero opacity must remove the glass and rounding 0 must choose the automatic radius");
+        host.send("8 0 64 40 52 1193046 25 1 8 0 0 0\n");host.applied(8);
         require(frame.Height()==48&&icon.Width()==24&&widgets.Visibility()==xaml::Visibility::Visible,"disable restores native XAML");
-        host.send("8 1 64 40 52 1193046 25 1 8 0 0 0\n");host.applied(8);host.crash();
+        host.send("9 1 64 40 52 1193046 25 1 8 0 0 0\n");host.applied(9);host.crash();
         until([&]{return frame.Height()==48&&icon.Width()==24;},"host crash did not restore XAML");
         std::cout<<"PASS: helper attachment and crash restoration."<<std::endl;
     }

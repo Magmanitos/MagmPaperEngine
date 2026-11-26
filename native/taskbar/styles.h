@@ -20,6 +20,7 @@ namespace xaml=winrt::Windows::UI::Xaml;
 enum class Kind { None, Frame, Content, Tray, Background, Stroke, Icon, Button, Widgets };
 Kind classify(const std::wstring& type,const std::wstring& name,bool inTaskbar);
 struct IconLift;
+class GlassVisual;
 void refreshIconEffects();
 class StyledElement {
     struct Property {
@@ -33,6 +34,7 @@ class StyledElement {
         winrt::weak_ref<xaml::FrameworkElement> target;
         std::vector<std::shared_ptr<Property>> properties;
         std::shared_ptr<IconLift> lift;
+        std::shared_ptr<GlassVisual> glass;
         std::shared_ptr<bool> writing=std::make_shared<bool>(false);
         explicit State(xaml::FrameworkElement const& element):target(element){}
     };
@@ -47,7 +49,7 @@ public:
     Kind kind;
     StyledElement(xaml::FrameworkElement const& element,Kind type);
     ~StyledElement();
-    void apply(const Settings&);
+    void apply(const Settings&,bool hostBackdrop=false);
     void updateIconLift(const Settings&);
     void stopObserving() noexcept;
     bool restore() noexcept;

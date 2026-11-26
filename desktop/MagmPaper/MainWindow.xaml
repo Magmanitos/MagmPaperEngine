@@ -97,7 +97,41 @@
     </Grid>
     <ScrollViewer x:Name="TaskbarPage" Visibility="Collapsed" VerticalScrollBarVisibility="Auto"><StackPanel>
      <TextBlock Text="Панель задач" Style="{StaticResource Title}"/><TextBlock Text="Настройте стандартную панель Windows. Закреплённые приложения, трей и меню сохраняются." Style="{StaticResource Muted}" Margin="0,0,0,20"/>
-     <Border Style="{StaticResource Card}" Padding="16" Margin="0,0,0,20"><StackPanel><TextBlock Text="Предпросмотр оформления" FontSize="14" Margin="0,0,0,10"/><Viewbox Height="110" Stretch="Uniform"><Grid Width="620" Height="110" Background="#302442"><Border x:Name="TaskbarSample" VerticalAlignment="Bottom" Height="48" Background="#171923"><Grid><TextBlock x:Name="WidgetsSample" Foreground="#F4F0FF" Text="☁  12°" VerticalAlignment="Center" Margin="12,0" FontSize="12"/><StackPanel x:Name="TaskbarSampleIcons" Orientation="Horizontal" HorizontalAlignment="Center">
+     <Border Style="{StaticResource Card}" Padding="16" Margin="0,0,0,20"><StackPanel><TextBlock Text="Предпросмотр оформления" FontSize="14" Margin="0,0,0,10"/>
+      <Viewbox Height="130" Stretch="Uniform"><Grid Width="620" Height="130" ClipToBounds="True">
+       <Grid x:Name="TaskbarBackdropSample" IsHitTestVisible="False">
+        <Grid.Background>
+         <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+          <GradientStop Color="#25264A"/><GradientStop Color="#385C9A" Offset=".50"/><GradientStop Color="#78538C" Offset="1"/>
+         </LinearGradientBrush>
+        </Grid.Background>
+        <Path Data="M -25,95 C 140,142 242,125 330,64 C 422,3 520,1 655,47 L 655,150 L -25,150 Z">
+         <Path.Fill>
+          <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+           <GradientStop Color="#6D98BB"/><GradientStop Color="#5968AB" Offset=".49"/><GradientStop Color="#3A305D" Offset="1"/>
+          </LinearGradientBrush>
+         </Path.Fill>
+        </Path>
+        <Path Data="M -15,137 C 151,73 241,49 351,93 C 449,132 521,127 643,61 L 643,150 L -15,150 Z">
+         <Path.Fill>
+          <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+           <GradientStop Color="#7462AE"/><GradientStop Color="#997AAB" Offset=".46"/><GradientStop Color="#5D4281" Offset="1"/>
+          </LinearGradientBrush>
+         </Path.Fill>
+        </Path>
+       </Grid>
+       <Border x:Name="TaskbarSample" VerticalAlignment="Bottom" Height="48" Background="#171923"><Grid>
+        <Grid x:Name="TaskbarGlassArea" IsHitTestVisible="False" SizeChanged="TaskbarGlassSizeChanged" Visibility="Collapsed">
+         <Canvas>
+          <Rectangle Width="620" Height="130" Canvas.Bottom="0" Opacity=".84">
+           <Rectangle.Fill><VisualBrush Visual="{Binding ElementName=TaskbarBackdropSample}"/></Rectangle.Fill>
+           <Rectangle.Effect><BlurEffect Radius="11" RenderingBias="Performance"/></Rectangle.Effect>
+           <Rectangle.RenderTransform><ScaleTransform ScaleY="1.07" CenterY="100"/></Rectangle.RenderTransform>
+          </Rectangle>
+         </Canvas>
+         <views:TaskbarGlassPreview x:Name="TaskbarGlassLayer"/>
+        </Grid>
+        <TextBlock x:Name="WidgetsSample" Foreground="#F4F0FF" Text="☁  12°" VerticalAlignment="Center" Margin="12,0" FontSize="12"/><StackPanel x:Name="TaskbarSampleIcons" Orientation="Horizontal" HorizontalAlignment="Center">
        <Border Background="Transparent"><Border CornerRadius="4" Background="#53A6FF" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
        <Border Background="Transparent"><Border CornerRadius="4" Background="#EABB58" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
        <Border Background="Transparent"><Border CornerRadius="4" Background="#6CC9B0" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
@@ -133,7 +167,7 @@
         </Button>
         <TextBlock Text="Цвет фона" VerticalAlignment="Center" Margin="0,0,8,0"/>
        </DockPanel>
-       <CheckBox x:Name="GlassInput" Content="Стеклянный градиент" Click="AppearanceChanged"/>
+       <CheckBox x:Name="GlassInput" Content="Объёмное стекло" Click="AppearanceChanged"/>
        <StackPanel x:Name="GlassColors" Visibility="Collapsed">
         <CheckBox x:Name="WallpaperColorsInput" Content="Подбирать цвета под обои" Click="AppearanceChanged"/>
         <TextBlock x:Name="WallpaperColorsStatus" Style="{StaticResource Muted}" Visibility="Collapsed" FontSize="12" Margin="0,1,0,6"/>
@@ -148,7 +182,8 @@
         </DockPanel>
        </StackPanel>
        <Slider x:Name="OpacityInput" Style="{StaticResource SettingsSlider}" AutomationProperties.Name="Непрозрачность, %" Minimum="0" Maximum="100" Value="80" ValueChanged="AppearanceChanged"/>
-       <Slider x:Name="RadiusInput" Style="{StaticResource SettingsSlider}" AutomationProperties.Name="Скругление фона, px" Minimum="0" Maximum="24" Value="0" ValueChanged="AppearanceChanged"/>
+       <Slider x:Name="RadiusInput" Style="{StaticResource SettingsSlider}" AutomationProperties.Name="Скругление фона, px" Minimum="0" Maximum="24" Value="0"
+               ToolTip="Для стекла 0 означает автоматическое скругление." ValueChanged="AppearanceChanged"/>
        <CheckBox x:Name="HideWidgetsInput" Click="AppearanceChanged" Content="Скрыть кнопку виджетов"/>
        <UniformGrid Columns="3" Margin="0,10,0,12" TextElement.FontSize="12">
         <Button Content="Компактная" Tag="compact" Click="PresetClick" Padding="4,8" Margin="0,0,4,0"/>
