@@ -13,6 +13,7 @@ using namespace magm;
 using namespace winrt;
 void require(bool value,const char* message) {if(!value) throw std::runtime_error(message);}
 HWND island=nullptr;
+com_ptr<IDesktopWindowXamlSourceNative2> inputSource;
 int deferResizeAtHeight=0;
 LRESULT CALLBACK surface(HWND hwnd,UINT message,WPARAM wp,LPARAM lp) {
     if(message==WM_SIZE&&island) SetWindowPos(island,nullptr,0,0,LOWORD(lp),HIWORD(lp),SWP_NOZORDER|SWP_NOACTIVATE);
@@ -27,7 +28,14 @@ LRESULT CALLBACK surface(HWND hwnd,UINT message,WPARAM wp,LPARAM lp) {
     }
     return result;
 }
-void pump(){MSG message{};while(PeekMessageW(&message,nullptr,0,0,PM_REMOVE)){TranslateMessage(&message);DispatchMessageW(&message);}}
+void pump(){
+    MSG message{};
+    while(PeekMessageW(&message,nullptr,0,0,PM_REMOVE)) {
+        BOOL handled=FALSE;
+        if(inputSource) inputSource->PreTranslateMessage(&message,&handled);
+        if(!handled) {TranslateMessage(&message);DispatchMessageW(&message);}
+    }
+}
 void until(const std::function<bool()>& predicate,const char* description) {
     ULONGLONG end=GetTickCount64()+20000;
     while(!predicate()){pump();if(GetTickCount64()>end)throw std::runtime_error(description);Sleep(10);}
@@ -93,6 +101,7 @@ int main() try {
     require(window!=nullptr,"test window");
     auto source=xaml::Hosting::DesktopWindowXamlSource();
     auto native=source.as<IDesktopWindowXamlSourceNative>();check_hresult(native->AttachToWindow(window));
+    inputSource=source.as<IDesktopWindowXamlSourceNative2>();
     check_hresult(native->get_WindowHandle(&island));SetWindowPos(island,nullptr,0,0,500,48,SWP_SHOWWINDOW);
     xaml::Controls::Grid root;
     xaml::Controls::Grid frame;frame.Name(L"MagmPaper.Test.Frame");frame.Height(48);frame.MinHeight(0);root.Children().Append(frame);
@@ -263,20 +272,29 @@ int main() try {
         auto addButton=[&](xaml::Controls::Grid const& cell,xaml::Controls::Image const& image,double x) {
             cell.Name(L"MagmPaper.Test.Button");cell.Width(44);
             cell.HorizontalAlignment(xaml::HorizontalAlignment::Left);cell.Margin({x,0,0,0});
-            cell.Background(xaml::Media::SolidColorBrush(Windows::UI::Color{}));
+            cell.Background(xaml::Media::SolidColorBrush(Windows::UI::Color{255,0x22,0x23,0x2b}));
             image.Name(L"Icon");image.Width(24);image.Height(24);
             cell.Children().Append(image);frame.Children().Append(cell);
         };
         addButton(left,first,20);addButton(right,second,90);
         root.UpdateLayout();
-        RECT originalBounds{};GetWindowRect(window,&originalBounds);
         POINT cursor{};GetCursorPos(&cursor);
-        SetWindowPos(window,HWND_TOPMOST,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_SHOWWINDOW);
+        SetWindowPos(window,HWND_TOPMOST,80,80,0,0,SWP_NOSIZE|SWP_SHOWWINDOW);
         SetForegroundWindow(window);
+        RECT originalBounds{};GetWindowRect(window,&originalBounds);
+        int pointerEvents=0;
+        for(auto cell:{left,right}) cell.PointerEntered([&](auto const&,auto const&){pointerEvents++;});
         auto pointAt=[&](LONG x) {
             POINT point{MulDiv(x,GetDpiForWindow(island),96),MulDiv(24,GetDpiForWindow(island),96)};
             ClientToScreen(island,&point);
-            require(SetCursorPos(point.x,point.y)!=FALSE,"move the cursor across taskbar test buttons");
+            const int originX=GetSystemMetrics(SM_XVIRTUALSCREEN),originY=GetSystemMetrics(SM_YVIRTUALSCREEN);
+            INPUT input{};input.type=INPUT_MOUSE;
+            input.mi.dx=MulDiv(point.x-originX,65535,GetSystemMetrics(SM_CXVIRTUALSCREEN)-1);
+            input.mi.dy=MulDiv(point.y-originY,65535,GetSystemMetrics(SM_CYVIRTUALSCREEN)-1);
+            input.mi.dwFlags=MOUSEEVENTF_MOVE|MOUSEEVENTF_ABSOLUTE|MOUSEEVENTF_VIRTUALDESK;
+            require(SendInput(1,&input,sizeof(INPUT))==1,"move the cursor across taskbar test buttons");
+            HWND at=WindowFromPoint(point);
+            require(at==window||IsChild(window,at),"pointer target is outside the test XAML window");
         };
         auto offset=[](xaml::Controls::Image const& image) {
             auto transforms=image.RenderTransform().as<xaml::Media::TransformGroup>().Children();
@@ -292,6 +310,7 @@ int main() try {
         require(EqualRect(&originalBounds,&sameBounds)&&frame.Height()==48&&left.ActualWidth()==44&&background.Fill()==original,
             "animation alone must keep native taskbar geometry and colors");
         pointAt(32);
+        until([&]{return pointerEvents>0;},"the XAML island did not receive the pointer enter event");
         BOOL motion=TRUE;SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION,0,&motion,0);
         if(motion) until([&]{const auto y=offset(first);return y<0&&y>-5;},"hover must interpolate instead of jumping");
         else until([&]{return offset(first)==-5;},"reduced motion should lift without interpolation");
@@ -314,7 +333,7 @@ int main() try {
         }
         std::cout<<"PASS: taskbar hover motion, adjacent button transfer and cleanup."<<std::endl;
     }
-    source.Close();DestroyWindow(window);manager.Close();
+    inputSource=nullptr;source.Close();DestroyWindow(window);manager.Close();
     std::cout<<"PASS: native XAML sizes, color, opacity, visibility, shell reset and restoration; DPI geometry; IPC validation."<<std::endl;
     return 0;
 } catch(const hresult_error& error) {std::cerr<<"WinRT error "<<std::hex<<static_cast<uint32_t>(error.code().value)<<std::endl;return 1;}
