@@ -328,8 +328,14 @@ int main() try {
         pointAt(103);
         until([&]{return offset(second)==-5&&effect(first).Rotation()==8&&effect(second).Rotation()==0;},"carousel did not transfer to the neighboring icon");
         animated.send("3 0 48 24 44 3355443 50 0 0 0 0 3\n");animated.applied(3);
-        until([&]{return effect(second).ScaleX()==1.14&&effect(first).ScaleX()==1&&effect(first).Rotation()==0&&offset(second)==0;},
-            "zoom changed a neighbor or did not reset the carousel pose");
+        try {
+            until([&]{return std::abs(effect(second).ScaleX()-1.14)<.001&&effect(first).ScaleX()==1&&effect(first).Rotation()==0&&offset(second)==0;},
+                "zoom changed a neighbor or did not reset the carousel pose");
+        } catch(...) {
+            std::cerr<<"Zoom state: selected scale "<<effect(second).ScaleX()<<", lift "<<offset(second)
+                <<", neighbor scale "<<effect(first).ScaleX()<<", angle "<<effect(first).Rotation()<<std::endl;
+            throw;
+        }
 
         xaml::Media::ScaleTransform shellMove;shellMove.ScaleX(1.1);
         first.RenderTransform(shellMove);
