@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Shell;
 using System.Windows.Threading;
 using MagmPaper.Windows;
 
@@ -38,14 +39,13 @@ internal sealed class WindowThemeFrames
 
     private sealed class Frame
     {
-        private const long Layered = 0x80000;
         private readonly WindowThemeFrames theme;
         private readonly Window window;
         private readonly double baseRadius;
         private readonly FrameworkElement surface;
         private readonly string? baseBrush;
         private (int Width, int Height, int DiameterX, int DiameterY)? region;
-        private bool addedLayer, styled, geometryPending;
+        private bool styled, geometryPending;
 
         internal Frame(WindowThemeFrames theme, Window window, double radius, FrameworkElement surface, string? baseBrush)
         {
@@ -97,8 +97,11 @@ internal sealed class WindowThemeFrames
             if (hwnd == 0 || !Win32.IsWindow(hwnd)) return;
             var options = theme.settings;
             bool normal = options.Enabled && window.WindowState == WindowState.Normal;
-            var opacity = normal ? (byte)((options.Opacity * 255 + 50) / 100) : (byte)255;
-            ApplyOpacity(hwnd, opacity);
+            if (WindowChrome.GetWindowChrome(window) is { } chrome)
+            {
+                chrome.CornerRadius = new(normal ? options.Radius : baseRadius);
+                return;
+            }
 
             if (!normal)
             {
@@ -122,26 +125,5 @@ internal sealed class WindowThemeFrames
             else _ = Win32.DeleteObject(shape);
         }
 
-        private void ApplyOpacity(nint hwnd, byte alpha)
-        {
-            var style = Win32.GetWindowLongPtr(hwnd, Win32.ExtendedStyle).ToInt64();
-            if (alpha == 255)
-            {
-                if (addedLayer)
-                {
-                    _ = Win32.SetWindowLongPtr(hwnd, Win32.ExtendedStyle, (nint)(style & ~Layered));
-                    addedLayer = false;
-                }
-                return;
-            }
-
-            if (!addedLayer)
-            {
-                if ((style & Layered) != 0) return;
-                _ = Win32.SetWindowLongPtr(hwnd, Win32.ExtendedStyle, (nint)(style | Layered));
-                addedLayer = true;
-            }
-            _ = Win32.SetLayeredWindowAttributes(hwnd, 0, alpha, 2);
-        }
     }
 }

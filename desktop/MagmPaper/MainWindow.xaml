@@ -273,7 +273,7 @@
           <CheckBox x:Name="WindowGlassOutlineInput" Content="Обводка стекла" Click="WindowThemeChanged"/>
           <Slider x:Name="WindowRadiusInput" Style="{StaticResource SettingsSlider}" AutomationProperties.Name="Скругление, px"
                   Minimum="0" Maximum="24" Value="12" ValueChanged="WindowThemeChanged"/>
-          <Slider x:Name="WindowOpacityInput" Style="{StaticResource SettingsSlider}" AutomationProperties.Name="Непрозрачность, %"
+          <Slider x:Name="WindowOpacityInput" Style="{StaticResource SettingsSlider}" AutomationProperties.Name="Непрозрачность диалогов, %"
                   Minimum="60" Maximum="100" Value="100" ValueChanged="WindowThemeChanged"/>
          </StackPanel>
         </Border>

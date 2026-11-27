@@ -622,8 +622,8 @@ internal static class SmokeTests
         window.WindowThemeEnabled.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));
         Assert(window.WindowThemeSample.Background is DrawingBrush && window.WindowThemeSample.CornerRadius.TopLeft == 19
             && window.WindowTitleBar.Background is DrawingBrush, "glass theme failed to reach the preview and live window");
-        await Until(() => Win32.GetLayeredWindowAttributes(mainHandle, out _, out byte opacity, out _) && opacity == 217,
-            "the native window did not apply the selected transparency");
+        await Until(() => System.Windows.Shell.WindowChrome.GetWindowChrome(window).CornerRadius.TopLeft == 19,
+            "the window chrome did not apply the selected rounding");
         nint themedRegion = Win32.CreateRectRgn(0, 0, 0, 0);
         try
         {
@@ -634,6 +634,12 @@ internal static class SmokeTests
         var windowTheme = DataFiles.Read<System.Text.Json.Nodes.JsonObject>(Path.Combine(window.Library.DirectoryPath, "ui.json"))["windowTheme"];
         Assert(windowTheme?["radius"]?.GetValue<int>() == 19 && windowTheme?["opacity"]?.GetValue<int>() == 85,
             "the window theme was not saved");
+        window.Navigate("wallpapers");
+        await Until(() => !window.Busy, "gallery did not open for the themed dialog test");
+        await UseWallpaperDialogAsync(window, window.AddWallpaperButton, dialog =>
+            Assert(dialog.Opacity == .85 && dialog.FrameRadius == 19 && dialog.DialogCard.Background is DrawingBrush,
+                "the dialog did not apply the selected glass, rounding and transparency"));
+        window.Navigate("windowTheme");
         window.WindowMotionInput.SelectedIndex = (int)WindowOpeningMotion.Rise;
         if (SystemParameters.ClientAreaAnimation)
         {
@@ -644,8 +650,8 @@ internal static class SmokeTests
         window.WindowMotionInput.SelectedIndex = (int)WindowOpeningMotion.Off;
         window.WindowThemeEnabled.IsChecked = false;
         window.WindowThemeEnabled.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));
-        await Until(() => (Win32.GetWindowLongPtr(mainHandle, Win32.ExtendedStyle).ToInt64() & 0x80000) == 0,
-            "turning off the window theme did not restore the native opacity");
+        await Until(() => System.Windows.Shell.WindowChrome.GetWindowChrome(window).CornerRadius.TopLeft == 0,
+            "turning off the window theme did not restore the native corners");
         CheckRoundedFrameBlur();
         await CheckToggleMotion(window.WindowBlurInput);
         window.WindowBlurInput.IsChecked = true;
