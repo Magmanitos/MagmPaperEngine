@@ -1,121 +1,141 @@
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Interop;
 using System.Windows.Media;
 using Microsoft.Win32;
-using MagmPaper.Views;
 using MagmPaper.Windows;
 
 namespace MagmPaper;
 
 public partial class MainWindow
 {
-    private readonly WindowThemeFrames themedFrames = new();
-    private readonly WindowsFrameTheme windowsFrames;
-    private WindowThemeSettings windowTheme = new();
-    private WallpaperColors? windowColors;
-    private int windowPaletteRequest;
-    private bool fillingWindowTheme;
+    private readonly WindowsThemeSettings windowsTheme = new();
+    private readonly SemaphoreSlim themeWrites = new(1);
+    private bool fillingWindowsTheme, matchWindowsAccentToWallpaper;
+    private int accentRequest;
 
-    private void FillWindowTheme()
+    private void RefreshWindowsTheme()
     {
-        fillingWindowTheme = true;
-        WindowThemeEnabled.IsChecked = windowTheme.Enabled;
-        WindowMaterialInput.SelectedIndex = (int)windowTheme.Material;
-        WindowWallpaperInput.IsChecked = windowTheme.MatchWallpaper;
-        WindowRadiusInput.Value = windowTheme.Radius;
-        WindowOpacityInput.Value = windowTheme.Opacity;
-        WindowGlassOutlineInput.IsChecked = windowTheme.GlassOutline;
-        WindowsFramesInput.IsChecked = windowTheme.StyleWindowsFrames;
-        WindowsCornersInput.SelectedIndex = (int)windowTheme.WindowsCorners;
-        WindowsBackdropInput.SelectedIndex = windowTheme.WindowsBackdrop switch
+        fillingWindowsTheme = true;
+        try
         {
-            WindowsWindowBackdrop.Mica => 1, WindowsWindowBackdrop.Acrylic => 2, _ => 0
-        };
-        WindowMotionInput.SelectedIndex = (int)windowTheme.Motion;
-        WindowMotionDurationInput.Value = windowTheme.Duration;
-        fillingWindowTheme = false;
-        SystemEvents.UserPreferenceChanged += WindowSystemPreferenceChanged;
-        UpdateWindowTheme();
-    }
+            var theme = windowsTheme.Read();
+            WindowsAppsDarkInput.IsChecked = !theme.AppsLight;
+            WindowsSystemDarkInput.IsChecked = !theme.SystemLight;
+            WindowsTransparencyInput.IsChecked = theme.Transparency;
+            WindowsWindowAccentInput.IsChecked = theme.WindowAccent;
+            WindowsShellAccentInput.IsChecked = theme.ShellAccent;
+            WindowsShellAccentInput.IsEnabled = !theme.SystemLight;
+            WindowsAccentText.Text = theme.Accent;
+            WindowsAccentSwatch.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(theme.Accent));
+            WindowsWallpaperAccentInput.IsChecked = matchWindowsAccentToWallpaper;
+            WindowsAccentButton.IsEnabled = !matchWindowsAccentToWallpaper;
+            WindowsAccentStatus.Visibility = matchWindowsAccentToWallpaper ? Visibility.Visible : Visibility.Collapsed;
 
-    private void WindowThemeChanged(object sender, RoutedEventArgs e)
-    {
-        if (!ready || fillingWindowTheme || WindowMaterialInput.SelectedIndex < 0 ||
-            WindowMotionInput.SelectedIndex < 0 || WindowsCornersInput.SelectedIndex < 0 || WindowsBackdropInput.SelectedIndex < 0) return;
-
-        bool hadWallpaper = windowTheme.MatchWallpaper;
-        windowTheme = windowTheme with
-        {
-            Enabled = WindowThemeEnabled.IsChecked == true,
-            Material = (WindowMaterial)WindowMaterialInput.SelectedIndex,
-            MatchWallpaper = WindowWallpaperInput.IsChecked == true,
-            Radius = Number(WindowRadiusInput),
-            Opacity = Number(WindowOpacityInput),
-            GlassOutline = WindowGlassOutlineInput.IsChecked == true,
-            StyleWindowsFrames = WindowsFramesInput.IsChecked == true,
-            WindowsCorners = (WindowCorner)WindowsCornersInput.SelectedIndex,
-            WindowsBackdrop = WindowsBackdropInput.SelectedIndex switch
-            {
-                1 => WindowsWindowBackdrop.Mica, 2 => WindowsWindowBackdrop.Acrylic, _ => WindowsWindowBackdrop.System
-            },
-            Motion = (WindowOpeningMotion)WindowMotionInput.SelectedIndex,
-            Duration = Number(WindowMotionDurationInput)
-        };
-        UpdateWindowTheme();
-        if (hadWallpaper != windowTheme.MatchWallpaper) _ = RefreshWindowThemeColorsAsync();
-        if (sender is Slider) { windowBlurSaveTimer.Stop(); windowBlurSaveTimer.Start(); }
-        else SaveWindowPreferences();
-    }
-
-    private void UpdateWindowTheme()
-    {
-        var (first, second) = windowTheme.Colors(windowColors);
-        var a = (Color)ColorConverter.ConvertFromString(first);
-        var b = (Color)ColorConverter.ConvertFromString(second);
-        WindowFirstText.Text = first;
-        WindowSecondText.Text = second;
-        WindowFirstSwatch.Background = new SolidColorBrush(a);
-        WindowSecondSwatch.Background = new SolidColorBrush(b);
-        bool matched = windowTheme.MatchWallpaper && windowColors is not null;
-        WindowFirstButton.IsEnabled = WindowSecondButton.IsEnabled = !matched;
-        WindowPaletteStatus.Visibility = windowTheme.MatchWallpaper ? Visibility.Visible : Visibility.Collapsed;
-        WindowPaletteStatus.Text = matched ? "Цвета из текущих обоев." : "Используются ручные цвета, пока палитра обоев недоступна.";
-        WindowSecondRow.Visibility = windowTheme.Material == WindowMaterial.Solid ? Visibility.Collapsed : Visibility.Visible;
-        WindowGlassOutlineInput.Visibility = windowTheme.Material == WindowMaterial.Glass ? Visibility.Visible : Visibility.Collapsed;
-        WindowMotionDurationInput.IsEnabled = windowTheme.Motion != WindowOpeningMotion.Off;
-        WindowMotionPreviewButton.IsEnabled = WindowMotionDurationInput.IsEnabled && SystemParameters.ClientAreaAnimation;
-        WindowsCornersInput.IsEnabled = windowTheme.StyleWindowsFrames;
-        WindowsBackdropInput.IsEnabled = windowTheme.StyleWindowsFrames;
-        WindowsFramesStatus.Visibility = windowTheme.StyleWindowsFrames ? Visibility.Visible : Visibility.Collapsed;
-
-        var background = ((SolidColorBrush)FindResource("ChromeBrush")).Color;
-        var material = WindowThemePaint.Create(windowTheme, a, b, background);
-        WindowThemeSample.Background = material;
-        WindowThemeSample.CornerRadius = new(windowTheme.Radius);
-        WindowThemeSample.Opacity = windowTheme.Opacity / 100d;
-        var applied = SystemParameters.HighContrast ? windowTheme with { Enabled = false, Motion = WindowOpeningMotion.Off } : windowTheme;
-        themedFrames.Configure(applied, material);
-        windowFrames.Configure(windowBlur, applied.Enabled ? windowTheme.Radius : null);
-
-        static uint ColorRef(Color color) => (uint)(color.R | color.G << 8 | color.B << 16);
-        bool darkText = WindowThemePaint.Luminance(a) > .18;
-        windowsFrames.Configure(windowTheme.StyleWindowsFrames && !SystemParameters.HighContrast
-            ? new(ColorRef(a), darkText ? 0x101010u : 0xffffffu, windowTheme.WindowsCorners, windowTheme.WindowsBackdrop) : null);
-    }
-
-    private async Task RefreshWindowThemeColorsAsync()
-    {
-        int request = ++windowPaletteRequest;
-        WallpaperColors? resolved = null;
-        if (windowTheme.MatchWallpaper)
-        {
-            resolved = await wallpapers.ReadColorsAsync();
-            resolved ??= await Task.Run(WindowsVisualSettings.ReadWallpaperColors);
+            var animation = WindowsVisualSettings.ReadAnimations();
+            WindowsAnimationsInput.IsChecked = animation.ClientArea;
+            WindowsMinimizeAnimationsInput.IsChecked = animation.Minimize;
+            WindowsMenuMotionInput.SelectedIndex = (int)animation.Motion;
         }
-        if (request != windowPaletteRequest || Quitting || resolved == windowColors) return;
-        windowColors = resolved;
-        UpdateWindowTheme();
+        catch (Exception error) when (error is IOException or Win32Exception or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            Status(error.Message, true);
+        }
+        finally { fillingWindowsTheme = false; }
+    }
+
+    private async void WindowsThemeOptionClick(object sender, RoutedEventArgs e)
+    {
+        if (!ready || fillingWindowsTheme || sender is not CheckBox toggle ||
+            toggle.Tag is not string tag || !Enum.TryParse(tag, out WindowsThemeSettings.Option option)) return;
+        bool value = toggle.IsChecked == true;
+        if (option is WindowsThemeSettings.Option.AppsLight or WindowsThemeSettings.Option.SystemLight) value = !value;
+        await ApplyWindowsSettingAsync(() => windowsTheme.Set(option, value));
+    }
+
+    private async void WindowsAnimationClick(object sender, RoutedEventArgs e)
+    {
+        if (!ready || fillingWindowsTheme || sender is not CheckBox toggle) return;
+        bool enabled = toggle.IsChecked == true;
+        await ApplyWindowsSettingAsync(toggle == WindowsAnimationsInput
+            ? () => WindowsVisualSettings.SetClientAnimations(enabled)
+            : () => WindowsVisualSettings.SetMinimizeAnimations(enabled));
+    }
+
+    private async void WindowsMenuMotionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!ready || fillingWindowsTheme || WindowsMenuMotionInput.SelectedIndex < 0) return;
+        var motion = (WindowsVisualSettings.MenuMotion)WindowsMenuMotionInput.SelectedIndex;
+        await ApplyWindowsSettingAsync(() => WindowsVisualSettings.SetMenuMotion(motion));
+    }
+
+    private async Task ApplyWindowsSettingAsync(Action change) => await RunAsync(async () =>
+    {
+        await themeWrites.WaitAsync();
+        try
+        {
+            await Task.Run(change);
+            Status("Настройка Windows сохранена.");
+        }
+        finally
+        {
+            themeWrites.Release();
+            if (route == "windowTheme") RefreshWindowsTheme();
+        }
+    });
+
+    private async void WindowsAccentClick(object sender, RoutedEventArgs e)
+    {
+        if (!ready || busy || matchWindowsAccentToWallpaper) return;
+        var picker = new Views.ColorPicker(WindowsAccentText.Text, "Цветовой акцент Windows") { Owner = this };
+        TrackWindowFrame(picker);
+        if (picker.ShowDialog() == true)
+            await ApplyWindowsSettingAsync(() => windowsTheme.SetAccent(picker.SelectedColor));
+    }
+
+    private async void WindowsWallpaperAccentClick(object sender, RoutedEventArgs e)
+    {
+        if (!ready || fillingWindowsTheme) return;
+        matchWindowsAccentToWallpaper = WindowsWallpaperAccentInput.IsChecked == true;
+        SaveWindowPreferences();
+        RefreshWindowsTheme();
+        await RefreshWindowsWallpaperAccentAsync();
+    }
+
+    private async Task RefreshWindowsWallpaperAccentAsync()
+    {
+        int request = ++accentRequest;
+        if (!ready || !matchWindowsAccentToWallpaper) return;
+        WindowsAccentStatus.Text = "Подбираем цвет обоев…";
+        try
+        {
+            var colors = await wallpapers.ReadColorsAsync() ?? await Task.Run(WindowsVisualSettings.ReadWallpaperColors);
+            if (Quitting || request != accentRequest) return;
+            if (colors is null)
+            {
+                WindowsAccentStatus.Text = "Цвет станет доступен, когда Windows или MagmPaper покажет обои.";
+                return;
+            }
+
+            await themeWrites.WaitAsync();
+            try
+            {
+                if (Quitting || request != accentRequest) return;
+                await Task.Run(() => windowsTheme.SetAccent(colors.First));
+            }
+            finally { themeWrites.Release(); }
+
+            if (Quitting || request != accentRequest) return;
+            WindowsAccentStatus.Text = "Системный акцент из текущих обоев.";
+            if (route == "windowTheme") RefreshWindowsTheme();
+        }
+        catch (Exception error) when (error is IOException or Win32Exception or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            if (request != accentRequest || Quitting) return;
+            WindowsAccentStatus.Text = "Не удалось установить цвет обоев.";
+            Status(error.Message, true);
+        }
     }
 
     private void WindowSystemPreferenceChanged(object sender, UserPreferenceChangedEventArgs e)
@@ -125,55 +145,27 @@ public partial class MainWindow
         _ = Dispatcher.InvokeAsync(() =>
         {
             if (Quitting) return;
-            if (e.Category is UserPreferenceCategory.Desktop && windowTheme.MatchWallpaper) _ = RefreshWindowThemeColorsAsync();
-            UpdateWindowTheme();
-            if (route == "windowTheme") ReadWindowsAnimations();
+            if (e.Category == UserPreferenceCategory.Desktop && matchWindowsAccentToWallpaper)
+                _ = RefreshWindowsWallpaperAccentAsync();
+            if (route == "windowTheme" && !busy) RefreshWindowsTheme();
         });
     }
 
-    private void WindowColorClick(object sender, RoutedEventArgs e)
+    private void OpenWindowsThemeSettingsClick(object sender, RoutedEventArgs e)
     {
-        bool second = sender is FrameworkElement { Tag: "second" };
-        var picker = new Views.ColorPicker(second ? windowTheme.Second : windowTheme.First,
-            second ? "Второй цвет окон" : "Основной цвет окон") { Owner = this };
-        TrackWindowFrame(picker);
-        if (picker.ShowDialog() != true) return;
-        windowTheme = second ? windowTheme with { Second = picker.SelectedColor } : windowTheme with { First = picker.SelectedColor };
-        UpdateWindowTheme();
-        SaveWindowPreferences();
+        if (sender is FrameworkElement { Tag: string target }) OpenTarget(target);
     }
 
-    private void WindowMotionPreviewClick(object sender, RoutedEventArgs e) => WindowThemePaint.Play(WindowThemeSample, windowTheme);
-    private void WindowsColorsClick(object sender, RoutedEventArgs e) => OpenTarget("ms-settings:colors");
-
-    private void ReadWindowsAnimations()
+    private void OpenWindowsStartClick(object sender, RoutedEventArgs e)
     {
-        try
+        if (Win32.FindWindow("Shell_TrayWnd", null) == 0)
         {
-            bool enabled = WindowsVisualSettings.AnimationsEnabled;
-            WindowsAnimationsInput.IsEnabled = true;
-            WindowsAnimationsInput.IsChecked = enabled;
-            WindowMotionPreviewButton.IsEnabled = enabled && windowTheme.Motion != WindowOpeningMotion.Off;
-            WindowsMotionHint.Text = "Настройка Windows также действует на меню «Пуск» и другие системные окна.";
+            Status("Меню «Пуск» недоступно.", true);
+            return;
         }
-        catch (Win32Exception)
-        {
-            WindowsAnimationsInput.IsEnabled = false;
-            WindowsMotionHint.Text = "Windows не предоставила доступ к системному переключателю.";
-        }
-    }
-
-    private void WindowsAnimationsClick(object sender, RoutedEventArgs e)
-    {
-        if (!ready || !WindowsAnimationsInput.IsEnabled) return;
-        try { WindowsVisualSettings.AnimationsEnabled = WindowsAnimationsInput.IsChecked == true; }
-        catch (Win32Exception error) { Status(error.Message, true); }
-        finally { ReadWindowsAnimations(); }
-    }
-
-    private void DisposeWindowTheme()
-    {
-        SystemEvents.UserPreferenceChanged -= WindowSystemPreferenceChanged;
-        windowsFrames.Dispose();
+        const uint SystemCommand = 0x0112;
+        const uint OpenStart = 0xf130;
+        var hwnd = new WindowInteropHelper(this).Handle;
+        _ = Win32.SendMessageTimeout(hwnd, SystemCommand, OpenStart, 0, 2, 300, out _);
     }
 }

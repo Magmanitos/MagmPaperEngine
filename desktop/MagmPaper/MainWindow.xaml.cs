@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
+using Microsoft.Win32;
 using MagmPaper.Graphics;
 using MagmPaper.Services;
 using MagmPaper.Windows;
@@ -53,10 +54,8 @@ public partial class MainWindow : Window
         this.library = library; this.wallpapers = wallpapers; this.appearance = appearance;
         this.allowStartupChangelog = allowStartupChangelog;
         uiFile = Path.Combine(library.DirectoryPath, "ui.json");
-        windowsFrames = new(Dispatcher);
         InitializeComponent();
-        windowsFrames.Changed += count =>
-            WindowsFramesStatus.Text = count > 0 ? $"Оформлено окон: {count}." : "Пока нет окон, которые приняли оформление.";
+        SystemEvents.UserPreferenceChanged += WindowSystemPreferenceChanged;
         TrackWindowFrame(this);
         windowBlurSaveTimer.Tick += (_, _) => SaveWindowPreferences();
         CursorsPage.Initialize(library.DirectoryPath);
@@ -71,7 +70,7 @@ public partial class MainWindow : Window
             button.MouseLeave += (_, _) => { if (ReferenceEquals(taskbarSampleHover, button)) SetTaskbarSampleHover(null); };
         }
         Closed += (_, _) => { Gallery.Dispose(); MediaPreview.Dispose(); };
-        Closed += (_, _) => DisposeWindowTheme();
+        Closed += (_, _) => SystemEvents.UserPreferenceChanged -= WindowSystemPreferenceChanged;
         MediaPreview.Error += message => Status(message, true);
         AppVersionLabel.Text = Views.UpdateNotes.VersionLabel;
         try { system = new SystemSettings(library.DirectoryPath); } catch (Exception error) { Status(error.Message, true); }
@@ -95,7 +94,7 @@ public partial class MainWindow : Window
                     showUpdateNotesOnStartup = preferences?["showUpdateNotesOnStartup"]?.GetValue<bool>() ?? true;
                     lightTheme = preferences?["lightTheme"]?.GetValue<bool>() ?? false;
                     windowBlur = preferences?["windowBlur"]?.Deserialize<Views.WindowBlurOptions>(DataFiles.Json)?.Normalize() ?? new();
-                    windowTheme = preferences?["windowTheme"]?.Deserialize<WindowThemeSettings>(DataFiles.Json)?.Normalize() ?? new();
+                    matchWindowsAccentToWallpaper = preferences?["matchWindowsAccentToWallpaper"]?.GetValue<bool>() ?? false;
                 }
             }
             catch { }
@@ -103,8 +102,7 @@ public partial class MainWindow : Window
             ThemeInput.IsChecked = !lightTheme;
             if (lightTheme) ApplyTheme();
             FillWindowBlur();
-            FillWindowTheme();
-            _ = RefreshWindowThemeColorsAsync();
+            _ = RefreshWindowsWallpaperAccentAsync();
             Navigate(saved, refreshWallpapers: false);
             await RunAsync(RefreshLibraryAsync);
         };
@@ -116,7 +114,7 @@ public partial class MainWindow : Window
         Activated += async (_, _) =>
         {
             SyncPreview();
-            if (ready && route == "windowTheme") ReadWindowsAnimations();
+            if (ready && !busy && route == "windowTheme") RefreshWindowsTheme();
             if (ready && !busy && !editing && route == "wallpapers") await RunAsync(RefreshLibraryAsync);
         };
         Deactivated += (_, _) => Gallery.ClearHover();
@@ -127,7 +125,7 @@ public partial class MainWindow : Window
         {
             var current = ready ? ReadAppearance() : appearance.Settings;
             if (current.UsesWallpaperColors()) QueueAppearance(current);
-            if (windowTheme.MatchWallpaper) _ = RefreshWindowThemeColorsAsync();
+            if (matchWindowsAccentToWallpaper) _ = RefreshWindowsWallpaperAccentAsync();
         };
         appearance.Changed += () => Dispatcher.BeginInvoke(UpdateAppearanceStatus);
     }
@@ -169,7 +167,7 @@ public partial class MainWindow : Window
         SyncPreview();
         SaveWindowPreferences();
         if (route == "taskbar") { FillBehavior(); UpdateAppearanceStatus(); }
-        if (route == "windowTheme") ReadWindowsAnimations();
+        if (route == "windowTheme") RefreshWindowsTheme();
         if (route == "settings") FillPreferences();
         if (route == "cursors") CursorsPage.Refresh();
         if (refreshWallpapers && route == "wallpapers" && !editing && !busy) _ = RunAsync(RefreshLibraryAsync);
@@ -177,7 +175,7 @@ public partial class MainWindow : Window
     private void SaveWindowPreferences()
     {
         windowBlurSaveTimer.Stop();
-        try { DataFiles.Write(uiFile, new { route, showUpdateNotesOnStartup, windowBlur, windowTheme, lightTheme }); }
+        try { DataFiles.Write(uiFile, new { route, showUpdateNotesOnStartup, windowBlur, matchWindowsAccentToWallpaper, lightTheme }); }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException) { Status(error.Message, true); }
     }
     private void ThemeChanged(object sender, RoutedEventArgs e)
@@ -192,27 +190,8 @@ public partial class MainWindow : Window
         var dictionaries = Application.Current.Resources.MergedDictionaries;
         var palette = lightTheme ? "Light" : "Dark";
         dictionaries[0] = new ResourceDictionary { Source = new Uri($"/MagmPaper;component/Views/Palette.{palette}.xaml", UriKind.Relative) };
-        UpdateWindowTheme();
     }
-    internal void TrackWindowFrame(Window window, double cornerRadius = 0)
-    {
-        windowFrames.Track(window, cornerRadius);
-        switch (window)
-        {
-            case MainWindow:
-                themedFrames.Track(window, cornerRadius, WindowTitleBar, "ChromeBrush", animate: false);
-                break;
-            case Views.UpdateNotes notes:
-                themedFrames.Track(window, cornerRadius, notes.NotesCard, "NotesBrush", animate: true);
-                break;
-            case Views.WallpaperDialog dialog:
-                themedFrames.Track(window, cornerRadius, dialog.DialogCard, "BackgroundBrush", animate: true);
-                break;
-            default:
-                themedFrames.Track(window, cornerRadius, window, "BackgroundBrush", animate: false);
-                break;
-        }
-    }
+    internal void TrackWindowFrame(Window window, double cornerRadius = 0) => windowFrames.Track(window, cornerRadius);
     private void FillWindowBlur()
     {
         fillingWindowBlur = true;
@@ -227,7 +206,7 @@ public partial class MainWindow : Window
     {
         WindowBlurControls.Visibility = windowBlur.Enabled ? Visibility.Visible : Visibility.Collapsed;
         WindowBlurSwatch.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(windowBlur.Color));
-        windowFrames.Configure(windowBlur, windowTheme.Enabled ? windowTheme.Radius : null);
+        windowFrames.Configure(windowBlur);
     }
     private void WindowBlurChanged(object sender, RoutedEventArgs e)
     {

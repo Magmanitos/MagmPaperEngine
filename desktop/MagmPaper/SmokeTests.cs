@@ -81,6 +81,82 @@ internal static class SmokeTests
         }
     }
 
+    private static async Task CheckSystemThemeAsync(MainWindow window)
+    {
+        var source = new WindowsThemeSettings();
+        var theme = source.Read();
+        var animation = WindowsVisualSettings.ReadAnimations();
+        Assert(window.WindowThemePage.IsVisible && window.NavWindowTheme.IsChecked == true
+            && window.WindowsAppsDarkInput.IsChecked == !theme.AppsLight && window.WindowsAccentText.Text == theme.Accent
+            && window.WindowsAnimationsInput.IsChecked == animation.ClientArea
+            && window.WindowsMinimizeAnimationsInput.IsChecked == animation.Minimize
+            && window.WindowsMenuMotionInput.SelectedIndex == (int)animation.Motion,
+            "the Windows theme page did not read system settings");
+        Assert(ReferenceEquals(window.WindowTitleBar.Background, window.FindResource("ChromeBrush")) &&
+            System.Windows.Shell.WindowChrome.GetWindowChrome(window).CornerRadius.TopLeft == 0 && window.Opacity == 1,
+            "the system appearance page restyled the MagmPaper window");
+
+        const string personalize = @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";
+        const string explorer = @"Software\Microsoft\Windows\CurrentVersion\Explorer\Accent";
+        string path = @"Software\MagmPaperTestTheme-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            using var profile = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(path);
+            using (var accent = profile.CreateSubKey(explorer))
+            {
+                var previous = new byte[32];
+                previous[28] = 0x87;
+                accent.SetValue("AccentPalette", previous);
+            }
+            var settings = new WindowsThemeSettings(profile);
+            settings.Set(WindowsThemeSettings.Option.AppsLight, false);
+            settings.Set(WindowsThemeSettings.Option.Transparency, false);
+            settings.Set(WindowsThemeSettings.Option.WindowAccent, true);
+            settings.SetAccent("#A13B75");
+            Assert(settings.Read() == new WindowsThemeState(false, true, false, true, false, "#A13B75"),
+                "Windows appearance writes did not preserve the other options");
+            using var modes = profile.OpenSubKey(personalize);
+            using var accentReadback = profile.OpenSubKey(explorer);
+            var palette = (byte[]?)accentReadback?.GetValue("AccentPalette");
+            Assert(modes?.GetValue("AppsUseLightTheme") is 0 && modes.GetValue("SystemUsesLightTheme") is null &&
+                palette is { Length: 32 } && palette[28] == 0x87 && palette[8] > palette[12] && palette[16] < palette[12] &&
+                accentReadback?.GetValue("AccentColorMenu") is unchecked((int)0xff753ba1),
+                "Windows accent palette or registry encoding was incorrect");
+        }
+        finally { Microsoft.Win32.Registry.CurrentUser.DeleteSubKeyTree(path, throwOnMissingSubKey: false); }
+
+        if (Environment.GetEnvironmentVariable("GITHUB_ACTIONS") != "true") return;
+        try
+        {
+            window.WindowsAnimationsInput.IsChecked = !animation.ClientArea;
+            window.WindowsAnimationsInput.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));
+            await Until(() => !window.Busy, "Windows interface animation did not finish updating");
+            Assert(WindowsVisualSettings.ReadAnimations().ClientArea != animation.ClientArea,
+                "the Windows animation control did not change the real system preference");
+
+            window.WindowsMinimizeAnimationsInput.IsChecked = !animation.Minimize;
+            window.WindowsMinimizeAnimationsInput.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));
+            await Until(() => !window.Busy, "Windows minimize animation did not finish updating");
+            Assert(WindowsVisualSettings.ReadAnimations().Minimize != animation.Minimize,
+                "the Windows minimize animation control did not change the real system preference");
+
+            var motion = animation.Motion == WindowsVisualSettings.MenuMotion.Slide
+                ? WindowsVisualSettings.MenuMotion.Fade : WindowsVisualSettings.MenuMotion.Slide;
+            window.WindowsMenuMotionInput.SelectedIndex = (int)motion;
+            await Until(() => !window.Busy, "Windows menu motion did not finish updating");
+            Assert(WindowsVisualSettings.ReadAnimations().Motion == motion, "Windows did not retain the selected classic menu animation");
+        }
+        finally
+        {
+            await Task.Run(() =>
+            {
+                WindowsVisualSettings.SetClientAnimations(animation.ClientArea);
+                WindowsVisualSettings.SetMinimizeAnimations(animation.Minimize);
+                WindowsVisualSettings.SetMenuAnimations(animation.MenuEnabled, animation.MenuFade);
+            });
+        }
+    }
+
     private static async Task CheckToggleMotion(CheckBox checkBox)
     {
         checkBox.ApplyTemplate();
@@ -610,48 +686,8 @@ internal static class SmokeTests
             "current navigation item did not finish its transition");
         window.Navigate("windowTheme");
         await Until(() => selectedSurface.Opacity == 0, "previous navigation item remained highlighted");
-        Assert(window.WindowThemePage.IsVisible && window.NavWindowTheme.IsChecked == true
-            && window.WindowsAnimationsInput.IsChecked == WindowsVisualSettings.AnimationsEnabled,
-            "the window theme page did not read the current Windows animation preference");
-        window.WindowMaterialInput.SelectedIndex = (int)WindowMaterial.Gradient;
-        Assert(window.WindowThemeSample.Background is LinearGradientBrush, "window theme failed to preview a gradient");
-        window.WindowMaterialInput.SelectedIndex = (int)WindowMaterial.Glass;
-        window.WindowRadiusInput.Value = 19;
-        window.WindowOpacityInput.Value = 85;
-        window.WindowThemeEnabled.IsChecked = true;
-        window.WindowThemeEnabled.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));
-        Assert(window.WindowThemeSample.Background is DrawingBrush && window.WindowThemeSample.CornerRadius.TopLeft == 19
-            && window.WindowTitleBar.Background is DrawingBrush, "glass theme failed to reach the preview and live window");
-        await Until(() => System.Windows.Shell.WindowChrome.GetWindowChrome(window).CornerRadius.TopLeft == 19,
-            "the window chrome did not apply the selected rounding");
-        nint themedRegion = Win32.CreateRectRgn(0, 0, 0, 0);
-        try
-        {
-            Assert(themedRegion != 0 && Win32.GetWindowRgn(mainHandle, themedRegion) == 3,
-                "the native window did not apply a rounded region");
-        }
-        finally { if (themedRegion != 0) _ = Win32.DeleteObject(themedRegion); }
-        var windowTheme = DataFiles.Read<System.Text.Json.Nodes.JsonObject>(Path.Combine(window.Library.DirectoryPath, "ui.json"))["windowTheme"];
-        Assert(windowTheme?["radius"]?.GetValue<int>() == 19 && windowTheme?["opacity"]?.GetValue<int>() == 85,
-            "the window theme was not saved");
-        window.Navigate("wallpapers");
-        await Until(() => !window.Busy, "gallery did not open for the themed dialog test");
-        await UseWallpaperDialogAsync(window, window.AddWallpaperButton, dialog =>
-            Assert(dialog.Opacity == .85 && dialog.FrameRadius == 19 && dialog.DialogCard.Background is DrawingBrush,
-                "the dialog did not apply the selected glass, rounding and transparency"));
-        window.Navigate("windowTheme");
-        window.WindowMotionInput.SelectedIndex = (int)WindowOpeningMotion.Rise;
-        if (SystemParameters.ClientAreaAnimation)
-        {
-            window.WindowMotionPreviewButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            Assert(window.WindowThemeSample.RenderTransform is TranslateTransform { HasAnimatedProperties: true },
-                "window theme preview did not start the selected animation");
-        }
-        window.WindowMotionInput.SelectedIndex = (int)WindowOpeningMotion.Off;
-        window.WindowThemeEnabled.IsChecked = false;
-        window.WindowThemeEnabled.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));
-        await Until(() => System.Windows.Shell.WindowChrome.GetWindowChrome(window).CornerRadius.TopLeft == 0,
-            "turning off the window theme did not restore the native corners");
+        await CheckSystemThemeAsync(window);
+        window.Navigate("settings");
         CheckRoundedFrameBlur();
         await CheckToggleMotion(window.WindowBlurInput);
         window.WindowBlurInput.IsChecked = true;
@@ -689,7 +725,7 @@ internal static class SmokeTests
             }, 0);
             Assert(found, "rounded wallpaper dialog did not have its own blur overlay");
         });
-        window.Navigate("windowTheme");
+        window.Navigate("settings");
         window.WindowBlurRadius.Value = 48;
         window.WindowBlurIntensity.Value = 55;
         window.WindowBlurInput.IsChecked = false;
@@ -706,7 +742,7 @@ internal static class SmokeTests
         await Task.Delay(3000); // Let startup compilation, layout and deferred GPU release settle.
         var process = Process.GetCurrentProcess(); var startCpu = process.TotalProcessorTime; var clockIdle = Stopwatch.StartNew(); await Task.Delay(5000); process.Refresh();
         var report = new { passed = true, version = typeof(App).Assembly.GetName().Version?.ToString(), nativeUi = "WPF", gpuTests = "ANGLE D3D11 WARP", composedDesktopPixels = composedPixels, desktopIconSnapshotAvailable, workingSetBytes = process.WorkingSet64, idleCpuMilliseconds = (process.TotalProcessorTime - startCpu).TotalMilliseconds, idleSampleMilliseconds = clockIdle.Elapsed.TotalMilliseconds,
-            tests = new[] { "real GLSL pixels", "late GLSL extension compatibility", "compile error preserves program", "backbuffer", "quality fills window", "pause stops frames", "physical monitor geometry", "24H2 child layer order and opaque composition", "native window coverage/minimize/transparent overlay", "click-through and real cursor uniforms", "mouse toggle", "six GPU resets with active and paused second context", "Windows autostart and StartupApproved", "gallery thumbnails, hover shader uniforms and enlarged preview", "GIF and H.264 MP4 import, naming, and playback", "WPF editor/save/navigation", "native preview visibility and scroll clipping", "smooth scrolling over inputs and repeated wheel events", "inactive and disabled control colors", "stable collection after activation/navigation", "HSV and HEX color picker", "live taskbar preview and automatic slider persistence", "glass gradient settings and wallpaper palette", "light and dark themes", "cursor catalogue caption, scroll and PNG hotspot", "changelog positioning and preference", "window blur toggle, rounded notes and wallpaper dialogs, and settings", "animated toggles and navigation", "settings", "WPF theme contrast", "hidden preview" } };
+            tests = new[] { "real GLSL pixels", "late GLSL extension compatibility", "compile error preserves program", "backbuffer", "quality fills window", "pause stops frames", "physical monitor geometry", "24H2 child layer order and opaque composition", "native window coverage/minimize/transparent overlay", "click-through and real cursor uniforms", "mouse toggle", "six GPU resets with active and paused second context", "Windows autostart and StartupApproved", "gallery thumbnails, hover shader uniforms and enlarged preview", "GIF and H.264 MP4 import, naming, and playback", "WPF editor/save/navigation", "native preview visibility and scroll clipping", "smooth scrolling over inputs and repeated wheel events", "inactive and disabled control colors", "stable collection after activation/navigation", "HSV and HEX color picker", "live taskbar preview and automatic slider persistence", "glass gradient settings and wallpaper palette", "light and dark themes", "cursor catalogue caption, scroll and PNG hotspot", "changelog positioning and preference", "system theme settings and Windows animation round trips", "window blur toggle, rounded notes and wallpaper dialogs, and settings", "animated toggles and navigation", "settings", "WPF theme contrast", "hidden preview" } };
         File.WriteAllText(Path.Combine(output, "report.json"), JsonSerializer.Serialize(report, DataFiles.Json));
     }
     private static RenderTargetBitmap WindowBitmap(Window window)

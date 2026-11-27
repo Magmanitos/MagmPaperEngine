@@ -9,7 +9,6 @@ internal static class Win32
     internal const uint Child = 0x40000000, Visible = 0x10000000, Popup = 0x80000000;
     internal const int Style = -16, ExtendedStyle = -20;
     internal delegate bool EnumProc(nint window, nint parameter);
-    internal delegate void WinEventProc(nint hook, uint kind, nint window, int objectId, int childId, uint thread, uint time);
     internal delegate nint WindowProc(nint window, uint message, nint wp, nint lp);
     [StructLayout(LayoutKind.Sequential)] internal struct Point { public int X, Y; public Point(int x, int y) { X = x; Y = y; } }
     [StructLayout(LayoutKind.Sequential)] internal struct Rect
@@ -99,9 +98,6 @@ internal static class Win32
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] internal static extern nint GetWindowLongPtr(nint hwnd, int index);
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] internal static extern nint SetWindowLongPtr(nint hwnd, int index, nint value);
     [DllImport("user32.dll")] internal static extern bool EnumWindows(EnumProc callback, nint param);
-    [DllImport("user32.dll")] internal static extern uint GetWindowThreadProcessId(nint window, out uint process);
-    [DllImport("user32.dll")] internal static extern nint SetWinEventHook(uint first, uint last, nint module, WinEventProc callback, uint process, uint thread, uint flags);
-    [DllImport("user32.dll")] internal static extern bool UnhookWinEvent(nint hook);
     [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "FindWindowW")] internal static extern nint FindWindow(string? name, string? title);
     [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "FindWindowExW")] internal static extern nint FindWindowEx(nint parent, nint after, string name, string? title);
     [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "GetClassNameW")] private static extern int GetClassName(nint hwnd, StringBuilder buffer, int count);
@@ -115,7 +111,6 @@ internal static class Win32
     [DllImport("user32.dll")] internal static extern int GetWindowRgn(nint hwnd, nint region);
     [DllImport("gdi32.dll")] internal static extern int GetRgnBox(nint region, out Rect rect);
     [DllImport("gdi32.dll")] internal static extern nint CreateRectRgn(int left, int top, int right, int bottom);
-    [DllImport("gdi32.dll")] internal static extern nint CreateRoundRectRgn(int left, int top, int right, int bottom, int diameterX, int diameterY);
     [DllImport("gdi32.dll")] internal static extern bool DeleteObject(nint value);
     [DllImport("user32.dll")] internal static extern nint GetDC(nint hwnd);
     [DllImport("user32.dll")] internal static extern int ReleaseDC(nint hwnd, nint dc);
@@ -123,7 +118,6 @@ internal static class Win32
     [DllImport("user32.dll")] internal static extern nint OpenInputDesktop(uint flags, bool inherit, uint access);
     [DllImport("user32.dll")] internal static extern bool CloseDesktop(nint desktop);
     [DllImport("dwmapi.dll", EntryPoint = "DwmGetWindowAttribute")] internal static extern int Cloaked(nint hwnd, uint key, out int value, uint size);
-    [DllImport("dwmapi.dll")] internal static extern int DwmSetWindowAttribute(nint hwnd, uint key, in uint value, uint size);
     [DllImport("dwmapi.dll", EntryPoint = "DwmGetWindowAttribute")] internal static extern int Bounds(nint hwnd, uint key, out Rect value, uint size);
     [DllImport("shell32.dll")] internal static extern nuint SHAppBarMessage(uint message, ref AppBarData value);
     [DllImport("kernel32.dll", EntryPoint = "CreateWaitableTimerExW", CharSet = CharSet.Unicode, SetLastError = true)] internal static extern nint CreateWaitableTimer(nint security, string? name, uint flags, uint access);

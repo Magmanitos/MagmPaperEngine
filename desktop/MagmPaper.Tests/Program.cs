@@ -204,25 +204,6 @@ tests.Add(("release notes snap to a nearby edge and respect the work area", () =
         "docked notes lost their offset when the main window moved");
 }));
 
-tests.Add(("window theme persists manual colors separately from the wallpaper palette", () =>
-{
-    var defaults = JsonSerializer.Deserialize<WindowThemeSettings>("{}", DataFiles.Json)!.Normalize();
-    Check(!defaults.Enabled && !defaults.StyleWindowsFrames && defaults.Opacity == 100, "window styling must be opt-in");
-    var options = defaults with
-    {
-        Enabled = true, MatchWallpaper = true, First = "#d5a627", Second = "#52446B", Radius = 19, Opacity = 85,
-        Motion = WindowOpeningMotion.Rise, WindowsCorners = WindowCorner.Small, WindowsBackdrop = WindowsWindowBackdrop.Acrylic
-    };
-    var wallpaper = new WallpaperColors("#112233", "#AABBCC");
-    Check(options.Colors(wallpaper) == (wallpaper.First, wallpaper.Second)
-        && options.Colors(null) == (options.First, options.Second), "wallpaper palette must keep manual fallback colors");
-    Check(JsonSerializer.Deserialize<WindowThemeSettings>(JsonSerializer.Serialize(options, DataFiles.Json), DataFiles.Json) == options,
-        "window theme settings changed during persistence");
-    var invalid = (options with { Radius = -1, Opacity = 10, First = "red", Duration = 999 }).Normalize();
-    Check(invalid.Radius == 0 && invalid.Opacity == 60 && invalid.First == WindowThemeSettings.DefaultFirst && invalid.Duration == 330,
-        "unsafe or invalid appearance values were not normalized");
-}));
-
 tests.Add(("taskbar palette follows the two sides of a wallpaper", () =>
 {
     byte[] rgba =
