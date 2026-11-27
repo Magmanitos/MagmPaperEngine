@@ -21,10 +21,13 @@ internal sealed class WindowFrameBlur
 {
     private readonly Dictionary<Window, Frame> frames = new();
     private WindowBlurOptions options = new();
+    private double? radiusOverride;
 
-    public void Configure(WindowBlurOptions next)
+    public void Configure(WindowBlurOptions next, double? radius = null)
     {
+        if (options == next && radiusOverride == radius) return;
         options = next;
+        radiusOverride = radius;
         foreach (var frame in frames.Values) frame.Schedule();
     }
 
@@ -124,10 +127,11 @@ internal sealed class WindowFrameBlur
                 NoActivate | NoZOrder | NoOwnerZOrder | ShowWindow);
 
             var transform = layer.CompositionTarget!.TransformFromDevice;
+            double radius = manager.radiusOverride ?? cornerRadius;
             var next = (Style: style,
                 Window: new Size(width * transform.M11, height * transform.M22),
                 Padding: new Size(horizontal * transform.M11, vertical * transform.M22),
-                Corner: new Size(cornerRadius * dpi.DpiScaleX * transform.M11, cornerRadius * dpi.DpiScaleY * transform.M22));
+                Corner: new Size(radius * dpi.DpiScaleX * transform.M11, radius * dpi.DpiScaleY * transform.M22));
             if (next == rendered) return;
             rendered = next;
             using var context = drawing!.RenderOpen();

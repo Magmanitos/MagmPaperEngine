@@ -608,8 +608,44 @@ internal static class SmokeTests
             "navigation did not respect the system animation preference");
         await Until(() => selectedSurface.Opacity == 1 && selectedSurface.RenderTransform.Value.OffsetX == 0,
             "current navigation item did not finish its transition");
-        window.Navigate("settings");
+        window.Navigate("windowTheme");
         await Until(() => selectedSurface.Opacity == 0, "previous navigation item remained highlighted");
+        Assert(window.WindowThemePage.IsVisible && window.NavWindowTheme.IsChecked == true
+            && window.WindowsAnimationsInput.IsChecked == WindowsVisualSettings.AnimationsEnabled,
+            "the window theme page did not read the current Windows animation preference");
+        window.WindowMaterialInput.SelectedIndex = (int)WindowMaterial.Gradient;
+        Assert(window.WindowThemeSample.Background is LinearGradientBrush, "window theme failed to preview a gradient");
+        window.WindowMaterialInput.SelectedIndex = (int)WindowMaterial.Glass;
+        window.WindowRadiusInput.Value = 19;
+        window.WindowOpacityInput.Value = 85;
+        window.WindowThemeEnabled.IsChecked = true;
+        window.WindowThemeEnabled.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));
+        Assert(window.WindowThemeSample.Background is DrawingBrush && window.WindowThemeSample.CornerRadius.TopLeft == 19
+            && window.WindowTitleBar.Background is DrawingBrush, "glass theme failed to reach the preview and live window");
+        await Until(() => Win32.GetLayeredWindowAttributes(mainHandle, out _, out byte opacity, out _) && opacity == 217,
+            "the native window did not apply the selected transparency");
+        nint themedRegion = Win32.CreateRectRgn(0, 0, 0, 0);
+        try
+        {
+            Assert(themedRegion != 0 && Win32.GetWindowRgn(mainHandle, themedRegion) == 3,
+                "the native window did not apply a rounded region");
+        }
+        finally { if (themedRegion != 0) _ = Win32.DeleteObject(themedRegion); }
+        var windowTheme = DataFiles.Read<System.Text.Json.Nodes.JsonObject>(Path.Combine(window.Library.DirectoryPath, "ui.json"))["windowTheme"];
+        Assert(windowTheme?["radius"]?.GetValue<int>() == 19 && windowTheme?["opacity"]?.GetValue<int>() == 85,
+            "the window theme was not saved");
+        window.WindowMotionInput.SelectedIndex = (int)WindowOpeningMotion.Rise;
+        if (SystemParameters.ClientAreaAnimation)
+        {
+            window.WindowMotionPreviewButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert(window.WindowThemeSample.RenderTransform is TranslateTransform { HasAnimatedProperties: true },
+                "window theme preview did not start the selected animation");
+        }
+        window.WindowMotionInput.SelectedIndex = (int)WindowOpeningMotion.Off;
+        window.WindowThemeEnabled.IsChecked = false;
+        window.WindowThemeEnabled.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));
+        await Until(() => (Win32.GetWindowLongPtr(mainHandle, Win32.ExtendedStyle).ToInt64() & 0x80000) == 0,
+            "turning off the window theme did not restore the native opacity");
         CheckRoundedFrameBlur();
         await CheckToggleMotion(window.WindowBlurInput);
         window.WindowBlurInput.IsChecked = true;
@@ -647,7 +683,7 @@ internal static class SmokeTests
             }, 0);
             Assert(found, "rounded wallpaper dialog did not have its own blur overlay");
         });
-        window.Navigate("settings");
+        window.Navigate("windowTheme");
         window.WindowBlurRadius.Value = 48;
         window.WindowBlurIntensity.Value = 55;
         window.WindowBlurInput.IsChecked = false;

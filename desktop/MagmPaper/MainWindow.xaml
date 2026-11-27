@@ -3,7 +3,7 @@
  <shell:WindowChrome.WindowChrome><shell:WindowChrome CaptionHeight="42" ResizeBorderThickness="6" GlassFrameThickness="0" CornerRadius="0" UseAeroCaptionButtons="False"/></shell:WindowChrome.WindowChrome>
  <Border BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
  <Grid><Grid.RowDefinitions><RowDefinition Height="42"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-  <Grid Background="{DynamicResource ChromeBrush}">
+  <Grid x:Name="WindowTitleBar" Background="{DynamicResource ChromeBrush}">
    <TextBlock Text="◈   MagmPaper" Margin="20,0" VerticalAlignment="Center" FontWeight="SemiBold"/>
    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,6,0" shell:WindowChrome.IsHitTestVisibleInChrome="True">
     <Button Style="{StaticResource CaptionButton}" Content="&#xE921;" Click="MinimizeClick" ToolTip="Свернуть" AutomationProperties.Name="Свернуть"/>
@@ -38,6 +38,7 @@
      <RadioButton x:Name="NavOverview" Content="◫     Обзор" Style="{StaticResource Nav}" GroupName="Navigation" Tag="overview" Click="NavigateClick"/>
      <RadioButton x:Name="NavWallpapers" Content="◈     Обои" Style="{StaticResource Nav}" GroupName="Navigation" Tag="wallpapers" Click="NavigateClick"/>
      <RadioButton x:Name="NavTaskbar" Content="▰     Панель задач" Style="{StaticResource Nav}" GroupName="Navigation" Tag="taskbar" Click="NavigateClick"/>
+     <RadioButton x:Name="NavWindowTheme" Content="◈     Тема окон" Style="{StaticResource Nav}" GroupName="Navigation" Tag="windowTheme" Click="NavigateClick"/>
      <RadioButton x:Name="NavCursors" Content="↖     Курсоры" Style="{StaticResource Nav}" GroupName="Navigation" Tag="cursors" Click="NavigateClick"/>
      <RadioButton x:Name="NavSettings" Content="⚙     Параметры" Style="{StaticResource Nav}" GroupName="Navigation" Tag="settings" Click="NavigateClick" Margin="10,24,10,3"/>
     </StackPanel>
@@ -207,6 +208,135 @@
      </StackPanel></Border></Expander>
      <Button Content="↻ Обновить состояние панели" Click="RefreshTaskbarClick" HorizontalAlignment="Left" Margin="0,20,0,0"/>
     </StackPanel></ScrollViewer>
+    <ScrollViewer x:Name="WindowThemePage" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+     <StackPanel Margin="0,0,12,0">
+      <TextBlock Text="Тема окон" Style="{StaticResource Title}"/>
+      <Border Style="{StaticResource Card}" Padding="16" Margin="0,0,0,16">
+       <StackPanel>
+        <TextBlock Text="Предпросмотр окна" FontWeight="SemiBold" Margin="0,0,0,10"/>
+        <Border Height="210" CornerRadius="9" ClipToBounds="True">
+         <Border.Background>
+          <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+           <GradientStop Color="#243D66"/>
+           <GradientStop Color="#7666A0" Offset=".52"/>
+           <GradientStop Color="#2A667A" Offset="1"/>
+          </LinearGradientBrush>
+         </Border.Background>
+         <Grid>
+          <Path Fill="#339EDDE7" Data="M -10,155 C 110,175 176,79 323,103 C 455,123 540,6 740,20 L 740,224 L -10,224 Z" Stretch="Fill"/>
+          <Border x:Name="WindowThemeSample" Width="375" Height="139" HorizontalAlignment="Center" VerticalAlignment="Center"
+                  BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
+           <StackPanel Margin="19,13">
+            <DockPanel Margin="0,0,0,15">
+             <TextBlock DockPanel.Dock="Right" FontFamily="Segoe MDL2 Assets" Text="&#xE921;     &#xE922;     &#xE8BB;" FontSize="11" VerticalAlignment="Center"/>
+             <TextBlock Text="MagmPaper" FontWeight="SemiBold"/>
+            </DockPanel>
+            <Border Height="24" Background="{DynamicResource PanelBrush}" CornerRadius="5" Margin="0,0,0,8"/>
+            <Border Height="24" Background="{DynamicResource PanelBrush}" CornerRadius="5" Width="250" HorizontalAlignment="Left"/>
+           </StackPanel>
+          </Border>
+         </Grid>
+        </Border>
+       </StackPanel>
+      </Border>
+      <Grid>
+       <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+       <StackPanel>
+        <Border Style="{StaticResource Card}">
+         <StackPanel>
+          <TextBlock Text="Окна MagmPaper" FontSize="21" Margin="0,0,0,8"/>
+          <CheckBox x:Name="WindowThemeEnabled" Content="Применять оформление" Click="WindowThemeChanged"/>
+          <TextBlock Text="Заливка" Margin="0,8,0,0"/>
+          <ComboBox x:Name="WindowMaterialInput" AutomationProperties.Name="Заливка окон" SelectionChanged="WindowThemeChanged">
+           <ComboBoxItem Content="Однотонная"/><ComboBoxItem Content="Градиент"/><ComboBoxItem Content="Стеклянный градиент"/>
+          </ComboBox>
+          <CheckBox x:Name="WindowWallpaperInput" Content="Подбирать цвета под обои" Click="WindowThemeChanged"/>
+          <TextBlock x:Name="WindowPaletteStatus" Style="{StaticResource Muted}" FontSize="12" Visibility="Collapsed" Margin="0,0,0,6"/>
+          <DockPanel Margin="0,4,0,6">
+           <Button x:Name="WindowFirstButton" DockPanel.Dock="Right" Tag="first" Click="WindowColorClick" AutomationProperties.Name="Основной цвет окон" Padding="9,6">
+            <StackPanel Orientation="Horizontal">
+             <Border x:Name="WindowFirstSwatch" Width="15" Height="15" CornerRadius="4" BorderThickness="1" BorderBrush="{DynamicResource MutedBrush}" Margin="0,0,7,0"/>
+             <TextBlock x:Name="WindowFirstText"/>
+            </StackPanel>
+           </Button>
+           <TextBlock Text="Основной цвет" VerticalAlignment="Center"/>
+          </DockPanel>
+          <DockPanel x:Name="WindowSecondRow" Margin="0,0,0,6">
+           <Button x:Name="WindowSecondButton" DockPanel.Dock="Right" Tag="second" Click="WindowColorClick" AutomationProperties.Name="Второй цвет окон" Padding="9,6">
+            <StackPanel Orientation="Horizontal">
+             <Border x:Name="WindowSecondSwatch" Width="15" Height="15" CornerRadius="4" BorderThickness="1" BorderBrush="{DynamicResource MutedBrush}" Margin="0,0,7,0"/>
+             <TextBlock x:Name="WindowSecondText"/>
+            </StackPanel>
+           </Button>
+           <TextBlock Text="Второй цвет" VerticalAlignment="Center"/>
+          </DockPanel>
+          <CheckBox x:Name="WindowGlassOutlineInput" Content="Обводка стекла" Click="WindowThemeChanged"/>
+          <Slider x:Name="WindowRadiusInput" Style="{StaticResource SettingsSlider}" AutomationProperties.Name="Скругление, px"
+                  Minimum="0" Maximum="24" Value="12" ValueChanged="WindowThemeChanged"/>
+          <Slider x:Name="WindowOpacityInput" Style="{StaticResource SettingsSlider}" AutomationProperties.Name="Непрозрачность, %"
+                  Minimum="60" Maximum="100" Value="100" ValueChanged="WindowThemeChanged"/>
+         </StackPanel>
+        </Border>
+        <Border Style="{StaticResource Card}" Margin="0,16,0,0">
+         <StackPanel>
+          <TextBlock Text="Размытый контур" FontSize="21" Margin="0,0,0,6"/>
+          <CheckBox x:Name="WindowBlurInput" Content="Размытый контур вокруг окон" Click="WindowBlurChanged"/>
+          <StackPanel x:Name="WindowBlurControls" Visibility="Collapsed">
+           <DockPanel Margin="0,8,0,4">
+            <Button DockPanel.Dock="Right" Padding="9,6" Click="WindowBlurColorClick" AutomationProperties.Name="Выбрать цвет контура">
+             <StackPanel Orientation="Horizontal">
+              <Border x:Name="WindowBlurSwatch" Width="15" Height="15" CornerRadius="4" BorderThickness="1" BorderBrush="{DynamicResource MutedBrush}" Margin="0,0,7,0"/>
+              <TextBlock x:Name="WindowBlurColorValue" Text="#A78BFA"/>
+             </StackPanel>
+            </Button>
+            <TextBlock Text="Цвет контура" VerticalAlignment="Center"/>
+           </DockPanel>
+           <Slider x:Name="WindowBlurRadius" Style="{StaticResource SettingsSlider}" AutomationProperties.Name="Радиус размытия, px"
+                   Minimum="6" Maximum="72" Value="30" ValueChanged="WindowBlurChanged"/>
+           <Slider x:Name="WindowBlurIntensity" Style="{StaticResource SettingsSlider}" AutomationProperties.Name="Интенсивность, %"
+                   Minimum="0" Maximum="100" Value="42" ValueChanged="WindowBlurChanged"/>
+          </StackPanel>
+         </StackPanel>
+        </Border>
+       </StackPanel>
+       <StackPanel Grid.Column="2">
+        <Border Style="{StaticResource Card}">
+         <StackPanel>
+          <TextBlock Text="Окна Windows" FontSize="21" Margin="0,0,0,8"/>
+          <CheckBox x:Name="WindowsFramesInput" Content="Оформлять совместимые рамки" Click="WindowThemeChanged"/>
+          <TextBlock Text="Рамка использует основной цвет. Материалы и скругление зависят от приложения и версии Windows." Style="{StaticResource Muted}" FontSize="12" Margin="0,0,0,8"/>
+          <TextBlock Text="Скругление рамок"/>
+          <ComboBox x:Name="WindowsCornersInput" AutomationProperties.Name="Скругление окон Windows" SelectionChanged="WindowThemeChanged">
+           <ComboBoxItem Content="Как в Windows"/><ComboBoxItem Content="Прямые углы"/>
+           <ComboBoxItem Content="Скруглённые"/><ComboBoxItem Content="Слегка скруглённые"/>
+          </ComboBox>
+          <TextBlock Text="Материал Windows"/>
+          <ComboBox x:Name="WindowsBackdropInput" AutomationProperties.Name="Материал окон Windows" SelectionChanged="WindowThemeChanged">
+           <ComboBoxItem Content="Цветной заголовок"/><ComboBoxItem Content="Слюда (Mica)"/><ComboBoxItem Content="Акрил Windows"/>
+          </ComboBox>
+          <TextBlock x:Name="WindowsFramesStatus" Style="{StaticResource Muted}" FontSize="12" Visibility="Collapsed" Margin="0,0,0,9" AutomationProperties.LiveSetting="Polite"/>
+          <Button Content="Цвета и общая тема Windows ↗" Click="WindowsColorsClick" HorizontalAlignment="Left"/>
+         </StackPanel>
+        </Border>
+        <Border Style="{StaticResource Card}" Margin="0,16,0,0">
+         <StackPanel>
+          <TextBlock Text="Анимация окон" FontSize="21" Margin="0,0,0,12"/>
+          <TextBlock Text="Диалоги обоев и «Что нового»"/>
+          <ComboBox x:Name="WindowMotionInput" AutomationProperties.Name="Анимация окон MagmPaper" SelectionChanged="WindowThemeChanged">
+           <ComboBoxItem Content="Выключена"/><ComboBoxItem Content="Проявление"/>
+           <ComboBoxItem Content="Подъём"/><ComboBoxItem Content="Мягкое увеличение"/>
+          </ComboBox>
+          <Slider x:Name="WindowMotionDurationInput" Style="{StaticResource SettingsSlider}" AutomationProperties.Name="Длительность, мс"
+                  Minimum="90" Maximum="330" Value="160" ValueChanged="WindowThemeChanged"/>
+          <Button x:Name="WindowMotionPreviewButton" Content="Показать анимацию" Click="WindowMotionPreviewClick" HorizontalAlignment="Left" Margin="0,7,0,12"/>
+          <CheckBox x:Name="WindowsAnimationsInput" Content="Системные анимации Windows" Click="WindowsAnimationsClick"/>
+          <TextBlock x:Name="WindowsMotionHint" Text="Настройка Windows также действует на меню «Пуск» и другие системные окна." Style="{StaticResource Muted}" FontSize="12"/>
+         </StackPanel>
+        </Border>
+       </StackPanel>
+      </Grid>
+     </StackPanel>
+    </ScrollViewer>
     <views:CursorPage x:Name="CursorsPage" Visibility="Collapsed"/>
     <ScrollViewer x:Name="SettingsPage" Visibility="Collapsed" VerticalScrollBarVisibility="Auto"><StackPanel MaxWidth="720" HorizontalAlignment="Left">
      <TextBlock Text="Параметры приложения" Style="{StaticResource Title}"/><TextBlock Text="Удобный запуск и контроль нагрузки на компьютер." Style="{StaticResource Muted}" Margin="0,0,0,24"/>
@@ -217,27 +347,6 @@
       <TextBlock Text="Частота обоев не меняет частоту дисплея Windows. Для экономии оставьте 30–60 FPS; для более плавной анимации выберите частоту монитора. На паузе кадры не рисуются и мышь не опрашивается. Скрытый предпросмотр также приостанавливается. Снижение качества сохраняет заполнение всего экрана." Style="{StaticResource Muted}" FontSize="12"/>
      </StackPanel></Border>
      <TextBlock Text="Настройки сохраняются сразу. Коллекция и резервные копии находятся в папке MagmPaper в AppData." Style="{StaticResource Muted}" Margin="0,24,0,0"/>
-     <Border Style="{StaticResource Card}" Margin="0,20,0,0">
-      <StackPanel>
-       <TextBlock Text="Оформление окон" FontSize="21" Margin="0,0,0,6"/>
-       <CheckBox x:Name="WindowBlurInput" Content="Размытый контур вокруг окон" Click="WindowBlurChanged"/>
-       <StackPanel x:Name="WindowBlurControls" Visibility="Collapsed">
-        <DockPanel Margin="0,8,0,4">
-         <Button DockPanel.Dock="Right" Padding="9,6" Click="WindowBlurColorClick" AutomationProperties.Name="Выбрать цвет контура">
-          <StackPanel Orientation="Horizontal">
-           <Border x:Name="WindowBlurSwatch" Width="15" Height="15" CornerRadius="4" BorderThickness="1" BorderBrush="{DynamicResource MutedBrush}" Margin="0,0,7,0"/>
-           <TextBlock x:Name="WindowBlurColorValue" Text="#A78BFA"/>
-          </StackPanel>
-         </Button>
-         <TextBlock Text="Цвет контура" VerticalAlignment="Center"/>
-        </DockPanel>
-        <Slider x:Name="WindowBlurRadius" Style="{StaticResource SettingsSlider}" AutomationProperties.Name="Радиус размытия, px"
-                Minimum="6" Maximum="72" Value="30" ValueChanged="WindowBlurChanged"/>
-        <Slider x:Name="WindowBlurIntensity" Style="{StaticResource SettingsSlider}" AutomationProperties.Name="Интенсивность, %"
-                Minimum="0" Maximum="100" Value="42" ValueChanged="WindowBlurChanged"/>
-       </StackPanel>
-      </StackPanel>
-     </Border>
      <Border Style="{StaticResource Card}" Margin="0,20,0,0">
       <StackPanel>
        <TextBlock Text="Обновления" FontSize="21" Margin="0,0,0,6"/>
