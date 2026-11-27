@@ -87,7 +87,8 @@ internal static class SmokeTests
         var theme = source.Read();
         var animation = WindowsVisualSettings.ReadAnimations();
         Assert(window.WindowThemePage.IsVisible && window.NavWindowTheme.IsChecked == true
-            && window.WindowsAppsDarkInput.IsChecked == !theme.AppsLight && window.WindowsAccentText.Text == theme.Accent
+            && window.WindowsBaseThemeInput.SelectedIndex == (WindowsWindowPalette.ContrastEnabled() ? 3 : theme.AppsLight ? 0 : 1)
+            && window.WindowsAccentText.Text == theme.Accent && window.WindowsPaletteSourceInput.SelectedIndex == 0
             && window.WindowsAnimationsInput.IsChecked == animation.ClientArea
             && window.WindowsMinimizeAnimationsInput.IsChecked == animation.Minimize
             && window.WindowsMenuMotionInput.SelectedIndex == (int)animation.Motion,
@@ -155,6 +156,26 @@ internal static class SmokeTests
                 WindowsVisualSettings.SetMenuAnimations(animation.MenuEnabled, animation.MenuFade);
             });
         }
+
+        var windowsPalette = new WindowsWindowPalette(window.Library.DirectoryPath);
+        var oldBackground = WindowsWindowPalette.GetSysColor(5);
+        var oldText = WindowsWindowPalette.GetSysColor(8);
+        bool oldContrast = WindowsWindowPalette.ContrastEnabled();
+        try
+        {
+            var preview = WindowsWindowPalette.Preview(new(window.WindowsBackgroundText.Text, window.WindowsAccentText.Text));
+            window.WindowsBaseThemeInput.SelectedIndex = 2;
+            await Until(() => !window.Busy, "the Windows palette did not finish applying");
+            Assert(windowsPalette.IsApplied() && WindowsWindowPalette.GetSysColor(5) == preview.Background
+                && WindowsWindowPalette.GetSysColor(8) == preview.Text && window.WindowsBackgroundRow.IsVisible,
+                $"Windows did not change its system window background and text: {window.StatusText.Text}");
+            Assert(ReferenceEquals(window.WindowTitleBar.Background, window.FindResource("ChromeBrush")),
+                "the custom system palette changed the MagmPaper chrome");
+        }
+        finally { await Task.Run(windowsPalette.Restore); }
+        Assert(WindowsWindowPalette.ContrastEnabled() == oldContrast && WindowsWindowPalette.GetSysColor(5) == oldBackground
+            && WindowsWindowPalette.GetSysColor(8) == oldText && !windowsPalette.HasBackup,
+            "disabling the custom theme did not restore the original Windows colors");
     }
 
     private static async Task CheckToggleMotion(CheckBox checkBox)
@@ -538,8 +559,11 @@ internal static class SmokeTests
         Assert(!draft.Enabled && draft.Height == 38 && draft.Icon == 30 && draft.Button == 54 && draft.Opacity == 43,
             "automatic appearance settings did not persist the last slider values");
         window.SetTaskbarColor("#ABCDEF", second: true);
-        window.GlassInput.IsChecked = true;
-        window.GlassInput.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent));
+        window.TaskbarMaterialInput.SelectedIndex = 1;
+        Assert(window.TaskbarSample.Background is LinearGradientBrush gradient &&
+            gradient.GradientStops[1].Color == Color.FromArgb(110, 0xAB, 0xCD, 0xEF) &&
+            window.TaskbarGlassArea.Visibility == Visibility.Collapsed, "plain gradient did not reach the taskbar preview");
+        window.TaskbarMaterialInput.SelectedIndex = 2;
         Assert(window.TaskbarGlassArea.Visibility == Visibility.Visible && window.TaskbarGlassArea.Opacity == .43 &&
             window.TaskbarSample.CornerRadius.TopLeft == 0 &&
             window.GlassSwatch.Background is SolidColorBrush endTint && endTint.Color == Color.FromRgb(0xAB, 0xCD, 0xEF),

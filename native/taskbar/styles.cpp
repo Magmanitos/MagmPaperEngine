@@ -290,7 +290,8 @@ void StyledElement::apply(const Settings& settings) {
     case Kind::Background: {
         Windows::UI::Color color{static_cast<uint8_t>((settings.opacity*255+50)/100),
             static_cast<uint8_t>(settings.color>>16),static_cast<uint8_t>(settings.color>>8),static_cast<uint8_t>(settings.color)};
-        if(settings.glass&&settings.opacity) {
+        constexpr uint32_t glass=1,gradient=2;
+        if(settings.glass==glass&&settings.opacity) {
             try {
                 if(!state->glass) {
                     if(auto target=state->target.get()) state->glass=GlassVisual::create(target);
@@ -300,26 +301,28 @@ void StyledElement::apply(const Settings& settings) {
             } catch(...) {state->glass.reset();}
         } else state->glass.reset();
         if(settings.glass&&settings.opacity&&!state->glass) {
-            // The native rectangle still shows a translucent tint if this
-            // XAML template cannot host a composition visual.
             xaml::Media::LinearGradientBrush brush;
             brush.StartPoint({0,0});
-            brush.EndPoint({0.85f,1});
+            brush.EndPoint(settings.glass==gradient?Windows::Foundation::Point{1,0}:Windows::Foundation::Point{.85f,1});
             auto addStop=[&](double offset,Windows::UI::Color tint) {
                 xaml::Media::GradientStop stop;
                 stop.Offset(offset);stop.Color(tint);
                 brush.GradientStops().Append(stop);
             };
-            auto shine=[](uint8_t channel) {return static_cast<uint8_t>((channel*3+255)/4);};
-            addStop(0,{color.A,shine(color.R),shine(color.G),shine(color.B)});
-            auto middle=color;
-            middle.A=static_cast<uint8_t>(color.A*3/4);
-            addStop(0.38,middle);
-            addStop(1,{static_cast<uint8_t>(color.A*2/3),static_cast<uint8_t>(settings.glassColor>>16),
-                static_cast<uint8_t>(settings.glassColor>>8),static_cast<uint8_t>(settings.glassColor)});
+            Windows::UI::Color end{color.A,static_cast<uint8_t>(settings.glassColor>>16),
+                static_cast<uint8_t>(settings.glassColor>>8),static_cast<uint8_t>(settings.glassColor)};
+            if(settings.glass==gradient) addStop(0,color);
+            else {
+                // Keep a translucent tint on templates that cannot host the glass visual.
+                auto shine=[](uint8_t channel) {return static_cast<uint8_t>((channel*3+255)/4);};
+                addStop(0,{color.A,shine(color.R),shine(color.G),shine(color.B)});
+                auto middle=color;middle.A=static_cast<uint8_t>(color.A*3/4);addStop(.38,middle);
+                end.A=static_cast<uint8_t>(color.A*2/3);
+            }
+            addStop(1,end);
             set(xaml::Shapes::Shape::FillProperty(),brush);
         } else if(!state->glass) set(xaml::Shapes::Shape::FillProperty(),xaml::Media::SolidColorBrush(color));
-        double radius=settings.glass?glassRadius(height,settings.radius):settings.radius;
+        double radius=settings.glass==glass?glassRadius(height,settings.radius):settings.radius;
         set(xaml::Shapes::Rectangle::RadiusXProperty(),box_value(radius));
         set(xaml::Shapes::Rectangle::RadiusYProperty(),box_value(radius));break;
     }

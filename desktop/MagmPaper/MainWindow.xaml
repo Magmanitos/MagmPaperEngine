@@ -168,7 +168,10 @@
         </Button>
         <TextBlock Text="Цвет фона" VerticalAlignment="Center" Margin="0,0,8,0"/>
        </DockPanel>
-       <CheckBox x:Name="GlassInput" Content="Объёмное стекло" Click="AppearanceChanged"/>
+       <TextBlock Text="Материал панели" Margin="0,6,0,0"/>
+       <ComboBox x:Name="TaskbarMaterialInput" AutomationProperties.Name="Материал панели" SelectionChanged="AppearanceChanged">
+        <ComboBoxItem Content="Однотонный"/><ComboBoxItem Content="Градиент"/><ComboBoxItem Content="Объёмное стекло"/>
+       </ComboBox>
        <StackPanel x:Name="GlassColors" Visibility="Collapsed">
         <CheckBox x:Name="GlassOutlineInput" Content="Обводка стекла" IsChecked="True" Click="AppearanceChanged"/>
         <CheckBox x:Name="WallpaperColorsInput" Content="Подбирать цвета под обои" Click="AppearanceChanged"/>
@@ -211,44 +214,91 @@
     <ScrollViewer x:Name="WindowThemePage" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
      <StackPanel Margin="0,0,12,0">
       <TextBlock Text="Тема Windows" Style="{StaticResource Title}"/>
-      <TextBlock Text="Изменения сохраняются в персонализации Windows и действуют после выхода из MagmPaper."
-                 Style="{StaticResource Muted}" Margin="0,0,0,18"/>
-      <Grid>
-       <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+      <Grid Margin="0,6,0,18">
+       <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
        <Border Style="{StaticResource Card}" VerticalAlignment="Top">
         <StackPanel>
-         <TextBlock Text="Цвета и прозрачность" FontSize="21" Margin="0,0,0,12"/>
-         <CheckBox x:Name="WindowsAppsDarkInput" Tag="AppsLight" Click="WindowsThemeOptionClick" Content="Тёмный режим приложений"/>
-         <CheckBox x:Name="WindowsSystemDarkInput" Tag="SystemLight" Click="WindowsThemeOptionClick" Content="Тёмный режим Windows"/>
-         <CheckBox x:Name="WindowsTransparencyInput" Tag="Transparency" Click="WindowsThemeOptionClick" Content="Эффекты прозрачности Windows"/>
-         <DockPanel Margin="0,12,0,6">
-          <Button x:Name="WindowsAccentButton" DockPanel.Dock="Right" Click="WindowsAccentClick" AutomationProperties.Name="Выбрать системный акцент" Padding="9,6">
+         <TextBlock Text="Оформление окон" FontSize="21" Margin="0,0,0,12"/>
+         <TextBlock Text="Тема приложений"/>
+         <ComboBox x:Name="WindowsBaseThemeInput" AutomationProperties.Name="Тема приложений" SelectionChanged="WindowsBaseThemeChanged">
+          <ComboBoxItem Content="Светлая"/><ComboBoxItem Content="Тёмная"/><ComboBoxItem Content="Своя палитра"/>
+          <ComboBoxItem x:Name="CurrentWindowsThemeOption" Content="Текущая тема Windows" Visibility="Collapsed" IsEnabled="False"/>
+         </ComboBox>
+         <TextBlock x:Name="WindowsCustomThemeHint" Style="{StaticResource Muted}" FontSize="12" Margin="0,0,0,12" Visibility="Collapsed"
+                    Text="Фон и выделения применяются к приложениям с поддержкой контрастных тем Windows."/>
+         <TextBlock Text="Источник цветов" Margin="0,4,0,0"/>
+         <ComboBox x:Name="WindowsPaletteSourceInput" AutomationProperties.Name="Источник цветов темы" SelectionChanged="WindowsPaletteSourceChanged">
+          <ComboBoxItem Content="Вручную"/><ComboBoxItem Content="По обоям"/>
+         </ComboBox>
+         <DockPanel x:Name="WindowsBackgroundRow" Margin="0,4,0,6">
+          <Button x:Name="WindowsBackgroundButton" DockPanel.Dock="Right" Tag="background" Click="WindowsAccentClick"
+                  AutomationProperties.Name="Выбрать цвет фона" Padding="9,6">
+           <StackPanel Orientation="Horizontal">
+            <Border x:Name="WindowsBackgroundSwatch" Width="15" Height="15" CornerRadius="4" BorderThickness="1"
+                    BorderBrush="{DynamicResource MutedBrush}" Margin="0,0,7,0"/>
+            <TextBlock x:Name="WindowsBackgroundText"/>
+           </StackPanel>
+          </Button>
+          <TextBlock Text="Основной цвет" VerticalAlignment="Center"/>
+         </DockPanel>
+         <DockPanel Margin="0,4,0,6">
+          <Button x:Name="WindowsAccentButton" DockPanel.Dock="Right" Click="WindowsAccentClick"
+                  AutomationProperties.Name="Выбрать цвет выделения" Padding="9,6">
            <StackPanel Orientation="Horizontal">
             <Border x:Name="WindowsAccentSwatch" Width="15" Height="15" CornerRadius="4" BorderThickness="1"
                     BorderBrush="{DynamicResource MutedBrush}" Margin="0,0,7,0"/>
             <TextBlock x:Name="WindowsAccentText"/>
            </StackPanel>
           </Button>
-          <TextBlock Text="Цветовой акцент" VerticalAlignment="Center"/>
+          <TextBlock Text="Цвет выделения" VerticalAlignment="Center"/>
          </DockPanel>
-         <CheckBox x:Name="WindowsWallpaperAccentInput" Click="WindowsWallpaperAccentClick" Content="Подбирать акцент под обои"/>
          <TextBlock x:Name="WindowsAccentStatus" Style="{StaticResource Muted}" FontSize="12" Visibility="Collapsed" Margin="0,0,0,6"/>
+         <Button x:Name="RestoreWindowsPaletteButton" Content="Вернуть прежнюю тему" Click="RestoreWindowsPaletteClick"
+                 HorizontalAlignment="Left" Margin="0,10,0,0" Visibility="Collapsed"/>
+        </StackPanel>
+       </Border>
+       <Border Grid.Column="2" Style="{StaticResource Card}" VerticalAlignment="Top">
+        <StackPanel>
+         <TextBlock Text="Предпросмотр палитры" FontSize="21" Margin="0,0,0,12"/>
+         <Border x:Name="WindowsPaletteSample" BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" CornerRadius="9" Padding="15">
+          <StackPanel>
+           <TextBlock x:Name="WindowsPaletteSampleText" Text="Цвет фона окна" FontWeight="SemiBold" Margin="0,0,0,12"/>
+           <Border x:Name="WindowsPaletteSampleSelection" CornerRadius="5" Padding="9,6" HorizontalAlignment="Left">
+            <TextBlock x:Name="WindowsPaletteSampleAccentText" Text="Выбранный элемент"/>
+           </Border>
+          </StackPanel>
+         </Border>
+         <TextBlock Text="Панель задач" Margin="0,16,0,0"/>
+         <ComboBox x:Name="WindowsTaskbarMaterialInput" AutomationProperties.Name="Материал панели задач из темы"
+                   SelectionChanged="WindowsThemeTaskbarChanged">
+          <ComboBoxItem Content="Отдельная настройка"/><ComboBoxItem Content="Градиент из палитры"/><ComboBoxItem Content="Стеклянный градиент из палитры"/>
+         </ComboBox>
+         <TextBlock Text="Градиент и стекло применяются к панели задач. Для окон используется сплошная заливка Windows."
+                    Style="{StaticResource Muted}" FontSize="12"/>
+        </StackPanel>
+       </Border>
+      </Grid>
+      <Expander Header="Дополнительные параметры Windows" Foreground="{DynamicResource TextBrush}" Margin="0,0,0,13">
+       <Border Style="{StaticResource Card}" Margin="0,9,0,0">
+        <StackPanel>
+         <CheckBox x:Name="WindowsSystemDarkInput" Tag="SystemLight" Click="WindowsThemeOptionClick" Content="Тёмный режим «Пуска» и панели задач"/>
+         <CheckBox x:Name="WindowsTransparencyInput" Tag="Transparency" Click="WindowsThemeOptionClick" Content="Системные эффекты прозрачности"/>
          <CheckBox x:Name="WindowsWindowAccentInput" Tag="WindowAccent" Click="WindowsThemeOptionClick" Content="Акцент на заголовках и границах окон"/>
          <CheckBox x:Name="WindowsShellAccentInput" Tag="ShellAccent" Click="WindowsThemeOptionClick" Content="Акцент в «Пуске» и на панели задач"
                    ToolTip="Доступно в тёмном режиме Windows"/>
          <WrapPanel Margin="0,12,0,0">
           <Button Content="Темы Windows ↗" Tag="ms-settings:themes" Click="OpenWindowsThemeSettingsClick" Margin="0,0,8,4"/>
-          <Button Content="Цвета Windows ↗" Tag="ms-settings:colors" Click="OpenWindowsThemeSettingsClick" Margin="0,0,0,4"/>
+          <Button Content="Цвета Windows ↗" Tag="ms-settings:colors" Click="OpenWindowsThemeSettingsClick" Margin="0,0,8,4"/>
+          <Button Content="Контрастные темы ↗" Tag="ms-settings:easeofaccess-highcontrast" Click="OpenWindowsThemeSettingsClick" Margin="0,0,0,4"/>
          </WrapPanel>
         </StackPanel>
        </Border>
-       <Border Grid.Column="2" Style="{StaticResource Card}" VerticalAlignment="Top">
+      </Expander>
+      <Expander Header="Анимации Windows" Foreground="{DynamicResource TextBrush}">
+       <Border Style="{StaticResource Card}" Margin="0,9,0,0">
         <StackPanel>
-         <TextBlock Text="Анимации Windows" FontSize="21" Margin="0,0,0,12"/>
-         <CheckBox x:Name="WindowsAnimationsInput" Tag="interface" Click="WindowsAnimationClick" Content="Анимации интерфейса"/>
-         <TextBlock Text="Включает встроенные эффекты, в том числе анимацию «Пуска»." Style="{StaticResource Muted}"
-                    FontSize="12" Margin="0,0,0,10"/>
-         <CheckBox x:Name="WindowsMinimizeAnimationsInput" Tag="minimize" Click="WindowsAnimationClick" Content="Анимация сворачивания и разворачивания окон"/>
+         <CheckBox x:Name="WindowsAnimationsInput" Click="WindowsAnimationClick" Content="Анимации интерфейса, включая «Пуск»"/>
+         <CheckBox x:Name="WindowsMinimizeAnimationsInput" Click="WindowsAnimationClick" Content="Анимация сворачивания и разворачивания окон"/>
          <TextBlock Text="Классические меню" Margin="0,10,0,0"/>
          <ComboBox x:Name="WindowsMenuMotionInput" AutomationProperties.Name="Анимация классических меню" SelectionChanged="WindowsMenuMotionChanged">
           <ComboBoxItem Content="Без анимации"/><ComboBoxItem Content="Скольжение"/><ComboBoxItem Content="Проявление"/>
@@ -259,7 +309,7 @@
          </WrapPanel>
         </StackPanel>
        </Border>
-      </Grid>
+      </Expander>
      </StackPanel>
     </ScrollViewer>
     <views:CursorPage x:Name="CursorsPage" Visibility="Collapsed"/>

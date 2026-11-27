@@ -167,6 +167,10 @@ tests.Add(("glass settings preserve legacy data, tint and outline", () =>
     var noOutline = glass with { GlassOutline = false };
     Check(JsonSerializer.Deserialize<AppearanceSettings>(JsonSerializer.Serialize(noOutline, DataFiles.Json), DataFiles.Json) == noOutline
         && noOutline.Encode(2).EndsWith(" 1 11259375 0 0", StringComparison.Ordinal), "hidden glass outline must persist");
+    var gradient = glass with { Glass = false, Gradient = true, MatchWallpaperColors = true };
+    Check(gradient.Encode(2).EndsWith(" 2 11259375 0 1", StringComparison.Ordinal)
+        && gradient.WithWallpaperColors(new("#123456", "#FEDCBA")).GlassColor == "#FEDCBA",
+        "the plain gradient must have its own mode and support both wallpaper colors");
     Check(old.Effect == TaskbarIconEffect.Off, "older settings without an effect must keep hover off");
     var legacyLift = JsonSerializer.Deserialize<AppearanceSettings>("""{"animateIcons":true}""", DataFiles.Json)!;
     Check(legacyLift.Effect == TaskbarIconEffect.Lift && (legacyLift with { IconEffect = TaskbarIconEffect.Off }).Effect == TaskbarIconEffect.Off,

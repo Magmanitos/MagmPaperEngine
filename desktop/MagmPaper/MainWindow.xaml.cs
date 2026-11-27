@@ -54,6 +54,7 @@ public partial class MainWindow : Window
         this.library = library; this.wallpapers = wallpapers; this.appearance = appearance;
         this.allowStartupChangelog = allowStartupChangelog;
         uiFile = Path.Combine(library.DirectoryPath, "ui.json");
+        windowPalette = new(library.DirectoryPath);
         InitializeComponent();
         SystemEvents.UserPreferenceChanged += WindowSystemPreferenceChanged;
         TrackWindowFrame(this);
@@ -95,6 +96,9 @@ public partial class MainWindow : Window
                     lightTheme = preferences?["lightTheme"]?.GetValue<bool>() ?? false;
                     windowBlur = preferences?["windowBlur"]?.Deserialize<Views.WindowBlurOptions>(DataFiles.Json)?.Normalize() ?? new();
                     matchWindowsAccentToWallpaper = preferences?["matchWindowsAccentToWallpaper"]?.GetValue<bool>() ?? false;
+                    themeBackground = ThemeHex(preferences?["themeBackground"]?.GetValue<string>()) ?? themeBackground;
+                    themeAccent = ThemeHex(preferences?["themeAccent"]?.GetValue<string>());
+                    themeTaskbarMode = Math.Clamp(preferences?["themeTaskbarMode"]?.GetValue<int>() ?? 0, 0, 2);
                 }
             }
             catch { }
@@ -102,7 +106,7 @@ public partial class MainWindow : Window
             ThemeInput.IsChecked = !lightTheme;
             if (lightTheme) ApplyTheme();
             FillWindowBlur();
-            _ = RefreshWindowsWallpaperAccentAsync();
+            if (matchWindowsAccentToWallpaper) _ = RefreshWindowsWallpaperAccentAsync();
             Navigate(saved, refreshWallpapers: false);
             await RunAsync(RefreshLibraryAsync);
         };
@@ -175,7 +179,7 @@ public partial class MainWindow : Window
     private void SaveWindowPreferences()
     {
         windowBlurSaveTimer.Stop();
-        try { DataFiles.Write(uiFile, new { route, showUpdateNotesOnStartup, windowBlur, matchWindowsAccentToWallpaper, lightTheme }); }
+        try { DataFiles.Write(uiFile, new { route, showUpdateNotesOnStartup, windowBlur, matchWindowsAccentToWallpaper, themeBackground, themeAccent, themeTaskbarMode, lightTheme }); }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException) { Status(error.Message, true); }
     }
     private void ThemeChanged(object sender, RoutedEventArgs e)
@@ -641,7 +645,7 @@ public partial class MainWindow : Window
         IconEffectInput.SelectedIndex = (int)value.Effect;
         SetAppearanceSizes(value.Height, value.Icon, value.Button);
         taskbarColor = value.Color;
-        GlassInput.IsChecked = value.Glass;
+        TaskbarMaterialInput.SelectedIndex = value.Glass ? 2 : value.Gradient ? 1 : 0;
         GlassOutlineInput.IsChecked = value.GlassOutline;
         WallpaperColorsInput.IsChecked = value.MatchWallpaperColors;
         glassColor = value.GlassColor;
@@ -678,7 +682,8 @@ public partial class MainWindow : Window
         var end = (Color)ColorConverter.ConvertFromString(value.GlassColor);
         ColorSwatch.Background = new SolidColorBrush(color);
         GlassSwatch.Background = new SolidColorBrush(end);
-        GlassColors.Visibility = value.Glass ? Visibility.Visible : Visibility.Collapsed;
+        GlassColors.Visibility = value.Glass || value.Gradient ? Visibility.Visible : Visibility.Collapsed;
+        GlassOutlineInput.Visibility = value.Glass ? Visibility.Visible : Visibility.Collapsed;
         TaskbarSample.Height = value.Height;
         double glassRadius = Math.Min(value.Height / 2.0, value.Radius);
         TaskbarSample.CornerRadius = new CornerRadius(value.Glass ? glassRadius : value.Radius);
@@ -693,7 +698,8 @@ public partial class MainWindow : Window
         else
         {
             color.A = (byte)((value.Opacity * 255 + 50) / 100);
-            TaskbarSample.Background = new SolidColorBrush(color);
+            end.A = color.A;
+            TaskbarSample.Background = value.Gradient ? new LinearGradientBrush(color, end, 0) : new SolidColorBrush(color);
         }
         WidgetsSample.Visibility = value.HideWidgets ? Visibility.Collapsed : Visibility.Visible;
         foreach (Border button in TaskbarSampleIcons.Children)
@@ -775,7 +781,8 @@ public partial class MainWindow : Window
         Icon = Number(IconInput),
         Button = Number(ButtonInput),
         Color = taskbarColor,
-        Glass = GlassInput.IsChecked == true,
+        Glass = TaskbarMaterialInput.SelectedIndex == 2,
+        Gradient = TaskbarMaterialInput.SelectedIndex == 1,
         GlassOutline = GlassOutlineInput.IsChecked == true,
         GlassColor = glassColor,
         MatchWallpaperColors = WallpaperColorsInput.IsChecked == true,
@@ -786,6 +793,8 @@ public partial class MainWindow : Window
     private void AppearanceChanged(object sender, RoutedEventArgs e)
     {
         if (!ready || fillingAppearance) return;
+        if (ReferenceEquals(sender, TaskbarMaterialInput) || ReferenceEquals(sender, WallpaperColorsInput) || ReferenceEquals(sender, AppearanceEnabled))
+            UnlinkThemeTaskbar();
         if (ReferenceEquals(sender, HeightInput) || ReferenceEquals(sender, IconInput))
         {
             fillingAppearance = true;
@@ -865,6 +874,7 @@ public partial class MainWindow : Window
     }
     internal void SetTaskbarColor(string color, bool second)
     {
+        UnlinkThemeTaskbar();
         if (second) glassColor = color;
         else taskbarColor = color;
         QueueAppearance();

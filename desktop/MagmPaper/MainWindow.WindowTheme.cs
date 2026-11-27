@@ -11,9 +11,19 @@ namespace MagmPaper;
 public partial class MainWindow
 {
     private readonly WindowsThemeSettings windowsTheme = new();
+    private readonly WindowsWindowPalette windowPalette;
     private readonly SemaphoreSlim themeWrites = new(1);
     private bool fillingWindowsTheme, matchWindowsAccentToWallpaper;
-    private int accentRequest;
+    private string themeBackground = "#27253B", systemAccent = "#0078D4";
+    private string? themeAccent;
+    private WallpaperColors? themeWallpaperColors;
+    private int accentRequest, themeTaskbarMode;
+
+    private WallpaperColors ThemeColors => matchWindowsAccentToWallpaper && themeWallpaperColors is { } colors
+        ? colors : new(themeBackground, themeAccent ?? systemAccent);
+
+    private static string? ThemeHex(string? value) =>
+        value is { Length: 7 } && value[0] == '#' && value.Skip(1).All(char.IsAsciiHexDigit) ? value : null;
 
     private void RefreshWindowsTheme()
     {
@@ -21,17 +31,24 @@ public partial class MainWindow
         try
         {
             var theme = windowsTheme.Read();
-            WindowsAppsDarkInput.IsChecked = !theme.AppsLight;
+            systemAccent = theme.Accent;
+            bool custom = windowPalette.IsApplied();
+            int mode = custom ? 2 : WindowsWindowPalette.ContrastEnabled() ? 3 : theme.AppsLight ? 0 : 1;
+            CurrentWindowsThemeOption.Visibility = mode == 3 ? Visibility.Visible : Visibility.Collapsed;
+            WindowsBaseThemeInput.SelectedIndex = mode;
+            WindowsCustomThemeHint.Visibility = custom ? Visibility.Visible : Visibility.Collapsed;
+            RestoreWindowsPaletteButton.Visibility = windowPalette.HasBackup ? Visibility.Visible : Visibility.Collapsed;
+            WindowsPaletteSourceInput.SelectedIndex = matchWindowsAccentToWallpaper ? 1 : 0;
+            WindowsTaskbarMaterialInput.SelectedIndex = themeTaskbarMode;
             WindowsSystemDarkInput.IsChecked = !theme.SystemLight;
             WindowsTransparencyInput.IsChecked = theme.Transparency;
             WindowsWindowAccentInput.IsChecked = theme.WindowAccent;
             WindowsShellAccentInput.IsChecked = theme.ShellAccent;
             WindowsShellAccentInput.IsEnabled = !theme.SystemLight;
-            WindowsAccentText.Text = theme.Accent;
-            WindowsAccentSwatch.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(theme.Accent));
-            WindowsWallpaperAccentInput.IsChecked = matchWindowsAccentToWallpaper;
-            WindowsAccentButton.IsEnabled = !matchWindowsAccentToWallpaper;
+            WindowsBackgroundRow.Visibility = custom || themeTaskbarMode != 0 ? Visibility.Visible : Visibility.Collapsed;
             WindowsAccentStatus.Visibility = matchWindowsAccentToWallpaper ? Visibility.Visible : Visibility.Collapsed;
+            WindowsBackgroundButton.IsEnabled = WindowsAccentButton.IsEnabled = !matchWindowsAccentToWallpaper;
+            UpdateWindowsThemePreview(custom, theme.AppsLight);
 
             var animation = WindowsVisualSettings.ReadAnimations();
             WindowsAnimationsInput.IsChecked = animation.ClientArea;
@@ -44,6 +61,41 @@ public partial class MainWindow
         }
         finally { fillingWindowsTheme = false; }
     }
+
+    private void UpdateWindowsThemePreview(bool custom, bool light)
+    {
+        static SolidColorBrush Brush(string hex) => new((Color)ColorConverter.ConvertFromString(hex));
+        var colors = ThemeColors;
+        WindowsBackgroundText.Text = colors.First;
+        WindowsAccentText.Text = colors.Second;
+        WindowsBackgroundSwatch.Background = Brush(colors.First);
+        WindowsAccentSwatch.Background = Brush(colors.Second);
+        var preview = WindowsWindowPalette.Preview(custom ? colors : colors with { First = light ? "#F2F2F2" : "#202020" });
+        WindowsPaletteSample.Background = Brush(WindowsWindowPalette.Hex(preview.Background));
+        WindowsPaletteSampleText.Foreground = Brush(WindowsWindowPalette.Hex(preview.Text));
+        WindowsPaletteSampleSelection.Background = Brush(WindowsWindowPalette.Hex(preview.Accent));
+        WindowsPaletteSampleAccentText.Foreground = Brush(WindowsWindowPalette.Hex(preview.AccentText));
+    }
+
+    private async void WindowsBaseThemeChanged(object sender, SelectionChangedEventArgs e)
+    {
+        int mode = WindowsBaseThemeInput.SelectedIndex;
+        if (!ready || fillingWindowsTheme || mode is < 0 or > 2) return;
+        var colors = ThemeColors;
+        await ApplyWindowsSettingAsync(() =>
+        {
+            if (mode == 2) windowPalette.Apply(colors);
+            else
+            {
+                windowPalette.Restore();
+                WindowsWindowPalette.UseStandardTheme();
+                windowsTheme.Set(WindowsThemeSettings.Option.AppsLight, mode == 0);
+            }
+        });
+    }
+
+    private async void RestoreWindowsPaletteClick(object sender, RoutedEventArgs e) =>
+        await ApplyWindowsSettingAsync(windowPalette.Restore);
 
     private async void WindowsThemeOptionClick(object sender, RoutedEventArgs e)
     {
@@ -88,54 +140,106 @@ public partial class MainWindow
     private async void WindowsAccentClick(object sender, RoutedEventArgs e)
     {
         if (!ready || busy || matchWindowsAccentToWallpaper) return;
-        var picker = new Views.ColorPicker(WindowsAccentText.Text, "Цветовой акцент Windows") { Owner = this };
+        bool background = sender is FrameworkElement { Tag: "background" };
+        var colors = ThemeColors;
+        var picker = new Views.ColorPicker(background ? colors.First : colors.Second,
+            background ? "Основной цвет темы" : "Цвет выделения темы") { Owner = this };
         TrackWindowFrame(picker);
-        if (picker.ShowDialog() == true)
-            await ApplyWindowsSettingAsync(() => windowsTheme.SetAccent(picker.SelectedColor));
+        if (picker.ShowDialog() != true) return;
+        if (background) themeBackground = picker.SelectedColor;
+        else themeAccent = picker.SelectedColor;
+        SaveWindowPreferences();
+        await ApplyCurrentColorsAsync();
+        ApplyLinkedTaskbarPalette();
     }
 
-    private async void WindowsWallpaperAccentClick(object sender, RoutedEventArgs e)
+    private async void WindowsPaletteSourceChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (!ready || fillingWindowsTheme) return;
-        matchWindowsAccentToWallpaper = WindowsWallpaperAccentInput.IsChecked == true;
+        if (!ready || fillingWindowsTheme || WindowsPaletteSourceInput.SelectedIndex < 0) return;
+        matchWindowsAccentToWallpaper = WindowsPaletteSourceInput.SelectedIndex == 1;
         SaveWindowPreferences();
         RefreshWindowsTheme();
-        await RefreshWindowsWallpaperAccentAsync();
+        if (matchWindowsAccentToWallpaper) await RefreshWindowsWallpaperAccentAsync();
+        else
+        {
+            ++accentRequest;
+            await ApplyCurrentColorsAsync();
+            ApplyLinkedTaskbarPalette();
+        }
+    }
+
+    private Task ApplyCurrentColorsAsync()
+    {
+        var colors = ThemeColors;
+        return ApplyWindowsSettingAsync(() => ApplyThemeColors(colors));
+    }
+
+    private void ApplyThemeColors(WallpaperColors colors)
+    {
+        if (windowPalette.IsApplied()) windowPalette.Apply(colors);
+        else windowsTheme.SetAccent(colors.Second);
     }
 
     private async Task RefreshWindowsWallpaperAccentAsync()
     {
         int request = ++accentRequest;
         if (!ready || !matchWindowsAccentToWallpaper) return;
-        WindowsAccentStatus.Text = "Подбираем цвет обоев…";
+        WindowsAccentStatus.Text = "Подбираем цвета обоев…";
         try
         {
             var colors = await wallpapers.ReadColorsAsync() ?? await Task.Run(WindowsVisualSettings.ReadWallpaperColors);
             if (Quitting || request != accentRequest) return;
-            if (colors is null)
-            {
-                WindowsAccentStatus.Text = "Цвет станет доступен, когда Windows или MagmPaper покажет обои.";
-                return;
-            }
-
+            themeWallpaperColors = colors;
+            WindowsAccentStatus.Text = colors is null ? "Используются ручные цвета. Палитра обоев пока недоступна." : "Цвета из текущих обоев.";
             await themeWrites.WaitAsync();
             try
             {
                 if (Quitting || request != accentRequest) return;
-                await Task.Run(() => windowsTheme.SetAccent(colors.First));
+                var palette = ThemeColors;
+                await Task.Run(() => ApplyThemeColors(palette));
             }
             finally { themeWrites.Release(); }
 
             if (Quitting || request != accentRequest) return;
-            WindowsAccentStatus.Text = "Системный акцент из текущих обоев.";
             if (route == "windowTheme") RefreshWindowsTheme();
+            ApplyLinkedTaskbarPalette();
         }
         catch (Exception error) when (error is IOException or Win32Exception or UnauthorizedAccessException or System.Security.SecurityException)
         {
             if (request != accentRequest || Quitting) return;
-            WindowsAccentStatus.Text = "Не удалось установить цвет обоев.";
+            WindowsAccentStatus.Text = "Не удалось применить цвета обоев.";
             Status(error.Message, true);
         }
+    }
+
+    private void WindowsThemeTaskbarChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!ready || fillingWindowsTheme || WindowsTaskbarMaterialInput.SelectedIndex < 0) return;
+        themeTaskbarMode = WindowsTaskbarMaterialInput.SelectedIndex;
+        SaveWindowPreferences();
+        RefreshWindowsTheme();
+        ApplyLinkedTaskbarPalette();
+    }
+
+    private void ApplyLinkedTaskbarPalette()
+    {
+        if (themeTaskbarMode == 0) return;
+        var colors = ThemeColors;
+        fillingAppearance = true;
+        AppearanceEnabled.IsChecked = true;
+        TaskbarMaterialInput.SelectedIndex = themeTaskbarMode;
+        WallpaperColorsInput.IsChecked = false;
+        taskbarColor = colors.First;
+        glassColor = colors.Second;
+        fillingAppearance = false;
+        QueueAppearance();
+    }
+
+    private void UnlinkThemeTaskbar()
+    {
+        if (themeTaskbarMode == 0) return;
+        themeTaskbarMode = 0;
+        SaveWindowPreferences();
     }
 
     private void WindowSystemPreferenceChanged(object sender, UserPreferenceChangedEventArgs e)
@@ -147,7 +251,7 @@ public partial class MainWindow
             if (Quitting) return;
             if (e.Category == UserPreferenceCategory.Desktop && matchWindowsAccentToWallpaper)
                 _ = RefreshWindowsWallpaperAccentAsync();
-            if (route == "windowTheme" && !busy) RefreshWindowsTheme();
+            if (route == "windowTheme" && !busy && themeWrites.CurrentCount != 0) RefreshWindowsTheme();
         });
     }
 

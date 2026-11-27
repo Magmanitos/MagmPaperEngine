@@ -40,11 +40,13 @@ public sealed record AppearanceSettings
     public TaskbarIconEffect Effect => IconEffect ?? (LegacyAnimateIcons ? TaskbarIconEffect.Lift : TaskbarIconEffect.Off);
     public int Radius { get; init; }
     public bool Glass { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Gradient { get; init; }
     public string GlassColor { get; init; } = "#715CD4";
     public bool GlassOutline { get; init; } = true;
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool MatchWallpaperColors { get; init; }
-    public bool UsesWallpaperColors() => Glass && MatchWallpaperColors;
+    public bool UsesWallpaperColors() => (Glass || Gradient) && MatchWallpaperColors;
     public AppearanceSettings WithWallpaperColors(WallpaperColors? palette) =>
         UsesWallpaperColors() && palette is not null ? this with { Color = palette.First, GlassColor = palette.Second } : this;
     public AppearanceSettings Validate()
@@ -59,7 +61,7 @@ public sealed record AppearanceSettings
     public string Encode(int sequence)
     {
         Validate();
-        return FormattableString.Invariant($"{sequence} {(Enabled ? 1 : 0)} {Height} {Icon} {Button} {Convert.ToInt32(Color[1..], 16)} {Opacity} {(HideWidgets ? 1 : 0)} {Radius} {(Glass ? 1 : 0)} {Convert.ToInt32(GlassColor[1..], 16)} {(int)Effect} {(GlassOutline ? 1 : 0)}");
+        return FormattableString.Invariant($"{sequence} {(Enabled ? 1 : 0)} {Height} {Icon} {Button} {Convert.ToInt32(Color[1..], 16)} {Opacity} {(HideWidgets ? 1 : 0)} {Radius} {(Glass ? 1 : Gradient ? 2 : 0)} {Convert.ToInt32(GlassColor[1..], 16)} {(int)Effect} {(GlassOutline ? 1 : 0)}");
     }
 }
 

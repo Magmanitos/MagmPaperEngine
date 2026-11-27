@@ -255,13 +255,20 @@ int main() try {
             "hiding the outline must preserve the glass material and opacity");
         host.send("9 1 64 40 52 1193046 25 1 0 1 11259375 0 1\n");host.applied(9);
         require(rims.IsVisible(),"the outline must reappear when enabled");
-        host.send("10 1 64 40 52 1193046 0 1 0 1 11259375 0 1\n");host.applied(10);
+        host.send("10 1 64 40 52 1193046 25 1 0 2 11259375 0 1\n");host.applied(10);
+        auto gradient=background.Fill().as<xaml::Media::LinearGradientBrush>();
+        auto stops=gradient.GradientStops();
+        require(!xaml::Hosting::ElementCompositionPreview::GetElementChildVisual(background)&&stops.Size()==2&&
+            stops.GetAt(0).Color().R==0x12&&stops.GetAt(0).Color().A==64&&
+            stops.GetAt(1).Color().R==0xab&&stops.GetAt(1).Color().A==64,
+            "plain gradients must use the exact tints and opacity after removing the glass");
+        host.send("11 1 64 40 52 1193046 0 1 0 1 11259375 0 1\n");host.applied(11);
         require(!xaml::Hosting::ElementCompositionPreview::GetElementChildVisual(background)&&
             background.Fill().as<xaml::Media::SolidColorBrush>().Color().A==0,
             "zero opacity must remove the glass");
-        host.send("11 0 64 40 52 1193046 25 1 8 0 0 0 1\n");host.applied(11);
+        host.send("12 0 64 40 52 1193046 25 1 8 0 0 0 1\n");host.applied(12);
         require(frame.Height()==48&&icon.Width()==24&&widgets.Visibility()==xaml::Visibility::Visible,"disable restores native XAML");
-        host.send("12 1 64 40 52 1193046 25 1 8 0 0 0 1\n");host.applied(12);host.crash();
+        host.send("13 1 64 40 52 1193046 25 1 8 0 0 0 1\n");host.applied(13);host.crash();
         until([&]{return frame.Height()==48&&icon.Width()==24;},"host crash did not restore XAML");
         std::cout<<"PASS: helper attachment and crash restoration."<<std::endl;
     }
